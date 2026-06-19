@@ -72,16 +72,10 @@ var rootCommand = new RootCommand(CliResources.CmdRootDescription)
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
-if (helpOpt is not null)
-{
-    helpOpt.Description = CliResources.CmdHelpDescription;
-}
+helpOpt?.Description = CliResources.CmdHelpDescription;
 
 var versionOpt = rootCommand.Options.OfType<VersionOption>().FirstOrDefault();
-if (versionOpt is not null)
-{
-    versionOpt.Description = CliResources.CmdVersionDescription;
-}
+versionOpt?.Description = CliResources.CmdVersionDescription;
 
 rootCommand.SetAction(parseResult =>
 {

@@ -7,7 +7,7 @@
         <LangVersion>latest</LangVersion>
         <WarningsAsErrors>true</WarningsAsErrors>
         <GenerateDocumentationFile>True</GenerateDocumentationFile>
-        <SatelliteResourceLanguages>en,zh-Hans</SatelliteResourceLanguages>
+        <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     </PropertyGroup>
 
     <PropertyGroup>
