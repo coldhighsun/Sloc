@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Sloc.Cli</RootNamespace>
+    <AssemblyName>sloc</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sloc</ToolCommandName>
+    <PackageId>Sloc</PackageId>
+    <Authors>coldhighsun</Authors>
+    <Description>A command-line tool that counts code, comment, and blank lines across source files, grouped by language.</Description>
+    <PackageTags>cli;sloc;lines-of-code;loc;statistics;tool</PackageTags>
+    <PackageProjectUrl>https://github.com/coldhighsun/Sloc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/coldhighsun/Sloc</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sloc.Core\Sloc.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

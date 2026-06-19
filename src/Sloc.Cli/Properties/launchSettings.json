@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Sloc.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "--by-file"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+## .NET build artifacts
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+[Oo]ut/
+artifacts/
+
+## NuGet packages produced by `dotnet pack`
+nupkg/
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coverlet
+coverage*.json
+coverage*.xml
+coverage*.info
+
+## Misc
+*.log
+*.tmp

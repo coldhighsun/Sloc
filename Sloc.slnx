@@ -1,0 +1,18 @@
+<Solution>
+    <Folder Name="/.github/" />
+    <Folder Name="/.github/workflows/">
+        <File Path=".github/workflows/ci.yml" />
+    </Folder>
+<Folder Name="/assets/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Sloc.Cli/Sloc.Cli.csproj" />
+    <Project Path="src/Sloc.Core/Sloc.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sloc.Core.Tests/Sloc.Core.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- CLI option descriptions -->
+  <data name="CmdRootDescription" xml:space="preserve">
+    <value>Sloc - counts code, comment, and blank lines in source files.</value>
+  </data>
+  <data name="CmdPathDescription" xml:space="preserve">
+    <value>The file or directory to analyze.</value>
+  </data>
+  <data name="CmdIncludeDescription" xml:space="preserve">
+    <value>Glob pattern of files to include. Can be specified multiple times.</value>
+  </data>
+  <data name="CmdExcludeDescription" xml:space="preserve">
+    <value>Glob pattern of files to exclude. Can be specified multiple times.</value>
+  </data>
+  <data name="CmdFormatDescription" xml:space="preserve">
+    <value>Output format: Table, Json, or Html. Inferred from the --output extension when omitted.</value>
+  </data>
+  <data name="CmdNoRecursiveDescription" xml:space="preserve">
+    <value>Do not descend into subdirectories.</value>
+  </data>
+  <data name="CmdNoHealthDescription" xml:space="preserve">
+    <value>Hide the Comment Health column and percentage breakdowns.</value>
+  </data>
+  <data name="CmdByFileDescription" xml:space="preserve">
+    <value>Show a per-file breakdown in addition to the language summary.</value>
+  </data>
+  <data name="CmdPagedDescription" xml:space="preserve">
+    <value>Enable pagination when displaying the per-file breakdown.</value>
+  </data>
+  <data name="CmdAllDescription" xml:space="preserve">
+    <value>Include files whose extension maps to no known language.</value>
+  </data>
+  <data name="CmdOutputDescription" xml:space="preserve">
+    <value>Output file path for Json and Html formats.</value>
+  </data>
+  <data name="CmdVersionDescription" xml:space="preserve">
+    <value>Show version information.</value>
+  </data>
+  <data name="CmdHelpDescription" xml:space="preserve">
+    <value>Show help and usage information.</value>
+  </data>
+
+  <!-- Status / error messages -->
+  <data name="MsgAnalyzing" xml:space="preserve">
+    <value>Analyzing</value>
+  </data>
+  <data name="MsgAnalyzingProgress" xml:space="preserve">
+    <value>Analyzing... {0} / {1}</value>
+  </data>
+  <data name="MsgSavedTo" xml:space="preserve">
+    <value>Saved to:</value>
+  </data>
+  <data name="MsgNoFilesMatched" xml:space="preserve">
+    <value>No files matched.</value>
+  </data>
+  <data name="MsgSkipped" xml:space="preserve">
+    <value>Skipped '{0}': {1}</value>
+  </data>
+
+  <!-- Table column headers -->
+  <data name="ColLanguage" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="ColFile" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="ColFiles" xml:space="preserve">
+    <value>Files</value>
+  </data>
+  <data name="ColCode" xml:space="preserve">
+    <value>Code</value>
+  </data>
+  <data name="ColComment" xml:space="preserve">
+    <value>Comment</value>
+  </data>
+  <data name="ColBlank" xml:space="preserve">
+    <value>Blank</value>
+  </data>
+  <data name="ColTotal" xml:space="preserve">
+    <value>Total</value>
+  </data>
+  <data name="ColHealth" xml:space="preserve">
+    <value>Comment Health</value>
+  </data>
+  <data name="RowTotal" xml:space="preserve">
+    <value>Total</value>
+  </data>
+
+  <!-- Health labels -->
+  <data name="HealthNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="HealthLow" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="HealthFair" xml:space="preserve">
+    <value>Fair</value>
+  </data>
+  <data name="HealthGood" xml:space="preserve">
+    <value>Good</value>
+  </data>
+  <data name="HealthHigh" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="HealthDense" xml:space="preserve">
+    <value>Dense</value>
+  </data>
+
+  <!-- Pagination -->
+  <data name="PaginationPrompt" xml:space="preserve">
+    <value>-- {0}/{1} shown, press any key to continue, [bold]Q[/] to stop --</value>
+  </data>
+
+  <!-- HTML content -->
+  <data name="HtmlTitle" xml:space="preserve">
+    <value>Sloc Report</value>
+  </data>
+  <data name="HtmlGenerated" xml:space="preserve">
+    <value>Generated:</value>
+  </data>
+  <data name="HtmlFilesUnit" xml:space="preserve">
+    <value>files</value>
+  </data>
+  <data name="HtmlTotalLines" xml:space="preserve">
+    <value>total lines</value>
+  </data>
+  <data name="HtmlByFile" xml:space="preserve">
+    <value>By File</value>
+  </data>
+  <data name="HtmlByLanguage" xml:space="preserve">
+    <value>By Language</value>
+  </data>
+  <data name="HtmlCollapseAll" xml:space="preserve">
+    <value>Collapse All</value>
+  </data>
+  <data name="HtmlExpandAll" xml:space="preserve">
+    <value>Expand All</value>
+  </data>
+  <data name="HtmlRoot" xml:space="preserve">
+    <value>(root)</value>
+  </data>
+</root>

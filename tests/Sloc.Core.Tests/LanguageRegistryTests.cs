@@ -1,0 +1,100 @@
+using Sloc.Core.Languages;
+
+namespace Sloc.Core.Tests;
+
+/// <summary>
+/// Contains unit tests for <see cref="LanguageRegistry"/>.
+/// </summary>
+public class LanguageRegistryTests
+{
+    /// <summary>
+    /// Verifies that the registry exposes at least one language definition.
+    /// </summary>
+    [Fact]
+    public void Languages_AreNotEmpty()
+    {
+        Assert.NotEmpty(LanguageRegistry.Languages);
+    }
+
+    /// <summary>
+    /// Verifies that known C# extensions, with or without a leading dot and
+    /// regardless of casing, resolve to the C# language definition.
+    /// </summary>
+    /// <param name="extension">
+    /// An extension string to look up.
+    /// </param>
+    [Theory]
+    [InlineData(".cs")]
+    [InlineData(".CS")]
+    [InlineData("cs")]
+    public void TryGetByExtension_KnownExtension_ResolvesCSharp(string extension)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.True(found);
+        Assert.Equal("C#", language!.Name);
+    }
+
+    /// <summary>
+    /// Verifies that known JSON extensions, with or without a leading dot and
+    /// regardless of casing, resolve to the JSON language definition.
+    /// </summary>
+    /// <param name="extension">An extension string to look up.</param>
+    [Theory]
+    [InlineData(".json")]
+    [InlineData(".jsonc")]
+    [InlineData(".JSON")]
+    [InlineData("json")]
+    public void TryGetByExtension_KnownExtension_ResolvesJson(string extension)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.True(found);
+        Assert.Equal("JSON", language!.Name);
+    }
+
+    /// <summary>
+    /// Verifies that an unknown, empty, or null extension causes the lookup to return
+    /// <see langword="false"/> with a null output.
+    /// </summary>
+    /// <param name="extension">
+    /// An extension string that should not resolve to any language.
+    /// </param>
+    [Theory]
+    [InlineData(".zzz")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void TryGetByExtension_UnknownOrEmpty_ReturnsFalse(string? extension)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.False(found);
+        Assert.Null(language);
+    }
+
+    /// <summary>
+    /// Verifies that a full file path with a known extension resolves to the correct
+    /// language definition.
+    /// </summary>
+    [Fact]
+    public void TryGetByPath_KnownExtension_ResolvesFromPath()
+    {
+        var found = LanguageRegistry.TryGetByPath("/some/dir/Program.cs", out var language);
+
+        Assert.True(found);
+        Assert.Equal("C#", language!.Name);
+    }
+
+    /// <summary>
+    /// Verifies that a file path with an unrecognized extension causes the lookup to return
+    /// <see langword="false"/> with a null output.
+    /// </summary>
+    [Fact]
+    public void TryGetByPath_UnknownExtension_ReturnsFalse()
+    {
+        var found = LanguageRegistry.TryGetByPath("notes.unknownext", out var language);
+
+        Assert.False(found);
+        Assert.Null(language);
+    }
+}
