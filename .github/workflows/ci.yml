@@ -21,7 +21,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            8.x
+            10.x
 
       - name: Restore dependencies
         run: dotnet restore Sloc.slnx
@@ -47,7 +49,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            8.x
+            10.x
 
       - name: Restore dependencies
         run: dotnet restore src/Sloc.Cli/Sloc.Cli.csproj
@@ -63,58 +67,3 @@ jobs:
 
       - name: Push to NuGet.org
         run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-
-  publish:
-    name: Publish CLI (${{ matrix.rid }})
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      matrix:
-        rid: [win-x64, win-arm64, linux-x64, osx-x64, osx-arm64]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Restore dependencies
-        run: dotnet restore src/Sloc.Cli/Sloc.Cli.csproj --framework net10.0 --runtime ${{ matrix.rid }}
-
-      - name: Publish
-        run: dotnet publish src/Sloc.Cli/Sloc.Cli.csproj --no-restore --configuration Release --framework net10.0 --runtime ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true --output ./publish/${{ matrix.rid }}
-
-      - name: Zip
-        run: zip -j ./sloc-${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}/*
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sloc-${{ matrix.rid }}
-          path: ./sloc-${{ matrix.rid }}.zip
-
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: publish
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: sloc-*
-          path: ./artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./artifacts/*.zip
-          generate_release_notes: true
