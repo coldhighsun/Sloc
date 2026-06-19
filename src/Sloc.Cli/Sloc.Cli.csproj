@@ -13,7 +13,7 @@
     <PackageId>Sloc</PackageId>
     <Authors>coldhighsun</Authors>
     <Description>A .NET global CLI tool that counts code, comment, and blank lines across source files. Supports 23 languages with auto-detection, three output formats (table, JSON, HTML), per-file detail view, and comment health indicators.</Description>
-    <PackageTags>cli;sloc;lines-of-code;loc;statistics;tool</PackageTags>
+    <PackageTags>cloc;cli;sloc;lines-of-code;loc;statistics;tool</PackageTags>
     <PackageProjectUrl>https://github.com/coldhighsun/Sloc</PackageProjectUrl>
     <RepositoryUrl>https://github.com/coldhighsun/Sloc</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
