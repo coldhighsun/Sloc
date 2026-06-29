@@ -3,6 +3,7 @@ using Sloc.Core;
 using Sloc.Core.Models;
 using Spectre.Console;
 using System.Diagnostics;
+using System.Reflection;
 
 namespace Sloc.Cli;
 
@@ -128,6 +129,17 @@ public sealed class AnalyzeHandler
     public int Execute(AnalyzeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+
+        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected)
+        {
+            var version = typeof(AnalyzeHandler).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+            if (!string.IsNullOrEmpty(version))
+            {
+                AnsiConsole.MarkupLine($"[grey]sloc {Markup.Escape(version)}[/]");
+            }
+        }
 
         IReadOnlyList<ScannedFile> files;
         try

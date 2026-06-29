@@ -20,7 +20,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 
 ## Installation
 
-Install as a .NET global tool (requires .NET 8 or .NET 10 SDK):
+Install as a .NET global tool (requires .NET 8 SDK):
 
 ```bash
 dotnet tool install --global Sloc
@@ -179,7 +179,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 
 ## 安装
 
-作为 .NET 全局工具安装（需要 .NET 8 或 .NET 10 SDK）：
+作为 .NET 全局工具安装（需要 .NET 8 SDK）：
 
 ```bash
 dotnet tool install --global Sloc
