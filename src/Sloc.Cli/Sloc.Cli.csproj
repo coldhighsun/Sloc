@@ -4,6 +4,9 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Sloc.Cli</RootNamespace>
     <AssemblyName>sloc</AssemblyName>
+    <PublishTrimmed>true</PublishTrimmed>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <PropertyGroup>
