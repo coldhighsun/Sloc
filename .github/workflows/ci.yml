@@ -59,11 +59,14 @@ jobs:
           --runtime ${{ matrix.rid }}
           --output ./publish/${{ matrix.rid }}
 
+      - name: Zip artifact
+        run: zip -j ./sloc-${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}/sloc*
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sloc-${{ matrix.rid }}
-          path: ./publish/${{ matrix.rid }}/sloc*
+          path: ./sloc-${{ matrix.rid }}.zip
 
   pack:
     name: Pack & Publish NuGet Tool
@@ -106,13 +109,15 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: sloc-*
           path: ./artifacts
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/**/*
+          files: ./artifacts/*.zip
           generate_release_notes: true
