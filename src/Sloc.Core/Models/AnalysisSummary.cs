@@ -61,11 +61,13 @@ public sealed class AnalysisSummary
     /// Builds a summary by aggregating the supplied per-file results.
     /// </summary>
     /// <param name="files">The per-file analysis results to aggregate.</param>
-    public AnalysisSummary(IReadOnlyList<FileAnalysis> files)
+    /// <param name="skipped">Entries that were skipped due to read errors.</param>
+    public AnalysisSummary(IReadOnlyList<FileAnalysis> files, IReadOnlyList<SkippedEntry>? skipped = null)
     {
         ArgumentNullException.ThrowIfNull(files);
 
         Files = files;
+        Skipped = skipped ?? [];
         FileCount = files.Count;
 
         var code = 0;
@@ -141,6 +143,14 @@ public sealed class AnalysisSummary
     /// The individual file results, in the order they were analyzed.
     /// </summary>
     public IReadOnlyList<FileAnalysis> Files
+    {
+        get;
+    }
+
+    /// <summary>
+    /// Entries that were skipped due to read errors during scanning or analysis.
+    /// </summary>
+    public IReadOnlyList<SkippedEntry> Skipped
     {
         get;
     }

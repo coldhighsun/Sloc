@@ -222,12 +222,34 @@ public sealed class HtmlRenderer : IResultRenderer
             BuildLanguageSection(sb, summary, noHealth);
         }
 
+        if (summary.Skipped.Count > 0)
+        {
+            BuildSkippedSection(sb, summary);
+        }
+
         sb.AppendLine("<script>");
         sb.AppendLine(Script);
         sb.AppendLine("</script>");
 
         sb.AppendLine("</body>");
         sb.AppendLine("</html>");
+    }
+
+    private static void BuildSkippedSection(StringBuilder sb, AnalysisSummary summary)
+    {
+        sb.AppendLine($"<h2>{Encode(CliResources.HtmlSkippedFiles)} ({summary.Skipped.Count:N0})</h2>");
+        sb.AppendLine("<table>");
+        sb.AppendLine($"  <thead><tr><th>{Encode(CliResources.ColPath)}</th><th>{Encode(CliResources.ColReason)}</th></tr></thead>");
+        sb.AppendLine("  <tbody>");
+        foreach (var entry in summary.Skipped)
+        {
+            sb.Append("    <tr>");
+            sb.Append($"<td>{Encode(entry.Path)}</td>");
+            sb.Append($"<td>{Encode(entry.Reason)}</td>");
+            sb.AppendLine("</tr>");
+        }
+        sb.AppendLine("  </tbody>");
+        sb.AppendLine("</table>");
     }
 
     private static void BuildFileSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)

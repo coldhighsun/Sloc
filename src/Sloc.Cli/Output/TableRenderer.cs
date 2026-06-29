@@ -115,6 +115,26 @@ public sealed class TableRenderer : IResultRenderer
         return table;
     }
 
+    internal static void RenderSkipped(AnalysisSummary summary)
+    {
+        if (summary.Skipped.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        var table = new Table().Border(TableBorder.Rounded);
+        table.Title(new TableTitle($"[yellow]{Markup.Escape(CliResources.HtmlSkippedFiles)} ({summary.Skipped.Count:N0})[/]"));
+        table.AddColumn(CliResources.ColPath);
+        table.AddColumn(CliResources.ColReason);
+        foreach (var entry in summary.Skipped)
+        {
+            table.AddRow(Markup.Escape(entry.Path), Markup.Escape(entry.Reason));
+        }
+
+        AnsiConsole.Write(table);
+    }
+
     internal static void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false)
     {
         var files = summary.Files;

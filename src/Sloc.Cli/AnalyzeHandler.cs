@@ -141,10 +141,10 @@ public sealed class AnalyzeHandler
             }
         }
 
-        IReadOnlyList<ScannedFile> files;
+        ScanResult scanResult;
         try
         {
-            files = _scanner.Scan(options.Path, new ScanOptions
+            scanResult = _scanner.Scan(options.Path, new ScanOptions
             {
                 Includes = options.Includes,
                 Excludes = options.Excludes,
@@ -158,7 +158,9 @@ public sealed class AnalyzeHandler
             return 1;
         }
 
+        var files = scanResult.Files;
         var results = new List<FileAnalysis>(files.Count);
+        var skipped = new List<SkippedEntry>(scanResult.Skipped);
 
         void AnalyzeFile(ScannedFile file)
         {
@@ -168,7 +170,7 @@ public sealed class AnalyzeHandler
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Console.Error.WriteLine(CliResources.MsgSkipped, file.Path, ex.Message);
+                skipped.Add(new SkippedEntry(file.Path, ex.Message));
             }
         }
 
@@ -211,7 +213,7 @@ public sealed class AnalyzeHandler
                 });
         }
 
-        var summary = new AnalysisSummary(results);
+        var summary = new AnalysisSummary(results, skipped);
         if (options.Format == OutputFormat.Json)
         {
             var outputFile = options.OutputFile ?? "sloc-report.json";
@@ -236,6 +238,8 @@ public sealed class AnalyzeHandler
             {
                 TableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
             }
+
+            TableRenderer.RenderSkipped(summary);
         }
         return 0;
     }

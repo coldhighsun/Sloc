@@ -72,6 +72,12 @@
   </data>
 
   <!-- Table column headers -->
+  <data name="ColPath" xml:space="preserve">
+    <value>Path</value>
+  </data>
+  <data name="ColReason" xml:space="preserve">
+    <value>Reason</value>
+  </data>
   <data name="ColLanguage" xml:space="preserve">
     <value>Language</value>
   </data>
@@ -126,6 +132,9 @@
   </data>
 
   <!-- HTML content -->
+  <data name="HtmlSkippedFiles" xml:space="preserve">
+    <value>Skipped Files</value>
+  </data>
   <data name="HtmlTitle" xml:space="preserve">
     <value>Sloc Report</value>
   </data>
