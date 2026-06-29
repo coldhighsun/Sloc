@@ -178,6 +178,22 @@ internal static class CliResources
     // Table column headers
     // -------------------------------------------------------------------------
     /// <summary>
+    /// Gets the "Path" column header (used in the skipped-files table).
+    /// </summary>
+    /// <returns>
+    /// Localized header string.
+    /// </returns>
+    public static string ColPath => Get();
+
+    /// <summary>
+    /// Gets the "Reason" column header (used in the skipped-files table).
+    /// </summary>
+    /// <returns>
+    /// Localized header string.
+    /// </returns>
+    public static string ColReason => Get();
+
+    /// <summary>
     /// Gets the "Total" column header.
     /// </summary>
     /// <returns>
@@ -300,6 +316,14 @@ internal static class CliResources
     // -------------------------------------------------------------------------
     // HTML content
     // -------------------------------------------------------------------------
+    /// <summary>
+    /// Gets the "Skipped Files" section heading.
+    /// </summary>
+    /// <returns>
+    /// Localized heading string.
+    /// </returns>
+    public static string HtmlSkippedFiles => Get();
+
     /// <summary>
     /// Gets the unit phrase that follows the total line count (e.g. "total lines" / "行合计").
     /// </summary>

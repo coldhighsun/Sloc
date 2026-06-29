@@ -31,9 +31,9 @@ The solution has three projects:
 2. `FileAnalyzer` — reads a file (or in-memory text), delegates per-line classification to `LineClassifier`
 3. `LineClassifier` — stateful classifier that tracks open block comments across lines, emitting a `LineKind` (Code / Comment / Blank) per line
 4. `Languages/LanguageRegistry` — static map of file extensions → `LanguageDefinition` (comment tokens, block-comment pairs, health-display flag); 23 built-in languages
-5. `Models/` — `FileAnalysis` (per-file counts), `AnalysisSummary` (aggregated by language with comment-health percentiles)
+5. `Models/` — `FileAnalysis` (per-file counts), `AnalysisSummary` (aggregated by language with comment-health percentiles), `SkippedEntry` (path + reason for files that could not be read)
 
-**`src/Sloc.Cli`** — Console entry point. `Program.cs` uses `System.CommandLine` for argument parsing. `AnalyzeHandler` orchestrates scanning → analysis → rendering. Renderers in `Output/` implement `IResultRenderer`: `TableRenderer` (Spectre.Console ANSI table), `JsonRenderer`, `HtmlRenderer`.
+**`src/Sloc.Cli`** — Console entry point. `Program.cs` uses `System.CommandLine` for argument parsing. `AnalyzeHandler` orchestrates scanning → analysis → rendering. Renderers in `Output/` implement `IResultRenderer`: `TableRenderer` (Spectre.Console ANSI table), `JsonRenderer`, `HtmlRenderer`. All user-visible strings live in `CliResources.resx` and are exposed via `CliResources.cs` using `[CallerMemberName]`; add a matching property and `.resx` entry together.
 
 **`tests/Sloc.Core.Tests`** — xUnit tests covering `LineClassifier`, `FileAnalyzer`, and `LanguageRegistry`.
 
@@ -46,3 +46,7 @@ The solution has three projects:
 ## Adding a New Language
 
 Add an entry to `LanguageRegistry.cs` (`src/Sloc.Core/Languages/`) with the extension(s), line-comment tokens, block-comment delimiters, and whether to show the comment-health indicator. No other files need changes.
+
+## Error Handling for Unreadable Files
+
+`DirectoryScanner.Scan()` returns a `ScanResult` record containing both `Files` and `Skipped` (`IReadOnlyList<SkippedEntry>`). Enumeration errors (e.g. `UnauthorizedAccessException`) are caught there. Per-file read errors are caught in `AnalyzeHandler.AnalyzeFile()`. Both sets of skipped entries are merged and stored in `AnalysisSummary.Skipped`, which renderers use to emit a skipped-files section at the end of output.

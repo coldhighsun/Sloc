@@ -69,7 +69,12 @@ public sealed class JsonRenderer : IResultRenderer
                     BlankPct = Pct(file.Blank, file.Total),
                     file.Total
                 })
-                : null
+                : null,
+            Skipped = summary.Skipped.Select(entry => new
+            {
+                entry.Path,
+                entry.Reason
+            })
         };
 
         _writer.WriteLine(JsonSerializer.Serialize(payload, SerializerOptions));

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.FileSystemGlobbing;
 using Sloc.Core.Languages;
+using Sloc.Core.Models;
 
 namespace Sloc.Core;
 
@@ -10,6 +11,13 @@ namespace Sloc.Core;
 /// <param name="Path">The full path of the file.</param>
 /// <param name="Language">The language to analyze the file as.</param>
 public sealed record ScannedFile(string Path, LanguageDefinition Language);
+
+/// <summary>
+/// The result of a <see cref="DirectoryScanner.Scan"/> call.
+/// </summary>
+/// <param name="Files">The files that were successfully discovered.</param>
+/// <param name="Skipped">Paths that could not be enumerated due to I/O or access errors.</param>
+public sealed record ScanResult(IReadOnlyList<ScannedFile> Files, IReadOnlyList<SkippedEntry> Skipped);
 
 /// <summary>
 /// Options controlling how <see cref="DirectoryScanner"/> discovers files.
@@ -70,12 +78,13 @@ public sealed class DirectoryScanner
     /// <param name="root">A file or directory path to scan.</param>
     /// <param name="options">The scan options.</param>
     /// <returns>
-    /// The discovered files, ordered by path.
+    /// A <see cref="ScanResult"/> containing the discovered files and any paths
+    /// that could not be enumerated due to I/O or access errors.
     /// </returns>
     /// <exception cref="DirectoryNotFoundException">
     /// The path does not exist.
     /// </exception>
-    public IReadOnlyList<ScannedFile> Scan(string root, ScanOptions options)
+    public ScanResult Scan(string root, ScanOptions options)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -83,7 +92,9 @@ public sealed class DirectoryScanner
         if (File.Exists(root))
         {
             var single = Resolve(Path.GetFullPath(root), options.IncludeUnknown);
-            return single is null ? Array.Empty<ScannedFile>() : new[] { single };
+            return single is null
+                ? new ScanResult([], [])
+                : new ScanResult([single], []);
         }
 
         if (!Directory.Exists(root))
@@ -108,17 +119,25 @@ public sealed class DirectoryScanner
         }
 
         var files = new List<ScannedFile>();
-        foreach (var fullPath in matcher.GetResultsInFullPath(root))
+        var skipped = new List<SkippedEntry>();
+        try
         {
-            var scanned = Resolve(fullPath, options.IncludeUnknown);
-            if (scanned is not null)
+            foreach (var fullPath in matcher.GetResultsInFullPath(root))
             {
-                files.Add(scanned);
+                var scanned = Resolve(fullPath, options.IncludeUnknown);
+                if (scanned is not null)
+                {
+                    files.Add(scanned);
+                }
             }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            skipped.Add(new SkippedEntry(root, ex.Message));
         }
 
         files.Sort(static (left, right) => string.CompareOrdinal(left.Path, right.Path));
-        return files;
+        return new ScanResult(files, skipped);
     }
 
     private static ScannedFile? Resolve(string path, bool includeUnknown)

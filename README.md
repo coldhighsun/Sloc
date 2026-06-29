@@ -17,6 +17,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Three output formats: colored table (default), JSON, and HTML
 - Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense)
 - Format auto-detected from the `--output` file extension (`.json` → JSON, `.html` / `.htm` → HTML)
+- Files or directories that cannot be read are skipped gracefully; a summary of skipped paths and reasons is shown at the end
 
 ## Installation
 
@@ -176,6 +177,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 三种输出格式：彩色表格（默认）、JSON 与 HTML
 - 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密）
 - 未指定 `--format` 时，可根据 `--output` 文件扩展名自动推断格式（`.json` → JSON，`.html` / `.htm` → HTML）
+- 无法读取的文件或目录会被自动跳过，并在最终结果中列出所有跳过的路径及原因
 
 ## 安装
 
