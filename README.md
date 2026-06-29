@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc)](https://www.nuget.org/packages/Sloc)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc?label=nuget%20downloads)](https://www.nuget.org/packages/Sloc)
+[![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 23 auto-detected languages, three output formats (table, JSON, HTML), per-file detail view, and comment health indicators.
