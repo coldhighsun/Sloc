@@ -60,13 +60,16 @@ jobs:
           --output ./publish/${{ matrix.rid }}
 
       - name: Zip artifact
-        run: zip -j ./sloc-${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}/sloc*
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          zip -j ./sloc-${VERSION}-${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}/sloc*
+          echo "ZIP_NAME=sloc-${VERSION}-${{ matrix.rid }}.zip" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sloc-${{ matrix.rid }}
-          path: ./sloc-${{ matrix.rid }}.zip
+          path: ./${{ env.ZIP_NAME }}
 
   pack:
     name: Pack & Publish NuGet Tool
