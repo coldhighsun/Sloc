@@ -1,6 +1,6 @@
-using System.Diagnostics.CodeAnalysis;
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Sloc.Core;
 

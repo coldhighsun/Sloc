@@ -33,7 +33,7 @@ The solution has three projects:
 4. `Languages/LanguageRegistry` — static map of file extensions → `LanguageDefinition` (comment tokens, block-comment pairs, health-display flag); 23 built-in languages
 5. `Models/` — `FileAnalysis` (per-file counts), `AnalysisSummary` (aggregated by language with comment-health percentiles), `SkippedEntry` (path + reason for files that could not be read)
 
-**`src/Sloc.Cli`** — Console entry point. `Program.cs` uses `System.CommandLine` for argument parsing. `AnalyzeHandler` orchestrates scanning → analysis → rendering. Renderers in `Output/` implement `IResultRenderer`: `TableRenderer` (Spectre.Console ANSI table), `JsonRenderer`, `HtmlRenderer`. All user-visible strings live in `CliResources.resx` and are exposed via `CliResources.cs` using `[CallerMemberName]`; add a matching property and `.resx` entry together.
+**`src/Sloc.Cli`** — Console entry point. `Program.cs` uses `System.CommandLine` for argument parsing. `AnalyzeHandler` orchestrates scanning → analysis → rendering. Renderers in `Output/` implement `IResultRenderer`: `TableRenderer` (Spectre.Console ANSI table), `JsonRenderer`, `HtmlRenderer`. All user-visible strings are plain English literals inline (no localization/resources layer).
 
 **`tests/Sloc.Core.Tests`** — xUnit tests covering `LineClassifier`, `FileAnalyzer`, and `LanguageRegistry`.
 
