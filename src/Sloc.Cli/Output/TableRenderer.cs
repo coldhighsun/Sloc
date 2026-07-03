@@ -47,15 +47,15 @@ public sealed class TableRenderer : IResultRenderer
             table.Caption(new TableTitle(caption));
         }
 
-        table.AddColumn(CliResources.ColLanguage);
-        table.AddColumn(new TableColumn(CliResources.ColFiles).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColCode).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColComment).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColBlank).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColTotal).RightAligned());
+        table.AddColumn("Language");
+        table.AddColumn(new TableColumn("Files").RightAligned());
+        table.AddColumn(new TableColumn("Code").RightAligned());
+        table.AddColumn(new TableColumn("Comment").RightAligned());
+        table.AddColumn(new TableColumn("Blank").RightAligned());
+        table.AddColumn(new TableColumn("Total").RightAligned());
         if (!noHealth)
         {
-            table.AddColumn(CliResources.ColHealth);
+            table.AddColumn("Comment Health");
         }
 
         foreach (var language in summary.ByLanguage)
@@ -93,7 +93,7 @@ public sealed class TableRenderer : IResultRenderer
         if (noHealth)
         {
             table.AddRow(
-                $"[bold]{CliResources.RowTotal}[/]",
+                $"[bold]{"Total"}[/]",
                 $"[bold]{summary.FileCount:N0}[/]",
                 totalCodeCell,
                 totalCommentCell,
@@ -103,7 +103,7 @@ public sealed class TableRenderer : IResultRenderer
         else
         {
             table.AddRow(
-                $"[bold]{CliResources.RowTotal}[/]",
+                $"[bold]{"Total"}[/]",
                 $"[bold]{summary.FileCount:N0}[/]",
                 totalCodeCell,
                 totalCommentCell,
@@ -113,26 +113,6 @@ public sealed class TableRenderer : IResultRenderer
         }
 
         return table;
-    }
-
-    internal static void RenderSkipped(AnalysisSummary summary)
-    {
-        if (summary.Skipped.Count == 0)
-        {
-            return;
-        }
-
-        AnsiConsole.WriteLine();
-        var table = new Table().Border(TableBorder.Rounded);
-        table.Title(new TableTitle($"[yellow]{Markup.Escape(CliResources.HtmlSkippedFiles)} ({summary.Skipped.Count:N0})[/]"));
-        table.AddColumn(CliResources.ColPath);
-        table.AddColumn(CliResources.ColReason);
-        foreach (var entry in summary.Skipped)
-        {
-            table.AddRow(Markup.Escape(entry.Path), Markup.Escape(entry.Reason));
-        }
-
-        AnsiConsole.Write(table);
     }
 
     internal static void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false)
@@ -160,6 +140,26 @@ public sealed class TableRenderer : IResultRenderer
             AddFileTotalRow(table, summary, noHealth);
             AnsiConsole.Write(table);
         }
+    }
+
+    internal static void RenderSkipped(AnalysisSummary summary)
+    {
+        if (summary.Skipped.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        var table = new Table().Border(TableBorder.Rounded);
+        table.Title(new TableTitle($"[yellow]{Markup.Escape("Skipped Files")} ({summary.Skipped.Count:N0})[/]"));
+        table.AddColumn("Path");
+        table.AddColumn("Reason");
+        foreach (var entry in summary.Skipped)
+        {
+            table.AddRow(Markup.Escape(entry.Path), Markup.Escape(entry.Reason));
+        }
+
+        AnsiConsole.Write(table);
     }
 
     private static void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool indented = false, string treePrefix = "")
@@ -203,7 +203,7 @@ public sealed class TableRenderer : IResultRenderer
         if (noHealth)
         {
             table.AddRow(
-                $"[bold]{CliResources.RowTotal}[/]",
+                $"[bold]{"Total"}[/]",
                 $"[bold]{summary.FileCount:N0}[/]",
                 totalCodeCell,
                 totalCommentCell,
@@ -213,7 +213,7 @@ public sealed class TableRenderer : IResultRenderer
         else
         {
             table.AddRow(
-                $"[bold]{CliResources.RowTotal}[/]",
+                $"[bold]{"Total"}[/]",
                 $"[bold]{summary.FileCount:N0}[/]",
                 totalCodeCell,
                 totalCommentCell,
@@ -271,12 +271,12 @@ public sealed class TableRenderer : IResultRenderer
         var density = (double)comment / codeAndComment;
         var (color, label) = density switch
         {
-            <= 0.0 => ("red", CliResources.HealthNone),
-            < 0.05 => ("red", CliResources.HealthLow),
-            < 0.10 => ("yellow", CliResources.HealthFair),
-            < 0.25 => ("green", CliResources.HealthGood),
-            < 0.40 => ("yellow", CliResources.HealthHigh),
-            _ => ("red", CliResources.HealthDense)
+            <= 0.0 => ("red", "None"),
+            < 0.05 => ("red", "Low"),
+            < 0.10 => ("yellow", "Fair"),
+            < 0.25 => ("green", "Good"),
+            < 0.40 => ("yellow", "High"),
+            _ => ("red", "Dense")
         };
 
         return $"[{color}]■ {label}[/]";
@@ -320,15 +320,15 @@ public sealed class TableRenderer : IResultRenderer
     private static Table CreateFileTable(bool noHealth)
     {
         var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn(CliResources.ColFile);
-        table.AddColumn(CliResources.ColLanguage);
-        table.AddColumn(new TableColumn(CliResources.ColCode).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColComment).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColBlank).RightAligned());
-        table.AddColumn(new TableColumn(CliResources.ColTotal).RightAligned());
+        table.AddColumn("File");
+        table.AddColumn("Language");
+        table.AddColumn(new TableColumn("Code").RightAligned());
+        table.AddColumn(new TableColumn("Comment").RightAligned());
+        table.AddColumn(new TableColumn("Blank").RightAligned());
+        table.AddColumn(new TableColumn("Total").RightAligned());
         if (!noHealth)
         {
-            table.AddColumn(CliResources.ColHealth);
+            table.AddColumn("Comment Health");
         }
         return table;
     }
@@ -381,7 +381,7 @@ public sealed class TableRenderer : IResultRenderer
 
             if (filesShown < total)
             {
-                AnsiConsole.Markup($"[grey]{string.Format(CliResources.PaginationPrompt, filesShown, total)}[/] ");
+                AnsiConsole.Markup($"[grey]-- {filesShown}/{total} shown, press any key to continue, [bold]Q[/] to stop --[/] ");
                 var key = Console.ReadKey(intercept: true);
                 AnsiConsole.WriteLine();
                 if (key.Key == ConsoleKey.Q)

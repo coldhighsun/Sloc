@@ -188,7 +188,7 @@ public sealed class AnalyzeHandler
                         {
                             ctx.UpdateTarget(TableRenderer.BuildLanguageTable(
                                 new AnalysisSummary(results),
-                                $"[grey]{string.Format(CliResources.MsgAnalyzingProgress, results.Count.ToString("N0"), files.Count.ToString("N0"))}[/]",
+                                $"[grey]Analyzing... {results.Count:N0} / {files.Count:N0}[/]",
                                 noHealth: options.NoHealth));
                             sw.Restart();
                         }
@@ -204,7 +204,7 @@ public sealed class AnalyzeHandler
                 .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
                 .Start(ctx =>
                 {
-                    var task = ctx.AddTask($"[green]{CliResources.MsgAnalyzing}[/]", maxValue: files.Count);
+                    var task = ctx.AddTask("[green]Analyzing[/]", maxValue: files.Count);
                     foreach (var file in files)
                     {
                         AnalyzeFile(file);
@@ -219,20 +219,20 @@ public sealed class AnalyzeHandler
             var outputFile = options.OutputFile ?? "sloc-report.json";
             using var writer = new StreamWriter(outputFile, append: false, System.Text.Encoding.UTF8);
             new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth);
-            AnsiConsole.MarkupLine($"[green]{CliResources.MsgSavedTo}[/] {Markup.Escape(outputFile)}");
+            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(outputFile)}");
         }
         else if (options.Format == OutputFormat.Html)
         {
             var outputFile = options.OutputFile ?? "sloc-report.html";
             using var writer = new StreamWriter(outputFile, append: false, System.Text.Encoding.UTF8);
             new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth);
-            AnsiConsole.MarkupLine($"[green]{CliResources.MsgSavedTo}[/] {Markup.Escape(outputFile)}");
+            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(outputFile)}");
         }
         else
         {
             if (summary.FileCount == 0)
             {
-                AnsiConsole.MarkupLine($"[yellow]{CliResources.MsgNoFilesMatched}[/]");
+                AnsiConsole.MarkupLine("[yellow]No files matched.[/]");
             }
             else if (options.ByFile)
             {

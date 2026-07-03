@@ -1,8 +1,7 @@
-﻿using System.Globalization;
-using System.Net;
-using System.Text;
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using System.Net;
+using System.Text;
 
 namespace Sloc.Cli.Output;
 
@@ -198,20 +197,19 @@ public sealed class HtmlRenderer : IResultRenderer
 
     private static void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth)
     {
-        var htmlLang = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh" ? "zh-Hans" : "en";
         sb.AppendLine("<!DOCTYPE html>");
-        sb.AppendLine($"<html lang=\"{htmlLang}\">");
+        sb.AppendLine("<html lang=\"en\">");
         sb.AppendLine("<head>");
         sb.AppendLine("  <meta charset=\"UTF-8\">");
         sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"  <title>{Encode(CliResources.HtmlTitle)}</title>");
+        sb.AppendLine($"  <title>{Encode("Sloc Report")}</title>");
         sb.AppendLine("  <style>");
         sb.AppendLine(Css);
         sb.AppendLine("  </style>");
         sb.AppendLine("</head>");
         sb.AppendLine("<body>");
-        sb.AppendLine($"<h1>{Encode(CliResources.HtmlTitle)}</h1>");
-        sb.AppendLine($"<p class=\"meta\">{CliResources.HtmlGenerated} {Encode(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"))} &nbsp;|&nbsp; {summary.FileCount:N0} {CliResources.HtmlFilesUnit} &nbsp;|&nbsp; {summary.Total:N0} {CliResources.HtmlTotalLines}</p>");
+        sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
+        sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"))} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
 
         if (byFile)
         {
@@ -235,33 +233,16 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine("</html>");
     }
 
-    private static void BuildSkippedSection(StringBuilder sb, AnalysisSummary summary)
-    {
-        sb.AppendLine($"<h2>{Encode(CliResources.HtmlSkippedFiles)} ({summary.Skipped.Count:N0})</h2>");
-        sb.AppendLine("<table>");
-        sb.AppendLine($"  <thead><tr><th>{Encode(CliResources.ColPath)}</th><th>{Encode(CliResources.ColReason)}</th></tr></thead>");
-        sb.AppendLine("  <tbody>");
-        foreach (var entry in summary.Skipped)
-        {
-            sb.Append("    <tr>");
-            sb.Append($"<td>{Encode(entry.Path)}</td>");
-            sb.Append($"<td>{Encode(entry.Reason)}</td>");
-            sb.AppendLine("</tr>");
-        }
-        sb.AppendLine("  </tbody>");
-        sb.AppendLine("</table>");
-    }
-
     private static void BuildFileSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)
     {
-        sb.AppendLine($"<h2>{Encode(CliResources.HtmlByFile)}</h2>");
+        sb.AppendLine($"<h2>{Encode("By File")}</h2>");
         sb.AppendLine("<div class=\"file-controls\">");
-        sb.AppendLine($"  <button id=\"collapse-all\" class=\"control-btn\" type=\"button\">{Encode(CliResources.HtmlCollapseAll)}</button>");
-        sb.AppendLine($"  <button id=\"expand-all\" class=\"control-btn\" type=\"button\">{Encode(CliResources.HtmlExpandAll)}</button>");
+        sb.AppendLine($"  <button id=\"collapse-all\" class=\"control-btn\" type=\"button\">{Encode("Collapse All")}</button>");
+        sb.AppendLine($"  <button id=\"expand-all\" class=\"control-btn\" type=\"button\">{Encode("Expand All")}</button>");
         sb.AppendLine("</div>");
         sb.AppendLine("<table id=\"by-file-table\">");
-        var healthTh = noHealth ? string.Empty : $"<th>{Encode(CliResources.ColHealth)}</th>";
-        sb.AppendLine($"  <thead><tr><th>{Encode(CliResources.ColFile)}</th><th>{Encode(CliResources.ColLanguage)}</th><th class=\"r\">{Encode(CliResources.ColCode)}</th><th class=\"r\">{Encode(CliResources.ColComment)}</th><th class=\"r\">{Encode(CliResources.ColBlank)}</th><th class=\"r\">{Encode(CliResources.ColTotal)}</th>{healthTh}</tr></thead>");
+        var healthTh = noHealth ? string.Empty : $"<th>{Encode("Comment Health")}</th>";
+        sb.AppendLine($"  <thead><tr><th>{Encode("File")}</th><th>{Encode("Language")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}</tr></thead>");
         sb.AppendLine("  <tbody>");
 
         var root = BuildFolderTree(summary.Files);
@@ -279,7 +260,7 @@ public sealed class HtmlRenderer : IResultRenderer
             var rootId = $"folder-{folderIndex}";
             folderIndex++;
 
-            RenderFolderRow(sb, rootId, null, CliResources.HtmlRoot, root, 0, noHealth);
+            RenderFolderRow(sb, rootId, null, "(root)", root, 0, noHealth);
 
             foreach (var file in root.Files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -301,8 +282,8 @@ public sealed class HtmlRenderer : IResultRenderer
 
         sb.AppendLine("  </tbody>");
         sb.Append("  <tfoot><tr>");
-        sb.Append($"<td>{Encode(CliResources.RowTotal)}</td>");
-        sb.Append($"<td class=\"r\">{summary.FileCount:N0} {Encode(CliResources.HtmlFilesUnit)}</td>");
+        sb.Append($"<td>{Encode("Total")}</td>");
+        sb.Append($"<td class=\"r\">{summary.FileCount:N0} {Encode("files")}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth)}</td>");
@@ -357,10 +338,10 @@ public sealed class HtmlRenderer : IResultRenderer
 
     private static void BuildLanguageSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)
     {
-        sb.AppendLine($"<h2>{Encode(CliResources.HtmlByLanguage)}</h2>");
+        sb.AppendLine($"<h2>{Encode("By Language")}</h2>");
         sb.AppendLine("<table>");
-        var healthTh = noHealth ? string.Empty : $"<th>{Encode(CliResources.ColHealth)}</th>";
-        sb.AppendLine($"  <thead><tr><th>{Encode(CliResources.ColLanguage)}</th><th class=\"r\">{Encode(CliResources.ColFiles)}</th><th class=\"r\">{Encode(CliResources.ColCode)}</th><th class=\"r\">{Encode(CliResources.ColComment)}</th><th class=\"r\">{Encode(CliResources.ColBlank)}</th><th class=\"r\">{Encode(CliResources.ColTotal)}</th>{healthTh}</tr></thead>");
+        var healthTh = noHealth ? string.Empty : $"<th>{Encode("Comment Health")}</th>";
+        sb.AppendLine($"  <thead><tr><th>{Encode("Language")}</th><th class=\"r\">{Encode("Files")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}</tr></thead>");
         sb.AppendLine("  <tbody>");
 
         foreach (var lang in summary.ByLanguage)
@@ -381,7 +362,7 @@ public sealed class HtmlRenderer : IResultRenderer
 
         sb.AppendLine("  </tbody>");
         sb.Append("  <tfoot><tr>");
-        sb.Append($"<td>{Encode(CliResources.RowTotal)}</td>");
+        sb.Append($"<td>{Encode("Total")}</td>");
         sb.Append($"<td class=\"r\">{summary.FileCount:N0}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
@@ -395,6 +376,23 @@ public sealed class HtmlRenderer : IResultRenderer
         {
             sb.AppendLine("<td></td></tr></tfoot>");
         }
+        sb.AppendLine("</table>");
+    }
+
+    private static void BuildSkippedSection(StringBuilder sb, AnalysisSummary summary)
+    {
+        sb.AppendLine($"<h2>{Encode("Skipped Files")} ({summary.Skipped.Count:N0})</h2>");
+        sb.AppendLine("<table>");
+        sb.AppendLine($"  <thead><tr><th>{Encode("Path")}</th><th>{Encode("Reason")}</th></tr></thead>");
+        sb.AppendLine("  <tbody>");
+        foreach (var entry in summary.Skipped)
+        {
+            sb.Append("    <tr>");
+            sb.Append($"<td>{Encode(entry.Path)}</td>");
+            sb.Append($"<td>{Encode(entry.Reason)}</td>");
+            sb.AppendLine("</tr>");
+        }
+        sb.AppendLine("  </tbody>");
         sb.AppendLine("</table>");
     }
 
@@ -465,12 +463,12 @@ public sealed class HtmlRenderer : IResultRenderer
         var density = (double)comment / codeAndComment;
         var (cls, label) = density switch
         {
-            <= 0.0 => ("h-none", CliResources.HealthNone),
-            < 0.05 => ("h-low", CliResources.HealthLow),
-            < 0.10 => ("h-fair", CliResources.HealthFair),
-            < 0.25 => ("h-good", CliResources.HealthGood),
-            < 0.40 => ("h-high", CliResources.HealthHigh),
-            _ => ("h-dense", CliResources.HealthDense)
+            <= 0.0 => ("h-none", "None"),
+            < 0.05 => ("h-low", "Low"),
+            < 0.10 => ("h-fair", "Fair"),
+            < 0.25 => ("h-good", "Good"),
+            < 0.40 => ("h-high", "High"),
+            _ => ("h-dense", "Dense")
         };
 
         return $"<span class=\"{cls}\">{label}</span>";
@@ -492,12 +490,12 @@ public sealed class HtmlRenderer : IResultRenderer
         var density = (double)comment / codeAndComment;
         var (cls, label) = density switch
         {
-            <= 0.0 => ("h-none", CliResources.HealthNone),
-            < 0.05 => ("h-low", CliResources.HealthLow),
-            < 0.10 => ("h-fair", CliResources.HealthFair),
-            < 0.25 => ("h-good", CliResources.HealthGood),
-            < 0.40 => ("h-high", CliResources.HealthHigh),
-            _ => ("h-dense", CliResources.HealthDense)
+            <= 0.0 => ("h-none", "None"),
+            < 0.05 => ("h-low", "Low"),
+            < 0.10 => ("h-fair", "Fair"),
+            < 0.25 => ("h-good", "Good"),
+            < 0.40 => ("h-high", "High"),
+            _ => ("h-dense", "Dense")
         };
 
         return $"<span class=\"{cls}\">{label}</span>";
@@ -569,7 +567,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<span>{Encode(label)}</span>");
         sb.Append("</div>");
         sb.Append("</td>");
-        sb.Append($"<td>{node.FileCount:N0} {CliResources.HtmlFilesUnit}</td>");
+        sb.Append($"<td>{node.FileCount:N0} {"files"}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Code, node.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Comment, node.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Blank, node.Total, noHealth)}</td>");
