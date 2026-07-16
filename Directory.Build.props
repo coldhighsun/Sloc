@@ -6,7 +6,6 @@
         <UseArtifactsOutput>true</UseArtifactsOutput>
         <LangVersion>latest</LangVersion>
         <WarningsAsErrors>true</WarningsAsErrors>
-        <GenerateDocumentationFile>True</GenerateDocumentationFile>
         <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
         <DebugType>embedded</DebugType>
     </PropertyGroup>

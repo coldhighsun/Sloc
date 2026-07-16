@@ -4,8 +4,11 @@
         <File Path=".github/workflows/ci.yml" />
     </Folder>
 <Folder Name="/assets/">
+    <File Path=".gitignore" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
+    <File Path="LICENSE.txt" />
+    <File Path="NuGet.Config" />
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
