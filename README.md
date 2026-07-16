@@ -1,4 +1,7 @@
-﻿# Sloc
+﻿<a id="english"></a>
+# Sloc
+
+[English](#english) | [中文](#中文)
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
@@ -22,7 +25,13 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 
 ## Installation
 
-Install as a .NET global tool (requires .NET 8 SDK):
+Install via [winget](https://learn.microsoft.com/windows/package-manager/winget/) (Windows):
+
+```bash
+winget install coldhighsun.sloc
+```
+
+Or install as a .NET global tool (requires .NET 8 SDK):
 
 ```bash
 dotnet tool install --global Sloc
@@ -31,6 +40,9 @@ dotnet tool install --global Sloc
 Update or uninstall:
 
 ```bash
+winget upgrade coldhighsun.sloc
+winget uninstall coldhighsun.sloc
+
 dotnet tool update --global Sloc
 dotnet tool uninstall --global Sloc
 ```
@@ -159,11 +171,15 @@ This project is released under the [MIT License](https://opensource.org/licenses
 
 ---
 
+<a id="中文"></a>
 # Sloc
+
+[English](#english) | [中文](#中文)
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc)](https://www.nuget.org/packages/Sloc)
+[![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 23 种语言自动识别、三种输出格式（表格、JSON、HTML）、逐文件明细视图以及注释健康度指标。
@@ -182,7 +198,13 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 
 ## 安装
 
-作为 .NET 全局工具安装（需要 .NET 8 SDK）：
+通过 [winget](https://learn.microsoft.com/windows/package-manager/winget/) 安装（Windows）：
+
+```bash
+winget install coldhighsun.sloc
+```
+
+或作为 .NET 全局工具安装（需要 .NET 8 SDK）：
 
 ```bash
 dotnet tool install --global Sloc
@@ -191,6 +213,9 @@ dotnet tool install --global Sloc
 更新或卸载：
 
 ```bash
+winget upgrade coldhighsun.sloc
+winget uninstall coldhighsun.sloc
+
 dotnet tool update --global Sloc
 dotnet tool uninstall --global Sloc
 ```

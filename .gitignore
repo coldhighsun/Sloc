@@ -40,3 +40,4 @@ coverage*.info
 ## Misc
 *.log
 *.tmp
+/src/Sloc.Cli/Properties/PublishProfiles/FolderProfile.pubxml
