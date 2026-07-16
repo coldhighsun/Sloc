@@ -39,7 +39,7 @@ The solution has three projects:
 
 ## Key Configuration
 
-- **`Directory.Build.props`** — global settings: targets `net8.0`, nullable enabled, warnings-as-errors, XML doc generation
+- **`Directory.Build.props`** — global settings: targets `net8.0`, nullable enabled, warnings-as-errors, artifacts output layout
 - **`Directory.Packages.props`** — central NuGet version management; add new packages here, not in individual `.csproj` files
 - **Versioning** — MinVer derives the NuGet version automatically from git tags (`v*`); do not set `<Version>` manually. CI publish/pack/release jobs only run on `v*` tag pushes.
 
