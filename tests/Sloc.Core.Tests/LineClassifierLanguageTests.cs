@@ -73,6 +73,36 @@ public class LineClassifierLanguageTests
         Assert.False(classifier.InBlockComment);
     }
 
+    /// <summary>
+    /// Verifies that a Lua <c>--[[ ]]</c> block comment spanning lines is classified as
+    /// comment and closes correctly.
+    /// </summary>
+    [Fact]
+    public void Classify_LuaBlockComment_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".lua"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("--[[ start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("end ]]"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that Haskell <c>{- -}</c> block comments nest.
+    /// </summary>
+    [Fact]
+    public void Classify_HaskellNestedBlockComment_RequiresMatchingCloses()
+    {
+        var classifier = new LineClassifier(Resolve(".hs"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("{- outer {- inner -}"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment -}"));
+        Assert.False(classifier.InBlockComment);
+    }
+
     private static LanguageDefinition Resolve(string extension)
     {
         LanguageRegistry.TryGetByExtension(extension, out var language);

@@ -9,13 +9,13 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 23 auto-detected languages, three output formats (table, JSON, HTML), per-file detail view, and comment health indicators.
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 34 auto-detected languages, three output formats (table, JSON, HTML), per-file detail view, and comment health indicators.
 
 ## Features
 
 - Count code / comment / blank / total lines
 - Correctly handles single-line comments, block comments, and multi-line block comments
-- Built-in comment rules for 23 common languages (auto-detected by file extension)
+- Built-in comment rules for 34 common languages (auto-detected by file extension)
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
 - Three output formats: colored table (default), JSON, and HTML
@@ -136,7 +136,7 @@ With `--by-file` (tree view per file):
 
 ## Supported Languages
 
-C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less.
+C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less, Dart, Scala, R, Lua, Perl, Elixir, Haskell, Objective-C, TOML, Markdown, Terraform.
 
 > Files with unknown extensions are grouped as `Other` when using `--all`, with only code lines and blank lines distinguished.
 
@@ -180,7 +180,7 @@ This project is released under the [MIT License](https://opensource.org/licenses
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 23 种语言自动识别、三种输出格式（表格、JSON、HTML）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 34 种语言自动识别、三种输出格式（表格、JSON、HTML）、逐文件明细视图以及注释健康度指标。
 
 ## 功能特性
 
@@ -307,7 +307,7 @@ sloc ./src --no-recursive
 
 ## 支持的语言
 
-C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less。
+C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less、Dart、Scala、R、Lua、Perl、Elixir、Haskell、Objective-C、TOML、Markdown、Terraform。
 
 > 扩展名未知的文件在使用 `--all` 时会被归入 `Other` 类别，仅区分代码行与空行。
 

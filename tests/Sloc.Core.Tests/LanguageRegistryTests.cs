@@ -99,6 +99,31 @@ public class LanguageRegistryTests
     }
 
     /// <summary>
+    /// Verifies that the newly added languages resolve from their extensions.
+    /// </summary>
+    /// <param name="extension">An extension to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData(".dart", "Dart")]
+    [InlineData(".scala", "Scala")]
+    [InlineData(".lua", "Lua")]
+    [InlineData(".hs", "Haskell")]
+    [InlineData(".m", "Objective-C")]
+    [InlineData(".toml", "TOML")]
+    [InlineData(".md", "Markdown")]
+    [InlineData(".tf", "Terraform")]
+    [InlineData(".ex", "Elixir")]
+    [InlineData(".pl", "Perl")]
+    [InlineData(".r", "R")]
+    public void TryGetByExtension_NewLanguages_Resolve(string extension, string expectedName)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.True(found);
+        Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
     /// Verifies that languages with comment tokens and <c>ShowHealth</c> support health
     /// analysis, while data/markup languages and unknown names do not.
     /// </summary>
