@@ -97,4 +97,21 @@ public class LanguageRegistryTests
         Assert.False(found);
         Assert.Null(language);
     }
+
+    /// <summary>
+    /// Verifies that languages with comment tokens and <c>ShowHealth</c> support health
+    /// analysis, while data/markup languages and unknown names do not.
+    /// </summary>
+    /// <param name="name">The language display name to check.</param>
+    /// <param name="expected">Whether health analysis is expected to be supported.</param>
+    [Theory]
+    [InlineData("C#", true)]
+    [InlineData("Python", true)]
+    [InlineData("JSON", false)]
+    [InlineData("YAML", false)]
+    [InlineData("Nonexistent", false)]
+    public void SupportsHealth_MatchesLanguageMetadata(string name, bool expected)
+    {
+        Assert.Equal(expected, LanguageRegistry.SupportsHealth(name));
+    }
 }

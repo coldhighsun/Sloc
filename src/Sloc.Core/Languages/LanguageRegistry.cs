@@ -10,6 +10,8 @@ public static class LanguageRegistry
 {
     private static readonly IReadOnlyList<LanguageDefinition> AllLanguages = CreateLanguages();
     private static readonly IReadOnlyDictionary<string, LanguageDefinition> ExtensionLookup = CreateLookup(AllLanguages);
+    private static readonly IReadOnlyDictionary<string, bool> HealthSupportByName =
+        AllLanguages.ToDictionary(language => language.Name, language => language.SupportsHealth, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Gets every language known to the registry.
@@ -49,6 +51,17 @@ public static class LanguageRegistry
         var extension = Path.GetExtension(path);
         return TryGetByExtension(extension, out language);
     }
+
+    /// <summary>
+    /// Determines whether comment-health analysis is meaningful for the language with
+    /// the given display name. Unknown names are treated as unsupported.
+    /// </summary>
+    /// <param name="name">The language display name (e.g. "C#").</param>
+    /// <returns>
+    /// <see langword="true"/> if the language supports health analysis; otherwise <see langword="false"/>.
+    /// </returns>
+    public static bool SupportsHealth(string name) =>
+        name is not null && HealthSupportByName.TryGetValue(name, out var supports) && supports;
 
     private static IReadOnlyList<LanguageDefinition> CreateLanguages()
     {

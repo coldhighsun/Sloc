@@ -46,4 +46,12 @@ public sealed class LanguageDefinition
     /// where comment-density analysis is not meaningful.
     /// </summary>
     public bool ShowHealth { get; init; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether comment-health analysis is meaningful for this
+    /// language: the language opts in via <see cref="ShowHealth"/> and actually defines
+    /// at least one comment token.
+    /// </summary>
+    public bool SupportsHealth =>
+        ShowHealth && (LineCommentTokens.Count > 0 || BlockComments.Count > 0);
 }

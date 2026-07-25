@@ -1,4 +1,3 @@
-using Sloc.Core.Languages;
 using Sloc.Core.Models;
 using Spectre.Console;
 
@@ -7,36 +6,9 @@ namespace Sloc.Cli.Output;
 /// <summary>
 /// Renders analysis results as colored tables using Spectre.Console.
 /// </summary>
-public sealed class TableRenderer : IResultRenderer
+public static class TableRenderer
 {
-    private static readonly IReadOnlyDictionary<string, bool> CommentSupportByLanguage =
-            LanguageRegistry.Languages.ToDictionary(
-                l => l.Name,
-                l => l.ShowHealth && (l.LineCommentTokens.Count > 0 || l.BlockComments.Count > 0),
-                StringComparer.OrdinalIgnoreCase);
-
     private readonly record struct DisplayItem(bool IsFolder, string FolderPath, FileAnalysis? File, string TreePrefix = "");
-
-    /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth)
-    {
-        ArgumentNullException.ThrowIfNull(summary);
-
-        if (summary.FileCount == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No files matched.[/]");
-            return;
-        }
-
-        if (byFile)
-        {
-            RenderByFile(summary, noHealth);
-        }
-        else
-        {
-            RenderByLanguage(summary, noHealth);
-        }
-    }
 
     internal static Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false)
     {
@@ -82,7 +54,7 @@ public sealed class TableRenderer : IResultRenderer
                     commentCell,
                     blankCell,
                     language.Total.ToString("N0"),
-                    BuildHealthCell(language));
+                    BuildHealthCell(language.Health));
             }
         }
 
@@ -164,7 +136,6 @@ public sealed class TableRenderer : IResultRenderer
 
     private static void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool indented = false, string treePrefix = "")
     {
-        var hasCommentSupport = CommentSupportByLanguage.TryGetValue(file.Language, out var supports) && supports;
         var codeCell = noHealth ? file.Code.ToString("N0") : WithPercent(file.Code, file.Total);
         var commentCell = noHealth ? file.Comment.ToString("N0") : WithPercent(file.Comment, file.Total);
         var blankCell = noHealth ? file.Blank.ToString("N0") : WithPercent(file.Blank, file.Total);
@@ -190,7 +161,7 @@ public sealed class TableRenderer : IResultRenderer
                 commentCell,
                 blankCell,
                 file.Total.ToString("N0"),
-                BuildHealthCell(file.Code, file.Comment, hasCommentSupport));
+                BuildHealthCell(file.Health));
         }
     }
 
@@ -249,37 +220,24 @@ public sealed class TableRenderer : IResultRenderer
         return items;
     }
 
-    private static string BuildHealthCell(LanguageStatistics stats)
+    private static string BuildHealthCell(CommentHealthLevel health)
     {
-        var hasCommentSupport = CommentSupportByLanguage.TryGetValue(stats.Language, out var supports) && supports;
-        return BuildHealthCell(stats.Code, stats.Comment, hasCommentSupport);
-    }
-
-    private static string BuildHealthCell(int code, int comment, bool hasCommentSupport)
-    {
-        if (!hasCommentSupport)
+        if (health == CommentHealthLevel.NotApplicable)
         {
             return "[grey]—[/]";
         }
 
-        var codeAndComment = code + comment;
-        if (codeAndComment == 0)
+        var color = health switch
         {
-            return "[grey]—[/]";
-        }
-
-        var density = (double)comment / codeAndComment;
-        var (color, label) = density switch
-        {
-            <= 0.0 => ("red", "None"),
-            < 0.05 => ("red", "Low"),
-            < 0.10 => ("yellow", "Fair"),
-            < 0.25 => ("green", "Good"),
-            < 0.40 => ("yellow", "High"),
-            _ => ("red", "Dense")
+            CommentHealthLevel.None => "red",
+            CommentHealthLevel.Low => "red",
+            CommentHealthLevel.Fair => "yellow",
+            CommentHealthLevel.Good => "green",
+            CommentHealthLevel.High => "yellow",
+            _ => "red"
         };
 
-        return $"[{color}]■ {label}[/]";
+        return $"[{color}]■ {health}[/]";
     }
 
     private static TreeNode BuildTree(IReadOnlyList<FileAnalysis> files)
@@ -390,11 +348,6 @@ public sealed class TableRenderer : IResultRenderer
                 }
             }
         }
-    }
-
-    private static void RenderByLanguage(AnalysisSummary summary, bool noHealth)
-    {
-        AnsiConsole.Write(BuildLanguageTable(summary, noHealth: noHealth));
     }
 
     private static bool ShouldPaginate(int fileCount, out int pageSize)

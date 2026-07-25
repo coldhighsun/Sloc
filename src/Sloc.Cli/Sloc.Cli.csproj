@@ -4,6 +4,15 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Sloc.Cli</RootNamespace>
     <AssemblyName>sloc</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Self-contained single-file publish only applies when a runtime identifier is
+    supplied (the CI publish job passes a RID). Without a RID the project stays
+    framework-dependent so it can be packed as a .NET global tool and referenced by
+    test projects (a self-contained exe cannot be referenced otherwise; NETSDK1151).
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <PublishTrimmed>true</PublishTrimmed>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
