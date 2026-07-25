@@ -88,6 +88,11 @@ public sealed class DirectoryScanner
     /// </summary>
     /// <param name="root">A file or directory path to scan.</param>
     /// <param name="options">The scan options.</param>
+    /// <param name="onFileFound">
+    /// An optional callback invoked each time a file is discovered and included in the
+    /// scan, receiving the running count and the file's full path. Used to report
+    /// progress on long-running scans; has no effect on the result.
+    /// </param>
     /// <returns>
     /// A <see cref="ScanResult"/> containing the discovered files and any paths
     /// that could not be enumerated due to I/O or access errors.
@@ -95,7 +100,7 @@ public sealed class DirectoryScanner
     /// <exception cref="DirectoryNotFoundException">
     /// The path does not exist.
     /// </exception>
-    public ScanResult Scan(string root, ScanOptions options)
+    public ScanResult Scan(string root, ScanOptions options, Action<int, string>? onFileFound = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -150,6 +155,7 @@ public sealed class DirectoryScanner
                 if (scanned is not null)
                 {
                     files.Add(scanned);
+                    onFileFound?.Invoke(files.Count, scanned.Path);
                 }
             }
         }
