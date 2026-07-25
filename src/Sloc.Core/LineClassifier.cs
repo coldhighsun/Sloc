@@ -9,15 +9,19 @@ namespace Sloc.Core;
 /// <see cref="LineKind.Comment"/>, or <see cref="LineKind.Blank"/>.
 /// </summary>
 /// <remarks>
-/// A classifier is stateful: it tracks an open block comment across calls to
-/// <see cref="Classify"/>, so a single instance must be used for the lines of a
-/// single file, in order. String literals are not parsed, so comment tokens that
-/// appear inside strings may be misclassified (a documented limitation).
+/// A classifier is stateful: it tracks open block comments and multi-line string
+/// literals across calls to <see cref="Classify"/>, so a single instance must be used
+/// for the lines of a single file, in order. Comment tokens appearing inside string
+/// literals are skipped for languages that declare their string delimiters. Verbatim
+/// and doubled-quote escaping (e.g. C# <c>@"…""…"</c>) is not modeled.
 /// </remarks>
 public sealed class LineClassifier
 {
     private readonly LanguageDefinition _language;
     private BlockComment? _activeBlock;
+    private int _blockDepth;
+    private StringLiteral? _activeString;
+    private bool _activeStringIsDoc;
 
     /// <summary>
     /// Creates a classifier for the supplied language.
@@ -36,7 +40,14 @@ public sealed class LineClassifier
     public bool InBlockComment => _activeBlock is not null;
 
     /// <summary>
-    /// Classifies a single physical line, advancing any block-comment state.
+    /// Gets a value indicating whether the classifier is currently inside an
+    /// unterminated multi-line string literal.
+    /// </summary>
+    public bool InMultilineString => _activeString is not null;
+
+    /// <summary>
+    /// Classifies a single physical line, advancing any block-comment or
+    /// multi-line-string state.
     /// </summary>
     /// <param name="line">The raw line content, without its line terminator.</param>
     /// <returns>
@@ -54,21 +65,13 @@ public sealed class LineClassifier
         {
             if (_activeBlock is not null)
             {
-                var close = _activeBlock.Close;
-                if (MatchesAt(line, index, close))
-                {
-                    sawComment = true;
-                    index += close.Length;
-                    _activeBlock = null;
-                    continue;
-                }
+                index = ConsumeBlock(line, index, ref sawComment);
+                continue;
+            }
 
-                if (!char.IsWhiteSpace(line[index]))
-                {
-                    sawComment = true;
-                }
-
-                index++;
+            if (_activeString is not null)
+            {
+                index = ConsumeString(line, index, ref sawCode, ref sawComment);
                 continue;
             }
 
@@ -77,6 +80,7 @@ public sealed class LineClassifier
                 sawComment = true;
                 index += block.Open.Length;
                 _activeBlock = block;
+                _blockDepth = 1;
                 continue;
             }
 
@@ -86,12 +90,29 @@ public sealed class LineClassifier
                 break;
             }
 
+            if (TryMatchStringOpen(line, index, out var literal))
+            {
+                // A doc-comment literal (e.g. Python docstring) only counts as a comment
+                // when it begins a statement; used as an expression it is a string.
+                _activeStringIsDoc = literal.IsDocComment && !sawCode;
+                MarkString(ref sawCode, ref sawComment);
+                index += literal.Delimiter.Length;
+                _activeString = literal;
+                continue;
+            }
+
             if (!char.IsWhiteSpace(line[index]))
             {
                 sawCode = true;
             }
 
             index++;
+        }
+
+        // A single-line string that never closed does not carry over to the next line.
+        if (_activeString is { Multiline: false })
+        {
+            _activeString = null;
         }
 
         if (sawCode)
@@ -107,6 +128,74 @@ public sealed class LineClassifier
         return LineKind.Blank;
     }
 
+    private int ConsumeBlock(string line, int index, ref bool sawComment)
+    {
+        var block = _activeBlock!;
+
+        if (block.AllowNested && MatchesBlockToken(line, index, block.Open, block))
+        {
+            _blockDepth++;
+            sawComment = true;
+            return index + block.Open.Length;
+        }
+
+        if (MatchesBlockToken(line, index, block.Close, block))
+        {
+            _blockDepth--;
+            sawComment = true;
+            if (_blockDepth <= 0)
+            {
+                _activeBlock = null;
+            }
+
+            return index + block.Close.Length;
+        }
+
+        if (!char.IsWhiteSpace(line[index]))
+        {
+            sawComment = true;
+        }
+
+        return index + 1;
+    }
+
+    private int ConsumeString(string line, int index, ref bool sawCode, ref bool sawComment)
+    {
+        var literal = _activeString!;
+
+        if (literal.AllowEscape && line[index] == literal.EscapeChar && index + 1 < line.Length)
+        {
+            MarkString(ref sawCode, ref sawComment);
+            return index + 2;
+        }
+
+        if (MatchesAt(line, index, literal.Delimiter))
+        {
+            MarkString(ref sawCode, ref sawComment);
+            _activeString = null;
+            return index + literal.Delimiter.Length;
+        }
+
+        if (!char.IsWhiteSpace(line[index]))
+        {
+            MarkString(ref sawCode, ref sawComment);
+        }
+
+        return index + 1;
+    }
+
+    private void MarkString(ref bool sawCode, ref bool sawComment)
+    {
+        if (_activeStringIsDoc)
+        {
+            sawComment = true;
+        }
+        else
+        {
+            sawCode = true;
+        }
+    }
+
     private static bool MatchesAt(string line, int index, string token)
     {
         if (token.Length == 0)
@@ -120,6 +209,16 @@ public sealed class LineClassifier
         }
 
         return string.CompareOrdinal(line, index, token, 0, token.Length) == 0;
+    }
+
+    private static bool MatchesBlockToken(string line, int index, string token, BlockComment block)
+    {
+        if (block.RequireLineStart && index != 0)
+        {
+            return false;
+        }
+
+        return MatchesAt(line, index, token);
     }
 
     private bool MatchesLineComment(string line, int index)
@@ -139,7 +238,7 @@ public sealed class LineClassifier
     {
         foreach (var candidate in _language.BlockComments)
         {
-            if (MatchesAt(line, index, candidate.Open))
+            if (MatchesBlockToken(line, index, candidate.Open, candidate))
             {
                 block = candidate;
                 return true;
@@ -147,6 +246,21 @@ public sealed class LineClassifier
         }
 
         block = null;
+        return false;
+    }
+
+    private bool TryMatchStringOpen(string line, int index, [NotNullWhen(true)] out StringLiteral? literal)
+    {
+        foreach (var candidate in _language.StringLiterals)
+        {
+            if (MatchesAt(line, index, candidate.Delimiter))
+            {
+                literal = candidate;
+                return true;
+            }
+        }
+
+        literal = null;
         return false;
     }
 }
