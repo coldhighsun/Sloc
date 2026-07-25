@@ -72,6 +72,11 @@ var minCommentPctOption = new Option<double?>("--min-comment-pct")
     Description = "Fail (exit code 2) if the overall comment percentage is below this value."
 };
 
+var jobsOption = new Option<int?>("--jobs", "-j")
+{
+    Description = "Maximum number of files to analyze in parallel. Defaults to the processor count; use 1 for sequential."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -86,7 +91,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     noHealthOption,
     quietOption,
     noProgressOption,
-    minCommentPctOption
+    minCommentPctOption,
+    jobsOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -125,7 +131,8 @@ rootCommand.SetAction(parseResult =>
         NoHealth = parseResult.GetValue(noHealthOption),
         Quiet = parseResult.GetValue(quietOption),
         NoProgress = parseResult.GetValue(noProgressOption),
-        MinCommentPct = parseResult.GetValue(minCommentPctOption)
+        MinCommentPct = parseResult.GetValue(minCommentPctOption),
+        Jobs = parseResult.GetValue(jobsOption)
     };
 
     return new AnalyzeHandler().Execute(options);

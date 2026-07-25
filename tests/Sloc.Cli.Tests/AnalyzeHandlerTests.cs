@@ -137,6 +137,33 @@ public sealed class AnalyzeHandlerTests : IDisposable
         Assert.Equal(ExitCode.Success, exitCode);
     }
 
+    /// <summary>
+    /// Verifies that sequential (<c>--jobs 1</c>) and parallel analysis produce
+    /// byte-identical JSON output, confirming the merge order is deterministic.
+    /// </summary>
+    [Fact]
+    public void Execute_ParallelAndSequential_ProduceIdenticalOutput()
+    {
+        for (var i = 0; i < 50; i++)
+        {
+            File.WriteAllText(Path.Combine(_root, $"file{i:D3}.cs"), $"// file {i}\nint x = {i};\n\n");
+        }
+
+        string Run(int jobs) => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            ByFile = true,
+            Quiet = true,
+            Jobs = jobs
+        }));
+
+        var sequential = Run(1);
+        var parallel = Run(8);
+
+        Assert.Equal(sequential, parallel);
+    }
+
     private static string CaptureStdout(Action action)
     {
         var original = Console.Out;
