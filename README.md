@@ -108,10 +108,14 @@ sloc ./src --no-recursive
 | `--no-progress` | | Suppress the live table and progress bar |
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
+| `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
+| `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
 
 `Json` output is written to stdout by default (so it can be piped, e.g. `sloc . -f json | jq`); pass `--output` to write a file instead.
+
+`.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed.
 
 ### Exit Codes
 
@@ -275,10 +279,14 @@ sloc ./src --no-recursive
 | `--no-progress` | | 抑制实时表格和进度条 |
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
+| `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
+| `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
 
 `Json` 默认输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output` 则写入文件。
+
+默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化。
 
 ### 退出码
 
