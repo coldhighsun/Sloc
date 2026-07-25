@@ -21,6 +21,11 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Three output formats: colored table (default), JSON, and HTML
 - Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense)
 - Format auto-detected from the `--output` file extension (`.json` → JSON, `.html` / `.htm` → HTML)
+- Honors `.gitignore` files (including nested ones) by default; `--no-gitignore` disables it
+- Parallel analysis across CPU cores (`--jobs`), with deterministic output
+- CI-friendly: JSON to stdout for piping (e.g. `| jq`), meaningful exit codes, and a `--min-comment-pct` threshold gate
+- Compare against a saved JSON report with `--baseline` to see how line counts changed
+- Sort and limit the language summary with `--sort` / `--top`
 - Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end
 
 ## Installation
@@ -88,6 +93,19 @@ sloc . --all
 
 # Do not recurse into subdirectories
 sloc ./src --no-recursive
+
+# Pipe JSON to jq
+sloc . --format json | jq .total
+
+# Fail CI if comments are below 10% of lines
+sloc . --min-comment-pct 10
+
+# Save a baseline, then diff a later run against it
+sloc . --format json --output baseline.json
+sloc . --baseline baseline.json
+
+# Sort by comment lines and show only the top 5 languages
+sloc . --sort comment --top 5
 ```
 
 ### Options
@@ -188,12 +206,17 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 
 - 统计代码行 / 注释行 / 空行 / 总行数
 - 正确处理单行注释、块注释以及跨多行的块注释
-- 内置 23 种常见语言的注释规则（按文件扩展名自动识别）
+- 内置 34 种常见语言的注释规则（按文件扩展名自动识别）
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
 - 三种输出格式：彩色表格（默认）、JSON 与 HTML
 - 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密）
 - 未指定 `--format` 时，可根据 `--output` 文件扩展名自动推断格式（`.json` → JSON，`.html` / `.htm` → HTML）
+- 默认遵循 `.gitignore` 文件（含子目录中的）；`--no-gitignore` 可禁用
+- 跨 CPU 核心并行分析（`--jobs`），输出保持确定性
+- 适配 CI：JSON 可输出到标准输出便于管道处理（例如 `| jq`）、提供有意义的退出码、以及 `--min-comment-pct` 阈值门禁
+- 通过 `--baseline` 与已保存的 JSON 报告对比，查看行数变化
+- 通过 `--sort` / `--top` 对语言汇总排序和限制条数
 - 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因
 
 ## 安装
@@ -261,6 +284,19 @@ sloc . --all
 
 # 不递归子目录
 sloc ./src --no-recursive
+
+# 将 JSON 通过管道传给 jq
+sloc . --format json | jq .total
+
+# 若注释占比低于 10% 则让 CI 失败
+sloc . --min-comment-pct 10
+
+# 保存基线，之后与后续运行对比
+sloc . --format json --output baseline.json
+sloc . --baseline baseline.json
+
+# 按注释行排序，仅显示前 5 种语言
+sloc . --sort comment --top 5
 ```
 
 ### 选项
