@@ -2,7 +2,6 @@ using Sloc.Cli.Output;
 using Sloc.Core;
 using Sloc.Core.Models;
 using Spectre.Console;
-using System.Diagnostics;
 using System.Reflection;
 
 namespace Sloc.Cli;
@@ -135,6 +134,16 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// The maximum number of files to analyze in parallel. When <see langword="null"/>
+    /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
+    /// fully sequential analysis.
+    /// </summary>
+    public int? Jobs
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -212,56 +221,66 @@ public sealed class AnalyzeHandler
         }
 
         var files = scanResult.Files;
-        var results = new List<FileAnalysis>(files.Count);
         var skipped = new List<SkippedEntry>(scanResult.Skipped);
 
-        void AnalyzeFile(ScannedFile file)
+        // Analyze into fixed slots so the merged order is deterministic (scan order),
+        // independent of the degree of parallelism.
+        var analyses = new FileAnalysis?[files.Count];
+        var fileSkips = new SkippedEntry?[files.Count];
+        var aggregator = new LiveAggregator();
+
+        void AnalyzeAt(int i)
         {
             try
             {
-                results.Add(_analyzer.Analyze(file.Path, file.Language));
+                var analysis = _analyzer.Analyze(files[i].Path, files[i].Language);
+                analyses[i] = analysis;
+                aggregator.Add(analysis);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                skipped.Add(new SkippedEntry(file.Path, ex.Message));
+                fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
             }
         }
+
+        var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
+        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = jobs };
 
         // Spectre's live table / progress bar drive the console cursor, which throws when
         // stdout is redirected (pipes, CI, files). Suppress it there and when the caller
         // asked for a quiet / no-progress run.
         var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
-        if (!showProgress)
+        if (files.Count == 0)
         {
-            foreach (var file in files)
-            {
-                AnalyzeFile(file);
-            }
+            // Nothing to analyze.
         }
-        else if (options is { Format: OutputFormat.Table, ByFile: false } && files.Count > 0)
+        else if (!showProgress)
         {
-            AnsiConsole.Live(TableRenderer.BuildLanguageTable(new AnalysisSummary(results), noHealth: options.NoHealth))
+            Parallel.For(0, files.Count, parallelOptions, AnalyzeAt);
+        }
+        else if (options is { Format: OutputFormat.Table, ByFile: false })
+        {
+            AnsiConsole.Live(TableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth))
                 .AutoClear(false)
                 .Start(ctx =>
                 {
-                    var sw = Stopwatch.StartNew();
-                    foreach (var file in files)
+                    // Analyze on a background task while this thread refreshes the table
+                    // from the thread-safe aggregator (no per-tick re-aggregation).
+                    var work = Task.Run(() => Parallel.For(0, files.Count, parallelOptions, AnalyzeAt));
+                    while (!work.IsCompleted)
                     {
-                        AnalyzeFile(file);
-                        if (sw.ElapsedMilliseconds >= 100)
-                        {
-                            ctx.UpdateTarget(TableRenderer.BuildLanguageTable(
-                                new AnalysisSummary(results),
-                                $"[grey]Analyzing... {results.Count:N0} / {files.Count:N0}[/]",
-                                noHealth: options.NoHealth));
-                            sw.Restart();
-                        }
+                        ctx.UpdateTarget(TableRenderer.BuildLanguageTable(
+                            aggregator.ToSummary(),
+                            $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
+                            noHealth: options.NoHealth));
+                        Thread.Sleep(100);
                     }
 
-                    ctx.UpdateTarget(TableRenderer.BuildLanguageTable(new AnalysisSummary(results), noHealth: options.NoHealth));
+                    work.GetAwaiter().GetResult();
+                    ctx.UpdateTarget(TableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth));
                 });
         }
-        else if (files.Count > 0)
+        else
         {
             AnsiConsole.Progress()
                 .AutoClear(true)
@@ -269,12 +288,31 @@ public sealed class AnalyzeHandler
                 .Start(ctx =>
                 {
                     var task = ctx.AddTask("[green]Analyzing[/]", maxValue: files.Count);
-                    foreach (var file in files)
+                    var work = Task.Run(() => Parallel.For(0, files.Count, parallelOptions, i =>
                     {
-                        AnalyzeFile(file);
+                        AnalyzeAt(i);
                         task.Increment(1);
-                    }
+                    }));
+                    work.GetAwaiter().GetResult();
                 });
+        }
+
+        // Merge in scan order so results are deterministic regardless of --jobs.
+        var results = new List<FileAnalysis>(files.Count);
+        foreach (var analysis in analyses)
+        {
+            if (analysis is not null)
+            {
+                results.Add(analysis);
+            }
+        }
+
+        foreach (var fileSkip in fileSkips)
+        {
+            if (fileSkip is not null)
+            {
+                skipped.Add(fileSkip);
+            }
         }
 
         var summary = new AnalysisSummary(results, skipped);
@@ -344,5 +382,64 @@ public sealed class AnalyzeHandler
         {
             AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(path)}");
         }
+    }
+
+    /// <summary>
+    /// Thread-safe incremental aggregator of per-language counts, used to refresh the
+    /// live table without re-aggregating every analyzed file on each tick.
+    /// </summary>
+    private sealed class LiveAggregator
+    {
+        private readonly object _gate = new();
+        private readonly Dictionary<string, Counts> _byLanguage = new(StringComparer.OrdinalIgnoreCase);
+        private int _files;
+
+        public int FilesProcessed
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _files;
+                }
+            }
+        }
+
+        public void Add(FileAnalysis analysis)
+        {
+            lock (_gate)
+            {
+                _files++;
+                _byLanguage.TryGetValue(analysis.Language, out var counts);
+                _byLanguage[analysis.Language] = new Counts(
+                    counts.Files + 1,
+                    counts.Code + analysis.Code,
+                    counts.Comment + analysis.Comment,
+                    counts.Blank + analysis.Blank);
+            }
+        }
+
+        public AnalysisSummary ToSummary()
+        {
+            lock (_gate)
+            {
+                var byLanguage = _byLanguage
+                    .Select(entry => new LanguageStatistics
+                    {
+                        Language = entry.Key,
+                        Files = entry.Value.Files,
+                        Code = entry.Value.Code,
+                        Comment = entry.Value.Comment,
+                        Blank = entry.Value.Blank
+                    })
+                    .OrderByDescending(stats => stats.Total)
+                    .ThenBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                return new AnalysisSummary(byLanguage, _files);
+            }
+        }
+
+        private readonly record struct Counts(int Files, int Code, int Comment, int Blank);
     }
 }

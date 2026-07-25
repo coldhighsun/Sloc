@@ -107,6 +107,7 @@ sloc ./src --no-recursive
 | `--quiet` | `-q` | Suppress the banner, progress UI, and `Saved to` message |
 | `--no-progress` | | Suppress the live table and progress bar |
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
+| `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
 
@@ -273,6 +274,7 @@ sloc ./src --no-recursive
 | `--quiet` | `-q` | 抑制横幅、进度 UI 和 `Saved to` 提示 |
 | `--no-progress` | | 抑制实时表格和进度条 |
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
+| `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
 

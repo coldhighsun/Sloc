@@ -120,6 +120,38 @@ public sealed class AnalysisSummary
     }
 
     /// <summary>
+    /// Builds a summary from already-aggregated per-language statistics, without any
+    /// per-file results. Intended for live/progress displays where re-aggregating every
+    /// file on each refresh would be wasteful; <see cref="Files"/> is empty.
+    /// </summary>
+    /// <param name="byLanguage">The pre-aggregated per-language statistics.</param>
+    /// <param name="fileCount">The number of files represented by the aggregates.</param>
+    /// <param name="skipped">Entries that were skipped due to read errors.</param>
+    public AnalysisSummary(IReadOnlyList<LanguageStatistics> byLanguage, int fileCount, IReadOnlyList<SkippedEntry>? skipped = null)
+    {
+        ArgumentNullException.ThrowIfNull(byLanguage);
+
+        Files = [];
+        Skipped = skipped ?? [];
+        FileCount = fileCount;
+
+        var code = 0;
+        var comment = 0;
+        var blank = 0;
+        foreach (var language in byLanguage)
+        {
+            code += language.Code;
+            comment += language.Comment;
+            blank += language.Blank;
+        }
+
+        Code = code;
+        Comment = comment;
+        Blank = blank;
+        ByLanguage = byLanguage;
+    }
+
+    /// <summary>
     /// The total number of blank lines across all files.
     /// </summary>
     public int Blank
