@@ -98,6 +98,11 @@ var topOption = new Option<int?>("--top")
     Description = "Show only the top N languages in the summary."
 };
 
+var noUpdateCheckOption = new Option<bool>("--no-update-check")
+{
+    Description = "Do not check GitHub for a newer release (checked by default, with a 2 second timeout)."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -117,7 +122,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     noGitignoreOption,
     baselineOption,
     sortOption,
-    topOption
+    topOption,
+    noUpdateCheckOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -161,7 +167,8 @@ rootCommand.SetAction(parseResult =>
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
         BaselinePath = parseResult.GetValue(baselineOption),
         Sort = parseResult.GetValue(sortOption),
-        Top = parseResult.GetValue(topOption)
+        Top = parseResult.GetValue(topOption),
+        NoUpdateCheck = parseResult.GetValue(noUpdateCheckOption)
     };
 
     return new AnalyzeHandler().Execute(options);

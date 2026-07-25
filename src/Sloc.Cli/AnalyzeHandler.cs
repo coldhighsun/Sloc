@@ -172,6 +172,14 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// When <see langword="true"/>, skips the GitHub check for a newer release.
+    /// </summary>
+    public bool NoUpdateCheck
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -220,15 +228,21 @@ public sealed class AnalyzeHandler
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        var version = typeof(AnalyzeHandler).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
         if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected && !options.Quiet)
         {
-            var version = typeof(AnalyzeHandler).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion;
             if (!string.IsNullOrEmpty(version))
             {
                 AnsiConsole.MarkupLine($"[grey]sloc {Markup.Escape(version)}[/]");
             }
+        }
+
+        if (!options.NoUpdateCheck && !options.Quiet && !string.IsNullOrEmpty(version))
+        {
+            CheckForUpdate(version);
         }
 
         // Spectre's live table / progress bar drive the console cursor, which throws when
@@ -451,6 +465,28 @@ public sealed class AnalyzeHandler
         }
 
         return ThresholdResult(options, summary);
+    }
+
+    private static void CheckForUpdate(string currentVersion)
+    {
+        try
+        {
+            var result = new UpdateChecker()
+                .CheckForUpdateAsync(currentVersion, TimeSpan.FromSeconds(2), CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+            if (result is not null)
+            {
+                Console.Error.WriteLine(
+                    $"A new version of sloc is available: {result.LatestVersion} (current: {currentVersion})");
+                Console.Error.WriteLine($"Download: {result.ReleaseUrl}");
+            }
+        }
+        catch
+        {
+            // An update check must never break or delay a normal analysis run.
+        }
     }
 
     private const string StdoutToken = "-";
