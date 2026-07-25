@@ -231,17 +231,49 @@ public sealed class AnalyzeHandler
             }
         }
 
+        // Spectre's live table / progress bar drive the console cursor, which throws when
+        // stdout is redirected (pipes, CI, files). Suppress it there and when the caller
+        // asked for a quiet / no-progress run.
+        var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
+
+        var scanOptions = new ScanOptions
+        {
+            Includes = options.Includes,
+            Excludes = options.Excludes,
+            Recursive = !options.NoRecursive,
+            IncludeUnknown = options.IncludeUnknown,
+            RespectGitignore = options.RespectGitignore
+        };
+
         ScanResult scanResult;
         try
         {
-            scanResult = _scanner.Scan(options.Path, new ScanOptions
+            if (showProgress)
             {
-                Includes = options.Includes,
-                Excludes = options.Excludes,
-                Recursive = !options.NoRecursive,
-                IncludeUnknown = options.IncludeUnknown,
-                RespectGitignore = options.RespectGitignore
-            });
+                ScanResult? result = null;
+                var lastRefresh = DateTime.MinValue;
+                AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .Start("Scanning files...", ctx =>
+                    {
+                        result = _scanner.Scan(options.Path, scanOptions, onFileFound: (count, path) =>
+                        {
+                            var now = DateTime.UtcNow;
+                            if (now - lastRefresh < TimeSpan.FromMilliseconds(300))
+                            {
+                                return;
+                            }
+
+                            lastRefresh = now;
+                            ctx.Status($"Scanning... [green]{count:N0}[/] files ([grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                        });
+                    });
+                scanResult = result ?? throw new InvalidOperationException("Scan did not complete.");
+            }
+            else
+            {
+                scanResult = _scanner.Scan(options.Path, scanOptions);
+            }
         }
         catch (DirectoryNotFoundException ex)
         {
@@ -275,10 +307,6 @@ public sealed class AnalyzeHandler
         var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = jobs };
 
-        // Spectre's live table / progress bar drive the console cursor, which throws when
-        // stdout is redirected (pipes, CI, files). Suppress it there and when the caller
-        // asked for a quiet / no-progress run.
-        var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
         if (files.Count == 0)
         {
             // Nothing to analyze.
