@@ -46,6 +46,11 @@ public sealed class ScanOptions
     /// Whether to descend into subdirectories. Ignored when explicit includes are supplied.
     /// </summary>
     public bool Recursive { get; init; } = true;
+
+    /// <summary>
+    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
+    /// </summary>
+    public bool RespectGitignore { get; init; }
 }
 
 /// <summary>
@@ -65,6 +70,12 @@ public sealed class DirectoryScanner
         "**/.idea/**",
         "**/node_modules/**"
     ];
+
+    private static readonly IReadOnlySet<string> DefaultExcludeDirectoryNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"
+        };
 
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
@@ -118,12 +129,23 @@ public sealed class DirectoryScanner
             matcher.AddExcludePatterns(options.Excludes);
         }
 
+        var gitignore = options.RespectGitignore
+            ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames)
+            : null;
+        var fullRoot = Path.GetFullPath(root);
+
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>();
         try
         {
             foreach (var fullPath in matcher.GetResultsInFullPath(root))
             {
+                if (gitignore is { IsEmpty: false }
+                    && gitignore.IsIgnored(Path.GetRelativePath(fullRoot, fullPath)))
+                {
+                    continue;
+                }
+
                 var scanned = Resolve(fullPath, options.IncludeUnknown);
                 if (scanned is not null)
                 {

@@ -152,6 +152,46 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Throws<DirectoryNotFoundException>(() => _scanner.Scan(missing, new ScanOptions()));
     }
 
+    /// <summary>
+    /// Verifies that <c>.gitignore</c> files, including a nested one, are honored when
+    /// <see cref="ScanOptions.RespectGitignore"/> is set, and ignored otherwise.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignore_HonorsRootAndNestedIgnoreFiles()
+    {
+        Write(".gitignore", "*.log\n");
+        Write("app/.gitignore", "generated.cs\n");
+        Write("keep.cs", "// keep");
+        Write("debug.log", "noise");
+        Write("app/main.cs", "// main");
+        Write("app/generated.cs", "// generated");
+
+        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var honoredNames = honored.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+
+        Assert.Equal(["keep.cs", "main.cs"], honoredNames);
+
+        var ignoredToggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false });
+        Assert.Contains(ignoredToggleOff.Files, f => Path.GetFileName(f.Path) == "generated.cs");
+    }
+
+    /// <summary>
+    /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignore_NegationReincludesFile()
+    {
+        Write(".gitignore", "*.log\n!keep.log\n");
+        Write("drop.log", "noise");
+        Write("keep.log", "wanted");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
+
+        Assert.Contains("keep.log", names);
+        Assert.DoesNotContain("drop.log", names);
+    }
+
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
