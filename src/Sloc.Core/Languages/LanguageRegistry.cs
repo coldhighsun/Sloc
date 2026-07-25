@@ -78,6 +78,7 @@ public static class LanguageRegistry
         var pyTripleDouble = new StringLiteral("\"\"\"", Multiline: true, IsDocComment: true);
         var pyTripleSingle = new StringLiteral("'''", Multiline: true, IsDocComment: true);
         var rawTripleDouble = new StringLiteral("\"\"\"", Multiline: true, AllowEscape: false);
+        var rawTripleSingle = new StringLiteral("'''", Multiline: true, AllowEscape: false);
 
         return new List<LanguageDefinition>
         {
@@ -267,6 +268,92 @@ public static class LanguageRegistry
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote],
                 ShowHealth = false
+            },
+            new()
+            {
+                Name = "Dart",
+                Extensions = [".dart"],
+                LineCommentTokens = ["//"],
+                BlockComments = [nestedCStyleBlock],
+                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Scala",
+                Extensions = [".scala", ".sc"],
+                LineCommentTokens = ["//"],
+                BlockComments = [nestedCStyleBlock],
+                // Single quotes denote char literals and symbols (e.g. 'sym), so only
+                // double and triple-double quotes are treated as string delimiters.
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "R",
+                Extensions = [".r"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Lua",
+                Extensions = [".lua"],
+                LineCommentTokens = ["--"],
+                BlockComments = [new BlockComment("--[[", "]]")],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Perl",
+                Extensions = [".pl", ".pm"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Elixir",
+                Extensions = [".ex", ".exs"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "Haskell",
+                Extensions = [".hs"],
+                LineCommentTokens = ["--"],
+                BlockComments = [new BlockComment("{-", "-}", AllowNested: true)],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Objective-C",
+                Extensions = [".m", ".mm"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "TOML",
+                Extensions = [".toml"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "Markdown",
+                Extensions = [".md", ".markdown"],
+                BlockComments = [htmlBlock],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "Terraform",
+                Extensions = [".tf", ".tfvars"],
+                LineCommentTokens = ["#", "//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote]
             }
         };
     }
