@@ -10,6 +10,8 @@ namespace Sloc.Core;
 /// </summary>
 public sealed class FileAnalyzer
 {
+    private const int BinarySniffLength = 8000;
+
     /// <summary>
     /// Reads and analyzes the file at <paramref name="path"/> using the supplied language.
     /// </summary>
@@ -18,13 +20,38 @@ public sealed class FileAnalyzer
     /// <returns>
     /// The line statistics for the file.
     /// </returns>
+    /// <exception cref="BinaryFileException">
+    /// The file appears to be binary (contains NUL bytes).
+    /// </exception>
     public FileAnalysis Analyze(string path, LanguageDefinition language)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(language);
 
-        using var reader = new StreamReader(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (LooksBinary(stream))
+        {
+            throw new BinaryFileException();
+        }
+
+        stream.Position = 0;
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return Count(path, language, reader);
+    }
+
+    private static bool LooksBinary(Stream stream)
+    {
+        Span<byte> buffer = stackalloc byte[BinarySniffLength];
+        var read = stream.Read(buffer);
+        for (var i = 0; i < read; i++)
+        {
+            if (buffer[i] == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
