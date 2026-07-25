@@ -159,6 +159,19 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// The key by which the per-language summary is ordered.
+    /// </summary>
+    public LanguageSort Sort { get; init; } = LanguageSort.Total;
+
+    /// <summary>
+    /// When set, keeps only the first this-many languages in the summary after sorting.
+    /// </summary>
+    public int? Top
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -331,7 +344,12 @@ public sealed class AnalyzeHandler
             }
         }
 
-        var summary = new AnalysisSummary(results, skipped);
+        var summary = new AnalysisSummary(
+            results,
+            skipped,
+            options.Sort,
+            descending: options.Sort != LanguageSort.Name,
+            top: options.Top);
 
         if (options.BaselinePath is { } baselinePath)
         {

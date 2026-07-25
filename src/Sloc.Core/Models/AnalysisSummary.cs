@@ -1,6 +1,42 @@
 namespace Sloc.Core.Models;
 
 /// <summary>
+/// The key by which per-language statistics can be ordered.
+/// </summary>
+public enum LanguageSort
+{
+    /// <summary>
+    /// Order by total physical lines.
+    /// </summary>
+    Total,
+
+    /// <summary>
+    /// Order by code lines.
+    /// </summary>
+    Code,
+
+    /// <summary>
+    /// Order by comment lines.
+    /// </summary>
+    Comment,
+
+    /// <summary>
+    /// Order by blank lines.
+    /// </summary>
+    Blank,
+
+    /// <summary>
+    /// Order by file count.
+    /// </summary>
+    Files,
+
+    /// <summary>
+    /// Order alphabetically by language name.
+    /// </summary>
+    Name
+}
+
+/// <summary>
 /// Aggregated line statistics for a single language across many files.
 /// </summary>
 public sealed class LanguageStatistics
@@ -82,7 +118,15 @@ public sealed class AnalysisSummary
     /// </summary>
     /// <param name="files">The per-file analysis results to aggregate.</param>
     /// <param name="skipped">Entries that were skipped due to read errors.</param>
-    public AnalysisSummary(IReadOnlyList<FileAnalysis> files, IReadOnlyList<SkippedEntry>? skipped = null)
+    /// <param name="sortBy">The key by which to order the per-language statistics.</param>
+    /// <param name="descending">Whether to order the sort key in descending order.</param>
+    /// <param name="top">When set, keeps only the first this-many languages after sorting.</param>
+    public AnalysisSummary(
+        IReadOnlyList<FileAnalysis> files,
+        IReadOnlyList<SkippedEntry>? skipped = null,
+        LanguageSort sortBy = LanguageSort.Total,
+        bool descending = true,
+        int? top = null)
     {
         ArgumentNullException.ThrowIfNull(files);
 
@@ -104,7 +148,7 @@ public sealed class AnalysisSummary
         Comment = comment;
         Blank = blank;
 
-        ByLanguage = files
+        var grouped = files
             .GroupBy(file => file.Language, StringComparer.OrdinalIgnoreCase)
             .Select(group => new LanguageStatistics
             {
@@ -113,10 +157,42 @@ public sealed class AnalysisSummary
                 Code = group.Sum(file => file.Code),
                 Comment = group.Sum(file => file.Comment),
                 Blank = group.Sum(file => file.Blank)
-            })
-            .OrderByDescending(stats => stats.Total)
-            .ThenBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            });
+
+        var sorted = Order(grouped, sortBy, descending);
+        if (top is { } limit && limit >= 0)
+        {
+            sorted = sorted.Take(limit);
+        }
+
+        ByLanguage = sorted.ToList();
+    }
+
+    private static IEnumerable<LanguageStatistics> Order(
+        IEnumerable<LanguageStatistics> languages,
+        LanguageSort sortBy,
+        bool descending)
+    {
+        if (sortBy == LanguageSort.Name)
+        {
+            return descending
+                ? languages.OrderByDescending(stats => stats.Language, StringComparer.OrdinalIgnoreCase)
+                : languages.OrderBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase);
+        }
+
+        Func<LanguageStatistics, int> key = sortBy switch
+        {
+            LanguageSort.Code => stats => stats.Code,
+            LanguageSort.Comment => stats => stats.Comment,
+            LanguageSort.Blank => stats => stats.Blank,
+            LanguageSort.Files => stats => stats.Files,
+            _ => stats => stats.Total
+        };
+
+        var ordered = descending
+            ? languages.OrderByDescending(key)
+            : languages.OrderBy(key);
+        return ordered.ThenBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

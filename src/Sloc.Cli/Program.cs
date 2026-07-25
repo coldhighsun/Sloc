@@ -1,6 +1,7 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Help;
 using Sloc.Cli;
+using Sloc.Core.Models;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -87,6 +88,16 @@ var baselineOption = new Option<string>("--baseline")
     Description = "Compare against a previously saved JSON report and show the line-count diff."
 };
 
+var sortOption = new Option<LanguageSort>("--sort")
+{
+    Description = "Order the language summary by: Total (default), Code, Comment, Blank, Files, or Name."
+};
+
+var topOption = new Option<int?>("--top")
+{
+    Description = "Show only the top N languages in the summary."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -104,7 +115,9 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     minCommentPctOption,
     jobsOption,
     noGitignoreOption,
-    baselineOption
+    baselineOption,
+    sortOption,
+    topOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -146,7 +159,9 @@ rootCommand.SetAction(parseResult =>
         MinCommentPct = parseResult.GetValue(minCommentPctOption),
         Jobs = parseResult.GetValue(jobsOption),
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
-        BaselinePath = parseResult.GetValue(baselineOption)
+        BaselinePath = parseResult.GetValue(baselineOption),
+        Sort = parseResult.GetValue(sortOption),
+        Top = parseResult.GetValue(topOption)
     };
 
     return new AnalyzeHandler().Execute(options);

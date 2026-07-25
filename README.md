@@ -21,7 +21,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Three output formats: colored table (default), JSON, and HTML
 - Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense)
 - Format auto-detected from the `--output` file extension (`.json` → JSON, `.html` / `.htm` → HTML)
-- Files or directories that cannot be read are skipped gracefully; a summary of skipped paths and reasons is shown at the end
+- Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end
 
 ## Installation
 
@@ -110,6 +110,8 @@ sloc ./src --no-recursive
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
+| `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, or `Name` |
+| `--top` | | Show only the top N languages in the summary |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
 
@@ -192,7 +194,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 三种输出格式：彩色表格（默认）、JSON 与 HTML
 - 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密）
 - 未指定 `--format` 时，可根据 `--output` 文件扩展名自动推断格式（`.json` → JSON，`.html` / `.htm` → HTML）
-- 无法读取的文件或目录会被自动跳过，并在最终结果中列出所有跳过的路径及原因
+- 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因
 
 ## 安装
 
@@ -281,6 +283,8 @@ sloc ./src --no-recursive
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
+| `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files` 或 `Name` |
+| `--top` | | 仅显示汇总中排名前 N 的语言 |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
 
