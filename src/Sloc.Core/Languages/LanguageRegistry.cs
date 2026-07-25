@@ -66,7 +66,18 @@ public static class LanguageRegistry
     private static IReadOnlyList<LanguageDefinition> CreateLanguages()
     {
         var cStyleBlock = new BlockComment("/*", "*/");
+        var nestedCStyleBlock = new BlockComment("/*", "*/", AllowNested: true);
         var htmlBlock = new BlockComment("<!--", "-->");
+
+        // Shared string-literal definitions. List longer delimiters before shorter ones
+        // that share a prefix (e.g. """ before ") so the longer one matches first.
+        var doubleQuote = new StringLiteral("\"");
+        var singleQuote = new StringLiteral("'");
+        var backtickTemplate = new StringLiteral("`", Multiline: true);
+        var backtickRaw = new StringLiteral("`", Multiline: true, AllowEscape: false);
+        var pyTripleDouble = new StringLiteral("\"\"\"", Multiline: true, IsDocComment: true);
+        var pyTripleSingle = new StringLiteral("'''", Multiline: true, IsDocComment: true);
+        var rawTripleDouble = new StringLiteral("\"\"\"", Multiline: true, AllowEscape: false);
 
         return new List<LanguageDefinition>
         {
@@ -75,97 +86,114 @@ public static class LanguageRegistry
                 Name = "C#",
                 Extensions = [".cs", ".csx"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "C/C++",
                 Extensions = [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".ipp"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Java",
                 Extensions = [".java"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Kotlin",
                 Extensions = [".kt", ".kts"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [nestedCStyleBlock],
+                StringLiterals = [rawTripleDouble, doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Swift",
                 Extensions = [".swift"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [nestedCStyleBlock],
+                StringLiterals = [rawTripleDouble, doubleQuote]
             },
             new()
             {
                 Name = "JavaScript",
                 Extensions = [".js", ".jsx", ".mjs", ".cjs"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "TypeScript",
                 Extensions = [".ts", ".tsx", ".mts", ".cts"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Python",
                 Extensions = [".py", ".pyw"],
                 LineCommentTokens = ["#"],
-                BlockComments = [new BlockComment("\"\"\"", "\"\"\""), new BlockComment("'''", "'''")]
+                StringLiterals = [pyTripleDouble, pyTripleSingle, doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Go",
                 Extensions = [".go"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [backtickRaw, doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Rust",
                 Extensions = [".rs"],
                 LineCommentTokens = ["//"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [nestedCStyleBlock],
+                // Single quotes denote lifetimes as well as char literals in Rust, so they
+                // are not treated as string delimiters here.
+                StringLiterals = [doubleQuote]
             },
             new()
             {
                 Name = "PHP",
                 Extensions = [".php"],
                 LineCommentTokens = ["//", "#"],
-                BlockComments = [cStyleBlock]
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "Ruby",
                 Extensions = [".rb"],
                 LineCommentTokens = ["#"],
-                BlockComments = [new BlockComment("=begin", "=end")]
+                BlockComments = [new BlockComment("=begin", "=end", RequireLineStart: true)],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "F#",
                 Extensions = [".fs", ".fsi", ".fsx"],
                 LineCommentTokens = ["//"],
-                BlockComments = [new BlockComment("(*", "*)")]
+                BlockComments = [new BlockComment("(*", "*)", AllowNested: true)],
+                // Single quotes appear in generic type parameters (e.g. 'a), so only
+                // double quotes are treated as string delimiters.
+                StringLiterals = [doubleQuote]
             },
             new()
             {
                 Name = "Visual Basic",
                 Extensions = [".vb"],
-                LineCommentTokens = ["'"]
+                LineCommentTokens = ["'"],
+                StringLiterals = [doubleQuote]
             },
             new()
             {
@@ -173,6 +201,7 @@ public static class LanguageRegistry
                 Extensions = [".sql"],
                 LineCommentTokens = ["--"],
                 BlockComments = [cStyleBlock],
+                StringLiterals = [singleQuote, doubleQuote],
                 ShowHealth = false
             },
             new()
@@ -181,19 +210,22 @@ public static class LanguageRegistry
                 Extensions = [".ps1", ".psm1", ".psd1"],
                 LineCommentTokens = ["#"],
                 BlockComments = [new BlockComment("<#", "#>")],
+                StringLiterals = [doubleQuote, singleQuote],
                 ShowHealth = false
             },
             new()
             {
                 Name = "Shell",
                 Extensions = [".sh", ".bash", ".zsh"],
-                LineCommentTokens = ["#"]
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {
                 Name = "YAML",
                 Extensions = [".yml", ".yaml"],
                 LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote],
                 ShowHealth = false
             },
             new()
@@ -202,6 +234,7 @@ public static class LanguageRegistry
                 Extensions = [".json", ".jsonc"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote],
                 ShowHealth = false
             },
             new()
@@ -223,6 +256,7 @@ public static class LanguageRegistry
                 Name = "CSS",
                 Extensions = [".css"],
                 BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote],
                 ShowHealth = false
             },
             new()
@@ -231,6 +265,7 @@ public static class LanguageRegistry
                 Extensions = [".scss", ".less"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote],
                 ShowHealth = false
             }
         };

@@ -140,8 +140,9 @@ sloc ./src
 
 ## Known Limitations
 
-- String literals are not parsed, so comment markers inside strings (e.g., `"// not a comment"`) may be misclassified.
-- Line classification is based on text matching of comment symbols, without full lexical analysis.
+- Line classification is based on text matching of comment symbols, not a full lexer.
+- String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled. Verbatim/doubled-quote escaping (e.g. C# `@"…""…"`) is not modeled, and interpolation expressions inside strings are not analyzed.
+- Python triple-quoted strings are counted as comments only when they begin a statement (docstrings); used as a value (e.g. `x = """…"""`) they are counted as code.
 
 ## License
 
@@ -291,8 +292,9 @@ sloc ./src
 
 ## 已知限制
 
-- 不解析字符串字面量，因此出现在字符串内部的注释符号（例如 `"// 这不是注释"`）可能被误判。
-- 行的分类基于注释符号的文本匹配，不进行完整的词法分析。
+- 行的分类基于注释符号的文本匹配，不是完整的词法分析器。
+- 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理。逐字字符串 / 双引号转义（例如 C# 的 `@"…""…"`）暂不支持，字符串内的插值表达式也不做分析。
+- Python 三引号字符串仅在作为语句开头（docstring）时计为注释；作为值使用时（例如 `x = """…"""`）计为代码。
 
 ## 许可证
 

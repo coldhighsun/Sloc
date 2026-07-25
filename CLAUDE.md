@@ -43,7 +43,7 @@ The solution has three projects:
 
 ## Known Limitations
 
-Line classification is text-based, not a full lexer: comment markers inside string literals (e.g. `"// not a comment"`) can be misclassified.
+Line classification is text-based, not a full lexer. String literals are tracked for most languages (via `LanguageDefinition.StringLiterals`), so comment markers inside strings (e.g. `"// not a comment"`) count as code and escaped quotes are handled; block comments can nest where the language allows (`BlockComment.AllowNested`, e.g. Rust/F#/Swift). Not modeled: verbatim/doubled-quote escaping (C# `@"…""…"`) and string interpolation expressions. Python triple-quoted literals count as comments only when they begin a statement (docstrings); as a value (`x = """…"""`) they count as code.
 
 ## Key Configuration
 
@@ -53,7 +53,7 @@ Line classification is text-based, not a full lexer: comment markers inside stri
 
 ## Adding a New Language
 
-Add an entry to `LanguageRegistry.cs` (`src/Sloc.Core/Languages/`) with the extension(s), line-comment tokens, block-comment delimiters, and whether to show the comment-health indicator. No other files need changes.
+Add an entry to `LanguageRegistry.cs` (`src/Sloc.Core/Languages/`) with the extension(s), line-comment tokens, block-comment delimiters, string-literal delimiters (`StringLiterals`, so comment tokens inside strings are not miscounted), and whether to show the comment-health indicator. No other files need changes.
 
 ## Error Handling for Unreadable Files
 
