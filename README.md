@@ -98,14 +98,28 @@ sloc ./src --no-recursive
 | `--include` | `-i` | File glob pattern to include, can be specified multiple times |
 | `--exclude` | `-e` | File glob pattern to exclude, can be specified multiple times |
 | `--format` | `-f` | Output format: `Table` (default), `Json`, or `Html` |
-| `--output` | `-o` | Output file path for `Json` / `Html` formats; format is inferred from the file extension when `--format` is not specified |
+| `--output` | `-o` | Output file path for `Json` / `Html` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
 | `--by-file` | | Show per-file details in addition to the language summary |
 | `--paged` | `-p` | Show paged output |
 | `--all` | | Include files with unknown extensions (grouped as `Other`) |
+| `--quiet` | `-q` | Suppress the banner, progress UI, and `Saved to` message |
+| `--no-progress` | | Suppress the live table and progress bar |
+| `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
+
+`Json` output is written to stdout by default (so it can be piped, e.g. `sloc . -f json | jq`); pass `--output` to write a file instead.
+
+### Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Path not found or unreadable |
+| `2` | A threshold (e.g. `--min-comment-pct`) was not met |
+| `3` | Unexpected error |
 
 ### Sample Output
 
@@ -250,14 +264,28 @@ sloc ./src --no-recursive
 | `--include` | `-i` | 要包含的文件 glob 模式，可多次指定 |
 | `--exclude` | `-e` | 要排除的文件 glob 模式，可多次指定 |
 | `--format` | `-f` | 输出格式：`Table`（默认）、`Json` 或 `Html` |
-| `--output` | `-o` | `Json` / `Html` 格式的输出文件路径；未指定 `--format` 时根据文件扩展名自动推断格式 |
+| `--output` | `-o` | `Json` / `Html` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |
 | `--paged` | `-p` | 显示分页输出 |
 | `--all` | | 包含扩展名未知的文件（归入 `Other`） |
+| `--quiet` | `-q` | 抑制横幅、进度 UI 和 `Saved to` 提示 |
+| `--no-progress` | | 抑制实时表格和进度条 |
+| `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
+
+`Json` 默认输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output` 则写入文件。
+
+### 退出码
+
+| 码 | 含义 |
+| --- | --- |
+| `0` | 成功 |
+| `1` | 路径不存在或不可读 |
+| `2` | 未达到阈值(如 `--min-comment-pct`) |
+| `3` | 意外错误 |
 
 ### 输出示例
 

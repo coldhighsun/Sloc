@@ -54,7 +54,22 @@ var allOption = new Option<bool>("--all")
 
 var outputOption = new Option<string>("--output", "-o")
 {
-    Description = "Output file path for Json and Html formats."
+    Description = "Output file path for Json and Html formats. Use '-' to write to stdout."
+};
+
+var quietOption = new Option<bool>("--quiet", "-q")
+{
+    Description = "Suppress the banner, progress UI, and 'Saved to' message."
+};
+
+var noProgressOption = new Option<bool>("--no-progress")
+{
+    Description = "Suppress the live table and progress bar."
+};
+
+var minCommentPctOption = new Option<double?>("--min-comment-pct")
+{
+    Description = "Fail (exit code 2) if the overall comment percentage is below this value."
 };
 
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
@@ -68,7 +83,10 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     pagedOption,
     allOption,
     outputOption,
-    noHealthOption
+    noHealthOption,
+    quietOption,
+    noProgressOption,
+    minCommentPctOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -104,10 +122,21 @@ rootCommand.SetAction(parseResult =>
         Paged = parseResult.GetValue(pagedOption),
         IncludeUnknown = parseResult.GetValue(allOption),
         OutputFile = outputFile,
-        NoHealth = parseResult.GetValue(noHealthOption)
+        NoHealth = parseResult.GetValue(noHealthOption),
+        Quiet = parseResult.GetValue(quietOption),
+        NoProgress = parseResult.GetValue(noProgressOption),
+        MinCommentPct = parseResult.GetValue(minCommentPctOption)
     };
 
     return new AnalyzeHandler().Execute(options);
 });
 
-return rootCommand.Parse(args).Invoke();
+try
+{
+    return rootCommand.Parse(args).Invoke();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"sloc: {ex.Message}");
+    return ExitCode.Unexpected;
+}
