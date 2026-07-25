@@ -9,13 +9,6 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class JsonRenderer : IResultRenderer
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -34,52 +27,167 @@ public sealed class JsonRenderer : IResultRenderer
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        var payload = new
+        var report = new JsonReport
         {
-            summary.FileCount,
-            summary.Code,
-            CodePct = Pct(summary.Code, summary.Total),
-            summary.Comment,
-            CommentPct = Pct(summary.Comment, summary.Total),
-            summary.Blank,
-            BlankPct = Pct(summary.Blank, summary.Total),
-            summary.Total,
-            ByLanguage = byFile ? null : summary.ByLanguage.Select(language => new
+            FileCount = summary.FileCount,
+            Code = summary.Code,
+            CodePct = Pct(summary.Code, summary.Total, noHealth),
+            Comment = summary.Comment,
+            CommentPct = Pct(summary.Comment, summary.Total, noHealth),
+            Blank = summary.Blank,
+            BlankPct = Pct(summary.Blank, summary.Total, noHealth),
+            Total = summary.Total,
+            ByLanguage = byFile ? null : summary.ByLanguage.Select(language => new JsonLanguage
             {
-                language.Language,
-                language.Files,
-                language.Code,
-                CodePct = Pct(language.Code, language.Total),
-                language.Comment,
-                CommentPct = Pct(language.Comment, language.Total),
-                language.Blank,
-                BlankPct = Pct(language.Blank, language.Total),
-                language.Total
-            }),
+                Language = language.Language,
+                Files = language.Files,
+                Code = language.Code,
+                CodePct = Pct(language.Code, language.Total, noHealth),
+                Comment = language.Comment,
+                CommentPct = Pct(language.Comment, language.Total, noHealth),
+                Blank = language.Blank,
+                BlankPct = Pct(language.Blank, language.Total, noHealth),
+                Total = language.Total,
+                Health = Health(language.Health, noHealth)
+            }).ToList(),
             Files = byFile
-                ? summary.Files.Select(file => new
+                ? summary.Files.Select(file => new JsonFile
                 {
-                    file.Path,
-                    file.Language,
-                    file.Code,
-                    CodePct = Pct(file.Code, file.Total),
-                    file.Comment,
-                    CommentPct = Pct(file.Comment, file.Total),
-                    file.Blank,
-                    BlankPct = Pct(file.Blank, file.Total),
-                    file.Total
-                })
+                    Path = file.Path,
+                    Language = file.Language,
+                    Code = file.Code,
+                    CodePct = Pct(file.Code, file.Total, noHealth),
+                    Comment = file.Comment,
+                    CommentPct = Pct(file.Comment, file.Total, noHealth),
+                    Blank = file.Blank,
+                    BlankPct = Pct(file.Blank, file.Total, noHealth),
+                    Total = file.Total,
+                    Health = Health(file.Health, noHealth)
+                }).ToList()
                 : null,
-            Skipped = summary.Skipped.Select(entry => new
+            Skipped = summary.Skipped.Select(entry => new JsonSkipped
             {
-                entry.Path,
-                entry.Reason
-            })
+                Path = entry.Path,
+                Reason = entry.Reason
+            }).ToList()
         };
 
-        _writer.WriteLine(JsonSerializer.Serialize(payload, SerializerOptions));
+        _writer.WriteLine(JsonSerializer.Serialize(report, SlocJsonContext.Default.JsonReport));
     }
 
-    private static double Pct(int count, int total) =>
-        total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
+    private static double? Pct(int count, int total, bool noHealth)
+    {
+        if (noHealth)
+        {
+            return null;
+        }
+
+        return total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
+    }
+
+    private static string? Health(CommentHealthLevel health, bool noHealth) =>
+        noHealth || health == CommentHealthLevel.NotApplicable ? null : health.ToString();
+}
+
+/// <summary>
+/// The top-level JSON report payload.
+/// </summary>
+internal sealed class JsonReport
+{
+    public int FileCount { get; init; }
+
+    public int Code { get; init; }
+
+    public double? CodePct { get; init; }
+
+    public int Comment { get; init; }
+
+    public double? CommentPct { get; init; }
+
+    public int Blank { get; init; }
+
+    public double? BlankPct { get; init; }
+
+    public int Total { get; init; }
+
+    public IReadOnlyList<JsonLanguage>? ByLanguage { get; init; }
+
+    public IReadOnlyList<JsonFile>? Files { get; init; }
+
+    public IReadOnlyList<JsonSkipped> Skipped { get; init; } = [];
+}
+
+/// <summary>
+/// Per-language statistics in the JSON report.
+/// </summary>
+internal sealed class JsonLanguage
+{
+    public required string Language { get; init; }
+
+    public int Files { get; init; }
+
+    public int Code { get; init; }
+
+    public double? CodePct { get; init; }
+
+    public int Comment { get; init; }
+
+    public double? CommentPct { get; init; }
+
+    public int Blank { get; init; }
+
+    public double? BlankPct { get; init; }
+
+    public int Total { get; init; }
+
+    public string? Health { get; init; }
+}
+
+/// <summary>
+/// Per-file statistics in the JSON report.
+/// </summary>
+internal sealed class JsonFile
+{
+    public required string Path { get; init; }
+
+    public required string Language { get; init; }
+
+    public int Code { get; init; }
+
+    public double? CodePct { get; init; }
+
+    public int Comment { get; init; }
+
+    public double? CommentPct { get; init; }
+
+    public int Blank { get; init; }
+
+    public double? BlankPct { get; init; }
+
+    public int Total { get; init; }
+
+    public string? Health { get; init; }
+}
+
+/// <summary>
+/// A skipped path in the JSON report.
+/// </summary>
+internal sealed class JsonSkipped
+{
+    public required string Path { get; init; }
+
+    public required string Reason { get; init; }
+}
+
+/// <summary>
+/// Source-generated serialization context for the JSON report, so serialization is
+/// trimming- and single-file-safe (no runtime reflection).
+/// </summary>
+[JsonSourceGenerationOptions(
+    WriteIndented = true,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(JsonReport))]
+internal sealed partial class SlocJsonContext : JsonSerializerContext
+{
 }

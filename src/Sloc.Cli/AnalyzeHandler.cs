@@ -174,7 +174,16 @@ public sealed class AnalyzeHandler
             }
         }
 
-        if (options is { Format: OutputFormat.Table, ByFile: false } && files.Count > 0)
+        if (Console.IsOutputRedirected)
+        {
+            // Spectre's live table / progress bar drive the console cursor, which throws
+            // when stdout is redirected (pipes, CI, files). Analyze without any live UI.
+            foreach (var file in files)
+            {
+                AnalyzeFile(file);
+            }
+        }
+        else if (options is { Format: OutputFormat.Table, ByFile: false } && files.Count > 0)
         {
             AnsiConsole.Live(TableRenderer.BuildLanguageTable(new AnalysisSummary(results), noHealth: options.NoHealth))
                 .AutoClear(false)
@@ -237,6 +246,11 @@ public sealed class AnalyzeHandler
             else if (options.ByFile)
             {
                 TableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
+            }
+            else if (Console.IsOutputRedirected)
+            {
+                // The live table is skipped when redirected, so render the final table here.
+                AnsiConsole.Write(TableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth));
             }
 
             TableRenderer.RenderSkipped(summary);

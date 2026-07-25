@@ -49,6 +49,26 @@ public sealed class LanguageStatistics
     /// The total number of physical lines for this language.
     /// </summary>
     public int Total => Code + Comment + Blank;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are code.
+    /// </summary>
+    public double CodePct => Total == 0 ? 0.0 : (double)Code / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are comments.
+    /// </summary>
+    public double CommentPct => Total == 0 ? 0.0 : (double)Comment / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are blank.
+    /// </summary>
+    public double BlankPct => Total == 0 ? 0.0 : (double)Blank / Total * 100;
+
+    /// <summary>
+    /// The comment-health bucket for this language, based on its aggregated line counts.
+    /// </summary>
+    public CommentHealthLevel Health => CommentHealth.Classify(Language, Code, Comment);
 }
 
 /// <summary>

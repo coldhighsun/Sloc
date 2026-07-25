@@ -166,12 +166,6 @@ public sealed class HtmlRenderer : IResultRenderer
     })();
     """;
 
-    private static readonly IReadOnlyDictionary<string, bool> CommentSupportByLanguage =
-                LanguageRegistry.Languages.ToDictionary(
-            l => l.Name,
-            l => l.ShowHealth && (l.LineCommentTokens.Count > 0 || l.BlockComments.Count > 0),
-            StringComparer.OrdinalIgnoreCase);
-
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -355,7 +349,7 @@ public sealed class HtmlRenderer : IResultRenderer
             sb.Append($"<td class=\"r\">{lang.Total:N0}</td>");
             if (!noHealth)
             {
-                sb.Append($"<td>{HealthCell(lang.Language, lang.Code, lang.Comment)}</td>");
+                sb.Append($"<td>{HealthCell(lang.Health)}</td>");
             }
             sb.AppendLine("</tr>");
         }
@@ -414,7 +408,7 @@ public sealed class HtmlRenderer : IResultRenderer
             blank += file.File.Blank;
             fileCount++;
 
-            if (CommentSupportByLanguage.TryGetValue(file.File.Language, out var supports) && supports)
+            if (LanguageRegistry.SupportsHealth(file.File.Language))
             {
                 healthCode += file.File.Code;
                 healthComment += file.File.Comment;
@@ -447,58 +441,24 @@ public sealed class HtmlRenderer : IResultRenderer
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
-    private static string HealthCell(string language, int code, int comment)
+    private static string HealthCell(CommentHealthLevel health)
     {
-        if (!(CommentSupportByLanguage.TryGetValue(language, out var supports) && supports))
+        if (health == CommentHealthLevel.NotApplicable)
         {
             return "<span class=\"h-na\">\u2014</span>";
         }
 
-        var codeAndComment = code + comment;
-        if (codeAndComment == 0)
+        var cls = health switch
         {
-            return "<span class=\"h-na\">\u2014</span>";
-        }
-
-        var density = (double)comment / codeAndComment;
-        var (cls, label) = density switch
-        {
-            <= 0.0 => ("h-none", "None"),
-            < 0.05 => ("h-low", "Low"),
-            < 0.10 => ("h-fair", "Fair"),
-            < 0.25 => ("h-good", "Good"),
-            < 0.40 => ("h-high", "High"),
-            _ => ("h-dense", "Dense")
+            CommentHealthLevel.None => "h-none",
+            CommentHealthLevel.Low => "h-low",
+            CommentHealthLevel.Fair => "h-fair",
+            CommentHealthLevel.Good => "h-good",
+            CommentHealthLevel.High => "h-high",
+            _ => "h-dense"
         };
 
-        return $"<span class=\"{cls}\">{label}</span>";
-    }
-
-    private static string HealthCellAggregate(int code, int comment, bool supports)
-    {
-        if (!supports)
-        {
-            return "<span class=\"h-na\">—</span>";
-        }
-
-        var codeAndComment = code + comment;
-        if (codeAndComment == 0)
-        {
-            return "<span class=\"h-na\">—</span>";
-        }
-
-        var density = (double)comment / codeAndComment;
-        var (cls, label) = density switch
-        {
-            <= 0.0 => ("h-none", "None"),
-            < 0.05 => ("h-low", "Low"),
-            < 0.10 => ("h-fair", "Fair"),
-            < 0.25 => ("h-good", "Good"),
-            < 0.40 => ("h-high", "High"),
-            _ => ("h-dense", "Dense")
-        };
-
-        return $"<span class=\"{cls}\">{label}</span>";
+        return $"<span class=\"{cls}\">{health}</span>";
     }
 
     private static string NormalizePath(string path)
@@ -530,7 +490,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td class=\"r\">{entry.File.Total:N0}</td>");
         if (!noHealth)
         {
-            sb.Append($"<td>{HealthCell(entry.File.Language, entry.File.Code, entry.File.Comment)}</td>");
+            sb.Append($"<td>{HealthCell(entry.File.Health)}</td>");
         }
         sb.AppendLine("</tr>");
     }
@@ -574,7 +534,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td class=\"r\">{node.Total:N0}</td>");
         if (!noHealth)
         {
-            sb.Append($"<td>{HealthCellAggregate(node.HealthCode, node.HealthComment, node.HasHealthSupport)}</td>");
+            sb.Append($"<td>{HealthCell(CommentHealth.Classify(node.HasHealthSupport, node.HealthCode, node.HealthComment))}</td>");
         }
         sb.AppendLine("</tr>");
     }

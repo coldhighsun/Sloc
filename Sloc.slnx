@@ -16,6 +16,7 @@
     <Project Path="src/Sloc.Core/Sloc.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Sloc.Cli.Tests/Sloc.Cli.Tests.csproj" />
     <Project Path="tests/Sloc.Core.Tests/Sloc.Core.Tests.csproj" />
   </Folder>
 </Solution>

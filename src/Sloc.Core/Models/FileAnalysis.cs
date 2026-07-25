@@ -49,4 +49,24 @@ public sealed class FileAnalysis
     /// The total number of physical lines in the file.
     /// </summary>
     public int Total => Code + Comment + Blank;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are code.
+    /// </summary>
+    public double CodePct => Total == 0 ? 0.0 : (double)Code / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are comments.
+    /// </summary>
+    public double CommentPct => Total == 0 ? 0.0 : (double)Comment / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are blank.
+    /// </summary>
+    public double BlankPct => Total == 0 ? 0.0 : (double)Blank / Total * 100;
+
+    /// <summary>
+    /// The comment-health bucket for this file, based on its language and line counts.
+    /// </summary>
+    public CommentHealthLevel Health => CommentHealth.Classify(Language, Code, Comment);
 }

@@ -1,0 +1,56 @@
+using Sloc.Cli.Output;
+using Sloc.Core.Models;
+
+namespace Sloc.Cli.Tests;
+
+/// <summary>
+/// Contains unit tests for <see cref="HtmlRenderer"/>.
+/// </summary>
+public class HtmlRendererTests
+{
+    /// <summary>
+    /// Verifies that the rendered document is a self-contained HTML page that contains
+    /// the language name and a health label.
+    /// </summary>
+    [Fact]
+    public void Render_ByLanguage_ProducesSelfContainedDocumentWithHealth()
+    {
+        var summary = BuildSummary();
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(summary, byFile: false, noHealth: false);
+        var html = writer.ToString();
+
+        Assert.Contains("<!DOCTYPE html>", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("C#", html);
+        Assert.Contains("Good", html);
+    }
+
+    /// <summary>
+    /// Verifies that <c>noHealth</c> suppresses the health label in the output.
+    /// </summary>
+    [Fact]
+    public void Render_NoHealth_OmitsHealthLabel()
+    {
+        var summary = BuildSummary();
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        var html = writer.ToString();
+
+        Assert.DoesNotContain(">Good<", html);
+    }
+
+    private static AnalysisSummary BuildSummary()
+    {
+        var file = new FileAnalysis
+        {
+            Path = "a.cs",
+            Language = "C#",
+            Code = 80,
+            Comment = 20,
+            Blank = 5
+        };
+        return new AnalysisSummary([file]);
+    }
+}
