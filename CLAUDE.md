@@ -39,7 +39,7 @@ The solution has three projects:
 
 ## CLI Options
 
-`sloc <path> [options]` — key flags: `--include`/`-i` and `--exclude`/`-e` (repeatable globs), `--format`/`-f` (`Table`/`Json`/`Html`), `--output`/`-o` (format inferred from extension if `--format` omitted), `--no-recursive`, `--no-health`, `--by-file`, `--paged`/`-p`, `--all` (include unknown extensions, grouped as `Other`).
+`sloc <path> [options]` — key flags: `--include`/`-i` and `--exclude`/`-e` (repeatable globs), `--format`/`-f` (`Table`/`Json`/`Html`), `--output`/`-o` (format inferred from extension if `--format` omitted; `-` writes to stdout), `--no-recursive`, `--no-health`, `--by-file`, `--paged`/`-p`, `--all` (include unknown extensions, grouped as `Other`), `--quiet`/`-q`, `--no-progress`, `--min-comment-pct` (threshold gate). `Json` defaults to stdout when `--output` is omitted. Exit codes: `0` success, `1` path error, `2` threshold not met, `3` unexpected error (see `ExitCode` in `AnalyzeHandler.cs`).
 
 ## Known Limitations
 

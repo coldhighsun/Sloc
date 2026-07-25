@@ -72,6 +72,85 @@ public sealed class AnalyzeHandlerTests : IDisposable
             OutputFile = Path.Combine(_root, "report.json")
         });
 
-        Assert.Equal(1, exitCode);
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that JSON is written to stdout (without a BOM) when no output file is
+    /// given, so it can be piped.
+    /// </summary>
+    [Fact]
+    public void Execute_JsonWithoutOutputFile_WritesToStdout()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        Assert.False(stdout.StartsWith('﻿'), "stdout should not begin with a BOM");
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that the comment-percentage threshold gate returns the threshold exit
+    /// code when the comment percentage is below the requested minimum.
+    /// </summary>
+    [Fact]
+    public void Execute_BelowCommentThreshold_ReturnsThresholdCode()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        int exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            MinCommentPct = 50
+        }));
+
+        Assert.Equal(ExitCode.ThresholdNotMet, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a satisfied comment-percentage threshold returns success.
+    /// </summary>
+    [Fact]
+    public void Execute_MeetsCommentThreshold_ReturnsSuccess()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "// comment\n// comment\nint x = 1;\n");
+
+        int exitCode = 1;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            MinCommentPct = 50
+        }));
+
+        Assert.Equal(ExitCode.Success, exitCode);
+    }
+
+    private static string CaptureStdout(Action action)
+    {
+        var original = Console.Out;
+        using var writer = new StringWriter();
+        Console.SetOut(writer);
+        try
+        {
+            action();
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        return writer.ToString();
     }
 }

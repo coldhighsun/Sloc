@@ -108,6 +108,59 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// When <see langword="true"/>, suppresses the version banner, progress UI, and the
+    /// "Saved to" message, leaving only the result output.
+    /// </summary>
+    public bool Quiet
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// When <see langword="true"/>, suppresses the live table and progress bar while
+    /// still printing the banner and result.
+    /// </summary>
+    public bool NoProgress
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// When set, the run fails (returns <see cref="ExitCode.ThresholdNotMet"/>) if the
+    /// overall comment percentage (comment lines / total lines) is below this value.
+    /// </summary>
+    public double? MinCommentPct
+    {
+        get; init;
+    }
+}
+
+/// <summary>
+/// Process exit codes returned by the CLI.
+/// </summary>
+public static class ExitCode
+{
+    /// <summary>
+    /// The run completed successfully.
+    /// </summary>
+    public const int Success = 0;
+
+    /// <summary>
+    /// The requested path was not found or could not be read.
+    /// </summary>
+    public const int Error = 1;
+
+    /// <summary>
+    /// A configured threshold (e.g. <c>--min-comment-pct</c>) was not met.
+    /// </summary>
+    public const int ThresholdNotMet = 2;
+
+    /// <summary>
+    /// An unexpected error occurred.
+    /// </summary>
+    public const int Unexpected = 3;
 }
 
 /// <summary>
@@ -130,7 +183,7 @@ public sealed class AnalyzeHandler
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected)
+        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected && !options.Quiet)
         {
             var version = typeof(AnalyzeHandler).Assembly
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -174,10 +227,12 @@ public sealed class AnalyzeHandler
             }
         }
 
-        if (Console.IsOutputRedirected)
+        // Spectre's live table / progress bar drive the console cursor, which throws when
+        // stdout is redirected (pipes, CI, files). Suppress it there and when the caller
+        // asked for a quiet / no-progress run.
+        var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
+        if (!showProgress)
         {
-            // Spectre's live table / progress bar drive the console cursor, which throws
-            // when stdout is redirected (pipes, CI, files). Analyze without any live UI.
             foreach (var file in files)
             {
                 AnalyzeFile(file);
@@ -225,17 +280,26 @@ public sealed class AnalyzeHandler
         var summary = new AnalysisSummary(results, skipped);
         if (options.Format == OutputFormat.Json)
         {
-            var outputFile = options.OutputFile ?? "sloc-report.json";
-            using var writer = new StreamWriter(outputFile, append: false, System.Text.Encoding.UTF8);
-            new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth);
-            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(outputFile)}");
+            // JSON defaults to stdout (pipeable); an explicit path writes a file.
+            if (options.OutputFile is null || options.OutputFile == StdoutToken)
+            {
+                new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth);
+            }
+            else
+            {
+                WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth), options.Quiet);
+            }
         }
         else if (options.Format == OutputFormat.Html)
         {
-            var outputFile = options.OutputFile ?? "sloc-report.html";
-            using var writer = new StreamWriter(outputFile, append: false, System.Text.Encoding.UTF8);
-            new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth);
-            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(outputFile)}");
+            if (options.OutputFile == StdoutToken)
+            {
+                new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth);
+            }
+            else
+            {
+                WriteToFile(options.OutputFile ?? "sloc-report.html", writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth), options.Quiet);
+            }
         }
         else
         {
@@ -247,14 +311,38 @@ public sealed class AnalyzeHandler
             {
                 TableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
             }
-            else if (Console.IsOutputRedirected)
+            else if (!showProgress)
             {
-                // The live table is skipped when redirected, so render the final table here.
+                // The live table only renders during progress; render it here otherwise.
                 AnsiConsole.Write(TableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth));
             }
 
             TableRenderer.RenderSkipped(summary);
         }
-        return 0;
+
+        if (options.MinCommentPct is { } min && summary.FileCount > 0 && summary.CommentPct < min)
+        {
+            Console.Error.WriteLine(
+                $"sloc: comment percentage {summary.CommentPct:F1}% is below the required {min:F1}%.");
+            return ExitCode.ThresholdNotMet;
+        }
+
+        return ExitCode.Success;
+    }
+
+    private const string StdoutToken = "-";
+
+    private static void WriteToFile(string path, Action<TextWriter> render, bool quiet)
+    {
+        // UTF-8 without a BOM so piped/consumed files (e.g. via jq) parse cleanly.
+        using (var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+        {
+            render(writer);
+        }
+
+        if (!quiet)
+        {
+            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(path)}");
+        }
     }
 }

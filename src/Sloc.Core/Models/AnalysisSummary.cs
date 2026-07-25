@@ -179,4 +179,19 @@ public sealed class AnalysisSummary
     /// The total number of physical lines across all files.
     /// </summary>
     public int Total => Code + Comment + Blank;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are code.
+    /// </summary>
+    public double CodePct => Total == 0 ? 0.0 : (double)Code / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are comments.
+    /// </summary>
+    public double CommentPct => Total == 0 ? 0.0 : (double)Comment / Total * 100;
+
+    /// <summary>
+    /// The percentage (0-100) of physical lines that are blank.
+    /// </summary>
+    public double BlankPct => Total == 0 ? 0.0 : (double)Blank / Total * 100;
 }
