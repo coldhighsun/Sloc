@@ -253,7 +253,7 @@ public sealed class AnalyzeHandler
                 analyses[i] = analysis;
                 aggregator.Add(analysis);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BinaryFileException)
             {
                 fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
             }

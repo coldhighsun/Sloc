@@ -10,6 +10,47 @@ public class FileAnalyzerTests
     private static readonly LanguageDefinition CSharp = Resolve(".cs");
 
     /// <summary>
+    /// Verifies that analyzing a file containing NUL bytes throws
+    /// <see cref="BinaryFileException"/> so the caller can skip it.
+    /// </summary>
+    [Fact]
+    public void Analyze_BinaryFile_ThrowsBinaryFileException()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-bin-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllBytes(path, [0x01, 0x02, 0x00, 0x03, 0x04]);
+        try
+        {
+            Assert.Throws<BinaryFileException>(() => new FileAnalyzer().Analyze(path, CSharp));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a normal text file is analyzed without being flagged as binary.
+    /// </summary>
+    [Fact]
+    public void Analyze_TextFile_CountsLines()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-txt-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(path, "int x = 1;\n// comment\n\n");
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
+            Assert.Equal(1, result.Code);
+            Assert.Equal(1, result.Comment);
+            Assert.Equal(1, result.Blank);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that analyzing an empty string returns zero for all line counts.
     /// </summary>
     [Fact]
