@@ -130,6 +130,7 @@ sloc . --sort comment --top 5
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, or `Name` |
 | `--top` | | Show only the top N languages in the summary |
+| `--no-update-check` | | Do not check GitHub for a newer release (checked by default, with a 2 second timeout) |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
 
@@ -321,6 +322,7 @@ sloc . --sort comment --top 5
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files` 或 `Name` |
 | `--top` | | 仅显示汇总中排名前 N 的语言 |
+| `--no-update-check` | | 不检查 GitHub 上是否有新版本(默认检查,超时时间为 2 秒) |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
 
