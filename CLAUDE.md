@@ -37,6 +37,14 @@ The solution has three projects:
 
 **`tests/Sloc.Core.Tests`** — xUnit tests covering `LineClassifier`, `FileAnalyzer`, and `LanguageRegistry`.
 
+## CLI Options
+
+`sloc <path> [options]` — key flags: `--include`/`-i` and `--exclude`/`-e` (repeatable globs), `--format`/`-f` (`Table`/`Json`/`Html`), `--output`/`-o` (format inferred from extension if `--format` omitted), `--no-recursive`, `--no-health`, `--by-file`, `--paged`/`-p`, `--all` (include unknown extensions, grouped as `Other`).
+
+## Known Limitations
+
+Line classification is text-based, not a full lexer: comment markers inside string literals (e.g. `"// not a comment"`) can be misclassified.
+
 ## Key Configuration
 
 - **`Directory.Build.props`** — global settings: targets `net8.0`, nullable enabled, warnings-as-errors, artifacts output layout
