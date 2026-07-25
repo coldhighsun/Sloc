@@ -144,6 +144,12 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
+    /// Defaults to <see langword="true"/>.
+    /// </summary>
+    public bool RespectGitignore { get; init; } = true;
 }
 
 /// <summary>
@@ -211,7 +217,8 @@ public sealed class AnalyzeHandler
                 Includes = options.Includes,
                 Excludes = options.Excludes,
                 Recursive = !options.NoRecursive,
-                IncludeUnknown = options.IncludeUnknown
+                IncludeUnknown = options.IncludeUnknown,
+                RespectGitignore = options.RespectGitignore
             });
         }
         catch (DirectoryNotFoundException ex)

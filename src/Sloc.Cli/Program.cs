@@ -77,6 +77,11 @@ var jobsOption = new Option<int?>("--jobs", "-j")
     Description = "Maximum number of files to analyze in parallel. Defaults to the processor count; use 1 for sequential."
 };
 
+var noGitignoreOption = new Option<bool>("--no-gitignore")
+{
+    Description = "Do not honor .gitignore files (they are respected by default)."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -92,7 +97,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     quietOption,
     noProgressOption,
     minCommentPctOption,
-    jobsOption
+    jobsOption,
+    noGitignoreOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -132,7 +138,8 @@ rootCommand.SetAction(parseResult =>
         Quiet = parseResult.GetValue(quietOption),
         NoProgress = parseResult.GetValue(noProgressOption),
         MinCommentPct = parseResult.GetValue(minCommentPctOption),
-        Jobs = parseResult.GetValue(jobsOption)
+        Jobs = parseResult.GetValue(jobsOption),
+        RespectGitignore = !parseResult.GetValue(noGitignoreOption)
     };
 
     return new AnalyzeHandler().Execute(options);
