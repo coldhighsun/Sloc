@@ -82,6 +82,11 @@ var noGitignoreOption = new Option<bool>("--no-gitignore")
     Description = "Do not honor .gitignore files (they are respected by default)."
 };
 
+var baselineOption = new Option<string>("--baseline")
+{
+    Description = "Compare against a previously saved JSON report and show the line-count diff."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -98,7 +103,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     noProgressOption,
     minCommentPctOption,
     jobsOption,
-    noGitignoreOption
+    noGitignoreOption,
+    baselineOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -139,7 +145,8 @@ rootCommand.SetAction(parseResult =>
         NoProgress = parseResult.GetValue(noProgressOption),
         MinCommentPct = parseResult.GetValue(minCommentPctOption),
         Jobs = parseResult.GetValue(jobsOption),
-        RespectGitignore = !parseResult.GetValue(noGitignoreOption)
+        RespectGitignore = !parseResult.GetValue(noGitignoreOption),
+        BaselinePath = parseResult.GetValue(baselineOption)
     };
 
     return new AnalyzeHandler().Execute(options);

@@ -150,6 +150,15 @@ public sealed class AnalyzeOptions
     /// Defaults to <see langword="true"/>.
     /// </summary>
     public bool RespectGitignore { get; init; } = true;
+
+    /// <summary>
+    /// When set, a previously saved JSON report to compare the current run against; the
+    /// output becomes a diff of line counts rather than the normal report.
+    /// </summary>
+    public string? BaselinePath
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -265,7 +274,7 @@ public sealed class AnalyzeHandler
         {
             Parallel.For(0, files.Count, parallelOptions, AnalyzeAt);
         }
-        else if (options is { Format: OutputFormat.Table, ByFile: false })
+        else if (options is { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
         {
             AnsiConsole.Live(TableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth))
                 .AutoClear(false)
@@ -323,6 +332,36 @@ public sealed class AnalyzeHandler
         }
 
         var summary = new AnalysisSummary(results, skipped);
+
+        if (options.BaselinePath is { } baselinePath)
+        {
+            JsonReport baseline;
+            try
+            {
+                baseline = DiffRenderer.Load(baselinePath);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine($"sloc: {ex.Message}");
+                return ExitCode.Error;
+            }
+
+            if (options.Format == OutputFormat.Json && (options.OutputFile is null || options.OutputFile == StdoutToken))
+            {
+                DiffRenderer.RenderJson(Console.Out, summary, baseline);
+            }
+            else if (options.Format == OutputFormat.Json)
+            {
+                WriteToFile(options.OutputFile!, writer => DiffRenderer.RenderJson(writer, summary, baseline), options.Quiet);
+            }
+            else
+            {
+                DiffRenderer.RenderTable(summary, baseline);
+            }
+
+            return ThresholdResult(options, summary);
+        }
+
         if (options.Format == OutputFormat.Json)
         {
             // JSON defaults to stdout (pipeable); an explicit path writes a file.
@@ -365,6 +404,13 @@ public sealed class AnalyzeHandler
             TableRenderer.RenderSkipped(summary);
         }
 
+        return ThresholdResult(options, summary);
+    }
+
+    private const string StdoutToken = "-";
+
+    private static int ThresholdResult(AnalyzeOptions options, AnalysisSummary summary)
+    {
         if (options.MinCommentPct is { } min && summary.FileCount > 0 && summary.CommentPct < min)
         {
             Console.Error.WriteLine(
@@ -374,8 +420,6 @@ public sealed class AnalyzeHandler
 
         return ExitCode.Success;
     }
-
-    private const string StdoutToken = "-";
 
     private static void WriteToFile(string path, Action<TextWriter> render, bool quiet)
     {

@@ -164,6 +164,63 @@ public sealed class AnalyzeHandlerTests : IDisposable
         Assert.Equal(sequential, parallel);
     }
 
+    /// <summary>
+    /// Verifies that a JSON baseline diff reports the per-language and total line-count
+    /// deltas between a saved report and the current run.
+    /// </summary>
+    [Fact]
+    public void Execute_JsonBaselineDiff_ReportsDeltas()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        // Add another code line, then diff against the baseline.
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(diff);
+        Assert.Equal(1, root.GetProperty("total").GetProperty("code").GetInt32());
+        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
+        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that a missing baseline file returns the error exit code instead of throwing.
+    /// </summary>
+    [Fact]
+    public void Execute_MissingBaseline_ReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        int exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = Path.Combine(_root, "no-such-baseline.json"),
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
     private static string CaptureStdout(Action action)
     {
         var original = Console.Out;
