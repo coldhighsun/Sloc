@@ -97,6 +97,25 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that Html is written to stdout when no output file is given, matching
+    /// the default stdout behavior of the other non-table formats.
+    /// </summary>
+    [Fact]
+    public void Execute_HtmlWithoutOutputFile_WritesToStdout()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Html,
+            Quiet = true
+        }));
+
+        Assert.Contains("<html", stdout);
+    }
+
+    /// <summary>
     /// Verifies that the comment-percentage threshold gate returns the threshold exit
     /// code when the comment percentage is below the requested minimum.
     /// </summary>
