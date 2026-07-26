@@ -159,13 +159,30 @@ public sealed class AnalysisSummary
                 Blank = group.Sum(file => file.Blank)
             });
 
-        var sorted = Order(grouped, sortBy, descending);
+        ByLanguage = OrderAndLimit(grouped, sortBy, descending, top);
+    }
+
+    /// <summary>
+    /// Orders per-language statistics the same way the final summary does, so live/progress
+    /// displays built from <see cref="LanguageStatistics"/> snapshots match the final output.
+    /// </summary>
+    /// <param name="languages">The per-language statistics to order.</param>
+    /// <param name="sortBy">The key by which to order the statistics.</param>
+    /// <param name="descending">Whether to order the sort key in descending order.</param>
+    /// <param name="top">When set, keeps only the first this-many languages after sorting.</param>
+    public static IReadOnlyList<LanguageStatistics> OrderAndLimit(
+        IEnumerable<LanguageStatistics> languages,
+        LanguageSort sortBy = LanguageSort.Total,
+        bool descending = true,
+        int? top = null)
+    {
+        var sorted = Order(languages, sortBy, descending);
         if (top is { } limit && limit >= 0)
         {
             sorted = sorted.Take(limit);
         }
 
-        ByLanguage = sorted.ToList();
+        return sorted.ToList();
     }
 
     private static IEnumerable<LanguageStatistics> Order(
