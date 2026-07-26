@@ -514,6 +514,13 @@ public sealed class AnalyzeHandler
             // warn and fall back to the Table rather than silently ignoring the request.
             if (options.Format is not (OutputFormat.Json or OutputFormat.Table))
             {
+                if (options.OutputFile is not null && options.OutputFile != StdoutToken)
+                {
+                    Console.Error.WriteLine(
+                        $"sloc: --baseline diff output is only supported for Table and Json formats; -f {options.Format.ToString().ToLowerInvariant()} with -o '{options.OutputFile}' cannot be honored.");
+                    return ExitCode.Error;
+                }
+
                 Console.Error.WriteLine(
                     $"sloc: --baseline diff output is only supported for Table and Json formats; ignoring -f {options.Format.ToString().ToLowerInvariant()} and rendering a table.");
             }

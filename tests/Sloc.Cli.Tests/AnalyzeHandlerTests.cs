@@ -408,6 +408,43 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that combining <c>--baseline</c> with a diff-unsupported format and an
+    /// explicit <c>-o</c> file returns the error exit code and does not write the file,
+    /// rather than silently falling back to a console table while still exiting 0.
+    /// </summary>
+    [Fact]
+    public void Execute_BaselineWithUnsupportedFormatAndOutputFile_ReturnsErrorAndDoesNotWriteFile()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        var reportPath = Path.Combine(_root, "report.html");
+
+        int exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Html,
+            OutputFile = reportPath,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.False(File.Exists(reportPath));
+    }
+
+    /// <summary>
     /// Verifies that a missing baseline file returns the error exit code instead of throwing.
     /// </summary>
     [Fact]
