@@ -490,11 +490,11 @@ public sealed class AnalyzeHandler
             // Html defaults to stdout (pipeable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+                new HtmlRenderer(Console.Out, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else if (options.Format == OutputFormat.Csv)

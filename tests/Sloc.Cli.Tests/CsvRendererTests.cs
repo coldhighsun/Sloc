@@ -56,6 +56,53 @@ public class CsvRendererTests
         Assert.Contains("\"weird, name.cs\"", text);
     }
 
+    /// <summary>
+    /// Verifies that the by-language CSV ends with a Total row summing all languages.
+    /// </summary>
+    [Fact]
+    public void Render_ByLanguage_AppendsTotalRow()
+    {
+        var summary = BuildSummary("a.cs");
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Total,1,80,20,5,105", lines[^1]);
+    }
+
+    /// <summary>
+    /// Verifies that the by-file CSV ends with a Total row with an empty language column.
+    /// </summary>
+    [Fact]
+    public void Render_ByFile_AppendsTotalRow()
+    {
+        var summary = BuildSummary("a.cs");
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Total,,80,20,5,105", lines[^1]);
+    }
+
+    /// <summary>
+    /// Verifies that <c>--detailed</c> selects the language summary (not the per-file view),
+    /// unlike the other formats which emit both.
+    /// </summary>
+    [Fact]
+    public void Render_Detailed_EmitsLanguageSummaryOnly()
+    {
+        var summary = BuildSummary("a.cs");
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, detailed: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Language,Files,Code,Comment,Blank,Total", lines[0]);
+        Assert.DoesNotContain("Path", lines[0]);
+    }
+
     private static AnalysisSummary BuildSummary(string path)
     {
         var file = new FileAnalysis
