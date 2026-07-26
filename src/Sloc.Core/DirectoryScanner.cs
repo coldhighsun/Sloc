@@ -154,20 +154,20 @@ public sealed class DirectoryScanner
             matcher.AddExcludePatterns(options.Excludes);
         }
 
+        var fullRoot = Path.GetFullPath(root);
+
         // Do not follow directory symlinks/junctions: a self-referential link would
         // otherwise make the matcher's "**" traversal recurse forever. The pre-pass below
         // never recurses into a flagged directory, so it cannot loop either.
-        var fullRootForSymlinks = Path.GetFullPath(root);
-        foreach (var symlinked in FindSymlinkedDirectories(fullRootForSymlinks))
+        foreach (var symlinked in FindSymlinkedDirectories(fullRoot))
         {
-            var relative = Path.GetRelativePath(fullRootForSymlinks, symlinked).Replace('\\', '/');
+            var relative = Path.GetRelativePath(fullRoot, symlinked).Replace('\\', '/');
             matcher.AddExclude($"**/{relative}/**");
         }
 
         var gitignore = options.RespectGitignore
             ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan)
             : null;
-        var fullRoot = Path.GetFullPath(root);
 
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>();
