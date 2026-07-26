@@ -29,6 +29,18 @@ var excludeOption = new Option<string[]>("--exclude", "-e")
     AllowMultipleArgumentsPerToken = true
 };
 
+var includeLangOption = new Option<string[]>("--include-lang")
+{
+    Description = "Language name to include (e.g. \"C#\"). Can be specified multiple times.",
+    AllowMultipleArgumentsPerToken = true
+};
+
+var excludeLangOption = new Option<string[]>("--exclude-lang")
+{
+    Description = "Language name to exclude (e.g. \"Markdown\"). Can be specified multiple times.",
+    AllowMultipleArgumentsPerToken = true
+};
+
 var formatOption = new Option<OutputFormat?>("--format", "-f")
 {
     Description = "Output format: Table, Json, Html, Csv, or Markdown. Inferred from the --output extension when omitted."
@@ -119,6 +131,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     pathArgument,
     includeOption,
     excludeOption,
+    includeLangOption,
+    excludeLangOption,
     formatOption,
     noRecursiveOption,
     byFileOption,
@@ -178,6 +192,8 @@ rootCommand.SetAction(parseResult =>
         Path = parseResult.GetValue(pathArgument) ?? ".",
         Includes = parseResult.GetValue(includeOption) ?? [],
         Excludes = parseResult.GetValue(excludeOption) ?? [],
+        IncludeLangs = parseResult.GetValue(includeLangOption) ?? [],
+        ExcludeLangs = parseResult.GetValue(excludeLangOption) ?? [],
         Format = format,
         NoRecursive = parseResult.GetValue(noRecursiveOption),
         ByFile = parseResult.GetValue(byFileOption),

@@ -80,6 +80,38 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <see cref="ScanOptions.IncludeLangs"/> restricts discovery to files
+    /// resolved as one of the named languages, matched case-insensitively.
+    /// </summary>
+    [Fact]
+    public void Scan_IncludeLangs_RestrictsToMatchingLanguage()
+    {
+        Write("a.cs", "// code");
+        Write("b.py", "print(1)");
+
+        var result = _scanner.Scan(_root, new ScanOptions { IncludeLangs = ["python"] });
+
+        Assert.Single(result.Files);
+        Assert.EndsWith("b.py", result.Files[0].Path);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="ScanOptions.ExcludeLangs"/> drops files resolved as one of
+    /// the named languages, matched case-insensitively.
+    /// </summary>
+    [Fact]
+    public void Scan_ExcludeLangs_DropsMatchingLanguage()
+    {
+        Write("a.cs", "// code");
+        Write("b.py", "print(1)");
+
+        var result = _scanner.Scan(_root, new ScanOptions { ExcludeLangs = ["Python"] });
+
+        Assert.Single(result.Files);
+        Assert.EndsWith("a.cs", result.Files[0].Path);
+    }
+
+    /// <summary>
     /// Verifies that include globs restrict discovery to matching files.
     /// </summary>
     [Fact]
