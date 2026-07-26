@@ -115,8 +115,8 @@ sloc . --sort comment --top 5
 | `path` (argument) | | File or directory to analyze, defaults to current directory `.` |
 | `--include` | `-i` | File glob pattern to include, can be specified multiple times |
 | `--exclude` | `-e` | File glob pattern to exclude, can be specified multiple times |
-| `--format` | `-f` | Output format: `Table` (default), `Json`, or `Html` |
-| `--output` | `-o` | Output file path for `Json` / `Html` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
+| `--format` | `-f` | Output format: `Table` (default), `Json`, `Html`, or `Csv` |
+| `--output` | `-o` | Output file path for `Json` / `Html` / `Csv` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
 | `--by-file` | | Show per-file details in addition to the language summary |
@@ -310,8 +310,8 @@ sloc . --sort comment --top 5
 | `path`（参数） | | 要分析的文件或目录，默认为当前目录 `.` |
 | `--include` | `-i` | 要包含的文件 glob 模式，可多次指定 |
 | `--exclude` | `-e` | 要排除的文件 glob 模式，可多次指定 |
-| `--format` | `-f` | 输出格式：`Table`（默认）、`Json` 或 `Html` |
-| `--output` | `-o` | `Json` / `Html` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
+| `--format` | `-f` | 输出格式：`Table`（默认）、`Json`、`Html` 或 `Csv` |
+| `--output` | `-o` | `Json` / `Html` / `Csv` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |

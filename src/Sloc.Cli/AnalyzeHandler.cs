@@ -25,7 +25,12 @@ public enum OutputFormat
     /// <summary>
     /// A human-readable HTML report.
     /// </summary>
-    Html
+    Html,
+
+    /// <summary>
+    /// Comma-separated values (spreadsheet-friendly).
+    /// </summary>
+    Csv
 }
 
 /// <summary>
@@ -468,6 +473,18 @@ public sealed class AnalyzeHandler
             else
             {
                 WriteToFile(options.OutputFile ?? "sloc-report.html", writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+            }
+        }
+        else if (options.Format == OutputFormat.Csv)
+        {
+            // CSV defaults to stdout (pipeable); an explicit path writes a file.
+            if (options.OutputFile is null || options.OutputFile == StdoutToken)
+            {
+                new CsvRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+            }
+            else
+            {
+                WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else
