@@ -258,9 +258,13 @@ public sealed class AnalyzeHandler
             }
         }
 
+        // Start the update check concurrently with the scan/analysis so a slow network
+        // never delays the actual work. It is awaited and reported at the end of the run.
+        Task<UpdateCheckResult?>? updateCheck = null;
         if (!options.NoUpdateCheck && !options.Quiet && !string.IsNullOrEmpty(version))
         {
-            CheckForUpdate(version);
+            updateCheck = new UpdateChecker()
+                .CheckForUpdateAsync(version, TimeSpan.FromSeconds(2), CancellationToken.None);
         }
 
         // Spectre's live table / progress bar drive the console cursor, which throws when
@@ -449,6 +453,7 @@ public sealed class AnalyzeHandler
                 DiffRenderer.RenderTable(summary, baseline);
             }
 
+            ReportUpdate(updateCheck, version);
             return ThresholdResult(options, summary);
         }
 
@@ -506,18 +511,20 @@ public sealed class AnalyzeHandler
             TableRenderer.RenderSkipped(summary);
         }
 
+        ReportUpdate(updateCheck, version);
         return ThresholdResult(options, summary);
     }
 
-    private static void CheckForUpdate(string currentVersion)
+    private static void ReportUpdate(Task<UpdateCheckResult?>? updateCheck, string? currentVersion)
     {
+        if (updateCheck is null || string.IsNullOrEmpty(currentVersion))
+        {
+            return;
+        }
+
         try
         {
-            var result = new UpdateChecker()
-                .CheckForUpdateAsync(currentVersion, TimeSpan.FromSeconds(2), CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-
+            var result = updateCheck.GetAwaiter().GetResult();
             if (result is not null)
             {
                 Console.Error.WriteLine(
@@ -527,7 +534,7 @@ public sealed class AnalyzeHandler
         }
         catch
         {
-            // An update check must never break or delay a normal analysis run.
+            // An update check must never break a normal analysis run.
         }
     }
 
