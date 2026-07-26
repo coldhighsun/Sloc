@@ -25,7 +25,7 @@ var excludeOption = new Option<string[]>("--exclude", "-e")
 
 var formatOption = new Option<OutputFormat?>("--format", "-f")
 {
-    Description = "Output format: Table, Json, or Html. Inferred from the --output extension when omitted."
+    Description = "Output format: Table, Json, Html, or Csv. Inferred from the --output extension when omitted."
 };
 
 var noRecursiveOption = new Option<bool>("--no-recursive")
@@ -149,6 +149,7 @@ rootCommand.SetAction(parseResult =>
         {
             ".json" => OutputFormat.Json,
             ".html" or ".htm" => OutputFormat.Html,
+            ".csv" => OutputFormat.Csv,
             _ => OutputFormat.Table
         },
         _ => OutputFormat.Table
