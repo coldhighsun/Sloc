@@ -107,8 +107,8 @@ sloc . --baseline baseline.json
 # Sort by comment lines and show only the top 5 languages
 sloc . --sort comment --top 5
 
-# Markdown report with both language summary and per-file breakdown, printed to stdout
-sloc . --format markdown --detailed -o -
+# Markdown report with both language summary and per-file breakdown (format auto-detected from .md)
+sloc . --detailed --output report.md
 ```
 
 ### Options
@@ -305,8 +305,8 @@ sloc . --baseline baseline.json
 # 按注释行排序，仅显示前 5 种语言
 sloc . --sort comment --top 5
 
-# 生成同时包含语言汇总和逐文件明细的 Markdown 报告，输出到标准输出
-sloc . --format markdown --detailed -o -
+# 生成同时包含语言汇总和逐文件明细的 Markdown 报告（根据 .md 扩展名自动推断格式）
+sloc . --detailed --output report.md
 ```
 
 ### 选项
