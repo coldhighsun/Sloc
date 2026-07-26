@@ -210,25 +210,8 @@ public sealed class GitAttributesRules
 
         public IReadOnlyList<AttributePattern> Patterns { get; } = patterns;
 
-        public bool TryGetRelativePath(string path, out string relativeToBase)
-        {
-            if (BaseDirectory.Length == 0)
-            {
-                relativeToBase = path;
-                return true;
-            }
-
-            if (path.Length > BaseDirectory.Length
-                && path.StartsWith(BaseDirectory, StringComparison.Ordinal)
-                && path[BaseDirectory.Length] == '/')
-            {
-                relativeToBase = path[(BaseDirectory.Length + 1)..];
-                return true;
-            }
-
-            relativeToBase = string.Empty;
-            return false;
-        }
+        public bool TryGetRelativePath(string path, out string relativeToBase) =>
+            RelativePathResolver.TryGetRelativePath(BaseDirectory, path, out relativeToBase);
     }
 }
 

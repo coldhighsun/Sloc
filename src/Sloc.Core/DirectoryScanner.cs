@@ -341,43 +341,17 @@ public sealed class DirectoryScanner
                 continue;
             }
 
-            string? target;
-            try
-            {
-                target = Directory.ResolveLinkTarget(subdirectory, returnFinalTarget: true)?.FullName;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
+            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks)
             {
                 toExclude.Add(subdirectory);
                 continue;
             }
 
-            if (target is null)
-            {
-                toExclude.Add(subdirectory);
-                continue;
-            }
-
-            target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(target, ancestor));
-
-            if (isLoop || !followSymlinks)
-            {
-                toExclude.Add(subdirectory);
-                continue;
-            }
-
-            ancestors.Add(target);
+            ancestors.Add(resolution.Target!);
             CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
-    }
-
-    private static bool IsAncestorOrSelf(string ancestor, string path)
-    {
-        var normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.Equals(ancestor, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool MatchesLanguageFilter(LanguageDefinition language, ScanOptions options)
