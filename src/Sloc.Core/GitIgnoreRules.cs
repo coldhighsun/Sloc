@@ -523,8 +523,29 @@ internal sealed class GitIgnorePattern
                 else
                 {
                     var inner = pattern[(i + 1)..end];
+                    var negate = inner.StartsWith('!');
                     sb.Append('[');
-                    sb.Append(inner.StartsWith('!') ? "^" + inner[1..] : inner);
+                    if (negate)
+                    {
+                        sb.Append('^');
+                        inner = inner[1..];
+                    }
+
+                    // Escape backslashes and literal carets: gitignore character classes
+                    // have no regex escape sequences (\d, \b, etc. are just two literal
+                    // characters) and no negation marker other than a leading "!" (handled
+                    // above), so an un-escaped "\" or "^" here would change the regex's
+                    // meaning instead of matching the literal character.
+                    foreach (var ch in inner)
+                    {
+                        if (ch is '\\' or '^')
+                        {
+                            sb.Append('\\');
+                        }
+
+                        sb.Append(ch);
+                    }
+
                     sb.Append(']');
                     i = end + 1;
                 }
