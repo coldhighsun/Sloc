@@ -111,4 +111,48 @@ public class GitIgnoreRulesTests
 
         Assert.Equal(expected, rules.IsIgnored(path));
     }
+
+    /// <summary>
+    /// Verifies that a self-referential directory symlink does not make the search for
+    /// <c>.gitignore</c> files recurse forever.
+    /// </summary>
+    [Fact]
+    public async Task Load_SymlinkedDirectoryLoop_DoesNotRecurseForever()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sloc-gitignore-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, ".gitignore"), "*.log\n");
+
+            var linkPath = Path.Combine(root, "loop");
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, root);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Directory symlinks require a privilege this environment may not grant.
+                return;
+            }
+
+            GitIgnoreRules rules;
+            try
+            {
+                rules = await Task.Run(() => GitIgnoreRules.Load(root, new HashSet<string>()))
+                    .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                Assert.Fail("Load did not complete; likely stuck in a symlink loop.");
+                return;
+            }
+
+            Assert.True(rules.IsIgnored("app.log"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

@@ -210,6 +210,43 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.DoesNotContain("drop.log", names);
     }
 
+    /// <summary>
+    /// Verifies that a self-referential directory symlink does not make the scan recurse
+    /// forever, and that files behind the loop are not walked through the symlink.
+    /// </summary>
+    [Fact]
+    public async Task Scan_SymlinkedDirectoryLoop_DoesNotRecurseForever()
+    {
+        Write("real/keep.cs", "// keep");
+
+        var linkPath = Path.Combine(_root, "real", "loop");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, _root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Directory symlinks require a privilege this environment may not grant; the
+            // behavior under test cannot be exercised without one.
+            return;
+        }
+
+        ScanResult result;
+        try
+        {
+            result = await Task.Run(() => _scanner.Scan(_root, new ScanOptions()))
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Scan did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
+        Assert.Equal(["keep.cs"], names);
+    }
+
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
