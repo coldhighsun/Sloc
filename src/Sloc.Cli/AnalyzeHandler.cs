@@ -30,7 +30,12 @@ public enum OutputFormat
     /// <summary>
     /// Comma-separated values (spreadsheet-friendly).
     /// </summary>
-    Csv
+    Csv,
+
+    /// <summary>
+    /// GitHub-Flavored Markdown tables (documentation-friendly).
+    /// </summary>
+    Markdown
 }
 
 /// <summary>
@@ -490,6 +495,18 @@ public sealed class AnalyzeHandler
             else
             {
                 WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+            }
+        }
+        else if (options.Format == OutputFormat.Markdown)
+        {
+            // Markdown defaults to stdout (pasteable); an explicit path writes a file.
+            if (options.OutputFile is null || options.OutputFile == StdoutToken)
+            {
+                new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+            }
+            else
+            {
+                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else

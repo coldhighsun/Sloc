@@ -9,7 +9,7 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 37 auto-detected languages, three output formats (table, JSON, HTML), per-file detail view, and comment health indicators.
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 37 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
 
 ## Features
 
@@ -18,7 +18,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Built-in comment rules for 37 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
-- Three output formats: colored table (default), JSON, and HTML
+- Five output formats: colored table (default), JSON, HTML, CSV, and Markdown
 - Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense)
 - Format auto-detected from the `--output` file extension (`.json` → JSON, `.html` / `.htm` → HTML)
 - Honors `.gitignore` files (including nested ones) by default; `--no-gitignore` disables it
@@ -115,8 +115,8 @@ sloc . --sort comment --top 5
 | `path` (argument) | | File or directory to analyze, defaults to current directory `.` |
 | `--include` | `-i` | File glob pattern to include, can be specified multiple times |
 | `--exclude` | `-e` | File glob pattern to exclude, can be specified multiple times |
-| `--format` | `-f` | Output format: `Table` (default), `Json`, `Html`, or `Csv` |
-| `--output` | `-o` | Output file path for `Json` / `Html` / `Csv` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
+| `--format` | `-f` | Output format: `Table` (default), `Json`, `Html`, `Csv`, or `Markdown` |
+| `--output` | `-o` | Output file path for `Json` / `Html` / `Csv` / `Markdown` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
 | `--by-file` | | Show per-file details in addition to the language summary |
@@ -204,7 +204,7 @@ This project is released under the [MIT License](https://opensource.org/licenses
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 37 种语言自动识别、三种输出格式（表格、JSON、HTML）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 37 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
 
 ## 功能特性
 
@@ -213,7 +213,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 内置 37 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
-- 三种输出格式：彩色表格（默认）、JSON 与 HTML
+- 五种输出格式：彩色表格（默认）、JSON、HTML、CSV 与 Markdown
 - 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密）
 - 未指定 `--format` 时，可根据 `--output` 文件扩展名自动推断格式（`.json` → JSON，`.html` / `.htm` → HTML）
 - 默认遵循 `.gitignore` 文件（含子目录中的）；`--no-gitignore` 可禁用
@@ -310,8 +310,8 @@ sloc . --sort comment --top 5
 | `path`（参数） | | 要分析的文件或目录，默认为当前目录 `.` |
 | `--include` | `-i` | 要包含的文件 glob 模式，可多次指定 |
 | `--exclude` | `-e` | 要排除的文件 glob 模式，可多次指定 |
-| `--format` | `-f` | 输出格式：`Table`（默认）、`Json`、`Html` 或 `Csv` |
-| `--output` | `-o` | `Json` / `Html` / `Csv` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
+| `--format` | `-f` | 输出格式：`Table`（默认）、`Json`、`Html`、`Csv` 或 `Markdown` |
+| `--output` | `-o` | `Json` / `Html` / `Csv` / `Markdown` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |
