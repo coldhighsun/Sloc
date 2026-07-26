@@ -43,12 +43,44 @@ public sealed class FileAnalyzer
     {
         Span<byte> buffer = stackalloc byte[BinarySniffLength];
         var read = stream.Read(buffer);
-        for (var i = 0; i < read; i++)
+        var window = buffer[..read];
+
+        // A recognized Unicode BOM means the file is text whose encoding legitimately
+        // contains NUL bytes (UTF-16/UTF-32), so the NUL heuristic below does not apply.
+        if (HasTextBom(window))
         {
-            if (buffer[i] == 0)
+            return false;
+        }
+
+        foreach (var b in window)
+        {
+            if (b == 0)
             {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private static bool HasTextBom(ReadOnlySpan<byte> bytes)
+    {
+        // UTF-8, UTF-16 LE/BE, UTF-32 LE/BE byte-order marks. (UTF-32 LE shares its first
+        // two bytes with UTF-16 LE, which is fine: both are text.)
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            return true;
+        }
+
+        if (bytes.Length >= 2 &&
+            ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))
+        {
+            return true;
+        }
+
+        if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+        {
+            return true;
         }
 
         return false;

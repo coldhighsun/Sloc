@@ -29,6 +29,28 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that a UTF-16 file (whose ASCII characters contain NUL bytes) is not
+    /// misdetected as binary when it carries a byte-order mark, and its lines are counted.
+    /// </summary>
+    [Fact]
+    public void Analyze_Utf16FileWithBom_IsCountedAsText()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-utf16-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(path, "// a comment\nvar x = 1;\n", new System.Text.UnicodeEncoding(bigEndian: false, byteOrderMark: true));
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
+            Assert.Equal(1, result.Code);
+            Assert.Equal(1, result.Comment);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that a normal text file is analyzed without being flagged as binary.
     /// </summary>
     [Fact]

@@ -159,6 +159,20 @@ rootCommand.SetAction(parseResult =>
             "sloc: --output is ignored for Table format; pass -f json|html|csv|markdown or use a recognized file extension.");
     }
 
+    var minCommentPct = parseResult.GetValue(minCommentPctOption);
+    if (minCommentPct is { } pct && (pct < 0 || pct > 100))
+    {
+        Console.Error.WriteLine("sloc: --min-comment-pct must be between 0 and 100.");
+        return ExitCode.Error;
+    }
+
+    var top = parseResult.GetValue(topOption);
+    if (top is { } topValue && topValue < 1)
+    {
+        Console.Error.WriteLine("sloc: --top must be 1 or greater.");
+        return ExitCode.Error;
+    }
+
     var options = new AnalyzeOptions
     {
         Path = parseResult.GetValue(pathArgument) ?? ".",
@@ -174,12 +188,12 @@ rootCommand.SetAction(parseResult =>
         NoHealth = parseResult.GetValue(noHealthOption),
         Quiet = parseResult.GetValue(quietOption),
         NoProgress = parseResult.GetValue(noProgressOption),
-        MinCommentPct = parseResult.GetValue(minCommentPctOption),
+        MinCommentPct = minCommentPct,
         Jobs = parseResult.GetValue(jobsOption),
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
         BaselinePath = parseResult.GetValue(baselineOption),
         Sort = parseResult.GetValue(sortOption),
-        Top = parseResult.GetValue(topOption),
+        Top = top,
         NoUpdateCheck = parseResult.GetValue(noUpdateCheckOption)
     };
 
