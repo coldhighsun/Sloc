@@ -80,16 +80,13 @@ jobs:
           rm -f ./publish/${{ matrix.rid }}/*.pdb
           ZIP_NAME=sloc-${VERSION}-${{ matrix.rid }}.zip
           zip -j ./${ZIP_NAME} ./publish/${{ matrix.rid }}/sloc*
-          sha256sum ./${ZIP_NAME} > ./${ZIP_NAME}.sha256
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sloc-${{ matrix.rid }}
-          path: |
-            ./${{ env.ZIP_NAME }}
-            ./${{ env.ZIP_NAME }}.sha256
+          path: ./${{ env.ZIP_NAME }}
 
   pack:
     name: Pack & Publish NuGet Tool
@@ -144,8 +141,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Sloc ${{ github.ref_name }}
-          files: |
-            ./artifacts/*.zip
-            ./artifacts/*.sha256
+          files: ./artifacts/*.zip
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
