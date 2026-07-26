@@ -20,6 +20,12 @@ public sealed class GitIgnoreRules
 {
     private readonly IReadOnlyList<GitIgnoreFile> _files;
 
+    // Caches the cumulative ignored/not-ignored state through each ancestor directory, so
+    // sibling files under the same directory only re-evaluate patterns for their own leaf
+    // name instead of re-walking every ancestor directory's patterns each time. Not safe
+    // for concurrent use; IsIgnored is only called from the scanner's sequential file walk.
+    private readonly Dictionary<string, bool> _directoryIgnoreCache = new();
+
     private GitIgnoreRules(IReadOnlyList<GitIgnoreFile> files)
     {
         _files = files;
@@ -67,12 +73,18 @@ public sealed class GitIgnoreRules
     /// <c>.gitignore</c> files, receiving the running count and the directory's full path.
     /// Used to report progress on long-running scans; has no effect on the result.
     /// </param>
+    /// <param name="symlinkedDirectories">
+    /// Receives the full paths of directory symlinks/junctions encountered while walking
+    /// the tree for <c>.gitignore</c> files, so callers do not need a second full-tree walk
+    /// to find the same directories for their own loop protection.
+    /// </param>
     /// <returns>The loaded rule set (possibly empty).</returns>
     public static GitIgnoreRules Load(
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
-        bool recursive = true,
-        Action<int, string>? onDirectoryVisited = null)
+        bool recursive,
+        Action<int, string>? onDirectoryVisited,
+        out IReadOnlyList<string> symlinkedDirectories)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
@@ -89,11 +101,21 @@ public sealed class GitIgnoreRules
         AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
 
         var visited = 0;
-        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
+        var symlinks = new List<string>();
+        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, symlinks, onDirectoryVisited, ref visited);
 
         var ordered = files.OrderBy(file => file.BaseDirectory.Length).ToList();
+        symlinkedDirectories = symlinks;
         return new GitIgnoreRules(ordered);
     }
+
+    /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string})"/>
+    public static GitIgnoreRules Load(
+        string root,
+        IReadOnlySet<string> excludedDirectoryNames,
+        bool recursive = true,
+        Action<int, string>? onDirectoryVisited = null) =>
+        Load(root, excludedDirectoryNames, recursive, onDirectoryVisited, out _);
 
     private static void AddIfPresent(List<GitIgnoreFile> files, GitIgnoreFile? file)
     {
@@ -245,15 +267,28 @@ public sealed class GitIgnoreRules
 
         // Evaluate each ancestor directory then the leaf, last match wins. Once a
         // directory is ignored, its descendants stay ignored unless a later pattern
-        // explicitly re-includes them.
+        // explicitly re-includes them. Ancestor directories' cumulative state is cached,
+        // since many files typically share the same parent directories.
         for (var depth = 0; depth < segments.Length; depth++)
         {
             var isDirectory = depth < segments.Length - 1;
             var partial = string.Join('/', segments, 0, depth + 1);
+
+            if (isDirectory && _directoryIgnoreCache.TryGetValue(partial, out var cached))
+            {
+                ignored = cached;
+                continue;
+            }
+
             var decision = Evaluate(partial, isDirectory);
             if (decision.HasValue)
             {
                 ignored = decision.Value;
+            }
+
+            if (isDirectory)
+            {
+                _directoryIgnoreCache[partial] = ignored;
             }
         }
 
@@ -266,6 +301,7 @@ public sealed class GitIgnoreRules
         IReadOnlySet<string> excludedDirectoryNames,
         bool recursive,
         List<GitIgnoreFile> files,
+        List<string> symlinkedDirectories,
         Action<int, string>? onDirectoryVisited,
         ref int visited)
     {
@@ -305,10 +341,11 @@ public sealed class GitIgnoreRules
             // otherwise make this recursion loop forever.
             if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
             {
+                symlinkedDirectories.Add(subdirectory);
                 continue;
             }
 
-            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
+            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited);
         }
     }
 

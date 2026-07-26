@@ -34,6 +34,13 @@ var excludeOption = new Option<string[]>("--exclude", "-e")
     AllowMultipleArgumentsPerToken = true
 };
 
+var excludeDirOption = new Option<string[]>("--exclude-dir")
+{
+    Description = "Directory name to exclude at any depth (e.g. \"vendor\"). "
+        + "Shorthand for --exclude \"**/<name>/**\". Can be specified multiple times.",
+    AllowMultipleArgumentsPerToken = true
+};
+
 var includeLangOption = new Option<string[]>("--include-lang")
 {
     Description = "Language name to include (e.g. \"C#\"). Can be specified multiple times.",
@@ -111,6 +118,12 @@ var noGitignoreOption = new Option<bool>("--no-gitignore")
     Description = "Do not honor .gitignore files (they are respected by default)."
 };
 
+var followSymlinksOption = new Option<bool>("--follow-symlinks")
+{
+    Description = "Descend into symlinked/junctioned directories instead of skipping them. "
+        + "A symlink that loops directly back to one of its own ancestors is still skipped."
+};
+
 var baselineOption = new Option<string>("--baseline")
 {
     Description = "Compare against a previously saved JSON report and show the line-count diff."
@@ -142,6 +155,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     listFileOption,
     includeOption,
     excludeOption,
+    excludeDirOption,
     includeLangOption,
     excludeLangOption,
     formatOption,
@@ -157,6 +171,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     minCommentPctOption,
     jobsOption,
     noGitignoreOption,
+    followSymlinksOption,
     baselineOption,
     sortOption,
     topOption,
@@ -204,7 +219,10 @@ rootCommand.SetAction(parseResult =>
         Path = parseResult.GetValue(pathArgument) ?? ".",
         ListFile = parseResult.GetValue(listFileOption),
         Includes = parseResult.GetValue(includeOption) ?? [],
-        Excludes = parseResult.GetValue(excludeOption) ?? [],
+        Excludes = [
+            .. parseResult.GetValue(excludeOption) ?? [],
+            .. (parseResult.GetValue(excludeDirOption) ?? []).Select(name => $"**/{name}/**")
+        ],
         IncludeLangs = parseResult.GetValue(includeLangOption) ?? [],
         ExcludeLangs = parseResult.GetValue(excludeLangOption) ?? [],
         Format = format,
@@ -220,6 +238,7 @@ rootCommand.SetAction(parseResult =>
         MinCommentPct = minCommentPct,
         Jobs = parseResult.GetValue(jobsOption),
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
+        FollowSymlinks = parseResult.GetValue(followSymlinksOption),
         BaselinePath = parseResult.GetValue(baselineOption),
         Sort = parseResult.GetValue(sortOption),
         Top = top,

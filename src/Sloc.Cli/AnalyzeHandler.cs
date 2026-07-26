@@ -235,6 +235,12 @@ public sealed class AnalyzeOptions
     public bool RespectGitignore { get; init; } = true;
 
     /// <summary>
+    /// Whether to descend into symlinked/junctioned directories rather than skip them.
+    /// Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool FollowSymlinks { get; init; }
+
+    /// <summary>
     /// The key by which the per-language summary is ordered.
     /// </summary>
     public LanguageSort Sort { get; init; } = LanguageSort.Total;
@@ -316,7 +322,8 @@ public sealed class AnalyzeHandler
             ExcludeLangs = options.ExcludeLangs,
             Recursive = !options.NoRecursive,
             IncludeUnknown = options.IncludeUnknown,
-            RespectGitignore = options.RespectGitignore
+            RespectGitignore = options.RespectGitignore,
+            FollowSymlinks = options.FollowSymlinks
         };
 
         ScanResult scanResult;
