@@ -76,11 +76,10 @@ public sealed class ScanOptions
 
     /// <summary>
     /// Whether to descend into symlinked/junctioned directories rather than skip them.
-    /// Defaults to <see langword="false"/>. A symlink that resolves to one of its own
-    /// ancestor directories (a direct loop) is always skipped regardless of this setting.
-    /// A longer cycle formed by two or more distinct symlinks is not detected: only the
-    /// top-level symlinked directories under the scan root are checked, so a symlink
-    /// nested inside a followed directory is not discovered and could still loop.
+    /// Defaults to <see langword="false"/>. A symlink whose resolved target would loop
+    /// back onto a directory already on the path from the scan root is always skipped
+    /// regardless of this setting, including cycles formed by two or more distinct
+    /// symlinks chained together.
     /// </summary>
     public bool FollowSymlinks { get; init; }
 }
@@ -178,26 +177,21 @@ public sealed class DirectoryScanner
         // .gitignore discovery also walks the tree, reuse the symlinks it already found
         // instead of walking the tree a second time.
         GitIgnoreRules? gitignore;
-        IReadOnlyList<string> symlinkedDirectories;
+        IReadOnlyList<string> directoriesToExclude;
         if (options.RespectGitignore)
         {
             gitignore = GitIgnoreRules.Load(
-                root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan, out symlinkedDirectories);
+                root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan, out directoriesToExclude, options.FollowSymlinks);
         }
         else
         {
             gitignore = null;
-            symlinkedDirectories = FindSymlinkedDirectories(fullRoot);
+            directoriesToExclude = FindSymlinkedDirectoriesToExclude(fullRoot, options.FollowSymlinks);
         }
 
-        foreach (var symlinked in symlinkedDirectories)
+        foreach (var excluded in directoriesToExclude)
         {
-            if (options.FollowSymlinks && !IsDirectLoop(symlinked, fullRoot))
-            {
-                continue;
-            }
-
-            var relative = Path.GetRelativePath(fullRoot, symlinked).Replace('\\', '/');
+            var relative = Path.GetRelativePath(fullRoot, excluded).Replace('\\', '/');
             matcher.AddExclude($"**/{relative}/**");
         }
 
@@ -283,18 +277,22 @@ public sealed class DirectoryScanner
     }
 
     /// <summary>
-    /// Finds directories under <paramref name="root"/> that are symlinks/junctions, so
-    /// callers can exclude them from traversal rather than risk following a
-    /// self-referential link forever. Never recurses into a symlinked directory itself.
+    /// Finds directories under <paramref name="root"/> that must be excluded from
+    /// traversal: every symlink/junction when <paramref name="followSymlinks"/> is
+    /// <see langword="false"/>, or only the ones that would loop back onto a directory
+    /// already on the current path from <paramref name="root"/> (directly, or
+    /// transitively through an earlier followed symlink) when it is <see langword="true"/>.
     /// </summary>
-    private static IReadOnlyList<string> FindSymlinkedDirectories(string root)
+    private static IReadOnlyList<string> FindSymlinkedDirectoriesToExclude(string root, bool followSymlinks)
     {
-        var found = new List<string>();
-        CollectSymlinkedDirectories(root, found);
-        return found;
+        var toExclude = new List<string>();
+        var ancestors = new List<string> { root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) };
+        CollectSymlinkedDirectoriesToExclude(root, toExclude, ancestors, followSymlinks);
+        return toExclude;
     }
 
-    private static void CollectSymlinkedDirectories(string directory, List<string> found)
+    private static void CollectSymlinkedDirectoriesToExclude(
+        string directory, List<string> toExclude, List<string> ancestors, bool followSymlinks)
     {
         string[] entries;
         try
@@ -314,41 +312,42 @@ public sealed class DirectoryScanner
                 continue;
             }
 
-            if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
             {
-                found.Add(subdirectory);
+                CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
                 continue;
             }
 
-            CollectSymlinkedDirectories(subdirectory, found);
-        }
-    }
+            string? target;
+            try
+            {
+                target = Directory.ResolveLinkTarget(subdirectory, returnFinalTarget: true)?.FullName;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                toExclude.Add(subdirectory);
+                continue;
+            }
 
-    /// <summary>
-    /// Determines whether following <paramref name="symlinkPath"/> would immediately loop
-    /// back on itself: its resolved target is <paramref name="scanRoot"/>, an ancestor of
-    /// it, or an ancestor of the symlink itself. Does not detect a longer cycle formed by
-    /// two or more distinct symlinks.
-    /// </summary>
-    private static bool IsDirectLoop(string symlinkPath, string scanRoot)
-    {
-        string? target;
-        try
-        {
-            target = Directory.ResolveLinkTarget(symlinkPath, returnFinalTarget: true)?.FullName;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return true;
-        }
+            if (target is null)
+            {
+                toExclude.Add(subdirectory);
+                continue;
+            }
 
-        if (target is null)
-        {
-            return false;
-        }
+            target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(target, ancestor));
 
-        target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return IsAncestorOrSelf(target, scanRoot) || IsAncestorOrSelf(target, symlinkPath);
+            if (isLoop || !followSymlinks)
+            {
+                toExclude.Add(subdirectory);
+                continue;
+            }
+
+            ancestors.Add(target);
+            CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
+            ancestors.RemoveAt(ancestors.Count - 1);
+        }
     }
 
     private static bool IsAncestorOrSelf(string ancestor, string path)

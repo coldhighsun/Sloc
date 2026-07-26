@@ -436,6 +436,44 @@ public sealed class DirectoryScannerTests : IDisposable
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
         Assert.Equal(["keep.cs"], names);
     }
+    /// <summary>
+    /// Verifies that a longer cycle formed by two distinct symlinks (A/linkToB points at B,
+    /// and B/linkToA points back at A) is detected and does not cause infinite recursion,
+    /// even though neither symlink directly loops back to its own ancestor.
+    /// </summary>
+    [Fact]
+    public async Task Scan_FollowSymlinksChainedLoop_StillSkipsLoop()
+    {
+        Write("a/keep-a.cs", "// keep a");
+        Write("b/keep-b.cs", "// keep b");
+
+        var linkToB = Path.Combine(_root, "a", "linkToB");
+        var linkToA = Path.Combine(_root, "b", "linkToA");
+        try
+        {
+            Directory.CreateSymbolicLink(linkToB, Path.Combine(_root, "b"));
+            Directory.CreateSymbolicLink(linkToA, Path.Combine(_root, "a"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        ScanResult result;
+        try
+        {
+            result = await Task.Run(() => _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }))
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Scan did not complete; likely stuck in a chained symlink loop.");
+            return;
+        }
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["keep-a.cs", "keep-b.cs"], names);
+    }
 
     private string Write(string relativePath, string content)
     {

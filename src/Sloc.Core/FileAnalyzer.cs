@@ -41,10 +41,12 @@ public sealed class FileAnalyzer
         }
 
         stream.Position = 0;
+        var fallbackEncoding = DetectFallbackEncoding(stream);
+        stream.Position = 0;
 
         if (!computeHash)
         {
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            using var reader = new StreamReader(stream, fallbackEncoding, detectEncodingFromByteOrderMarks: true);
             return Count(path, language, reader);
         }
 
@@ -52,7 +54,7 @@ public sealed class FileAnalyzer
         // file a second time from scratch.
         using var hashing = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var hashingStream = new HashingStream(stream, hashing);
-        using var hashingReader = new StreamReader(hashingStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        using var hashingReader = new StreamReader(hashingStream, fallbackEncoding, detectEncodingFromByteOrderMarks: true);
         var analysis = Count(path, language, hashingReader);
         var hash = Convert.ToHexString(hashing.GetHashAndReset());
 
@@ -134,6 +136,30 @@ public sealed class FileAnalyzer
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Picks the encoding <see cref="StreamReader"/> should fall back to when the file has
+    /// no byte-order mark. A BOM (if present) still takes precedence via
+    /// <c>detectEncodingFromByteOrderMarks</c>; this only decides what to assume otherwise.
+    /// Files that don't decode as valid UTF-8 (e.g. Latin-1/Windows-1252 source files) would
+    /// otherwise be silently corrupted with U+FFFD replacement characters.
+    /// </summary>
+    private static Encoding DetectFallbackEncoding(Stream stream)
+    {
+        Span<byte> buffer = stackalloc byte[BinarySniffLength];
+        var read = stream.Read(buffer);
+        var window = buffer[..read];
+
+        try
+        {
+            _ = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(window);
+            return Encoding.UTF8;
+        }
+        catch (DecoderFallbackException)
+        {
+            return Encoding.Latin1;
+        }
     }
 
     private static bool HasTextBom(ReadOnlySpan<byte> bytes)

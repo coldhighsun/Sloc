@@ -185,6 +185,32 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that a file with no BOM encoded in a non-UTF-8 codepage (Windows-1252, via
+    /// high bytes that are not valid UTF-8 sequences) is decoded with a Latin-1 fallback
+    /// rather than corrupting the content with U+FFFD replacement characters, which would
+    /// otherwise risk misclassifying lines.
+    /// </summary>
+    [Fact]
+    public void Analyze_NonUtf8FileWithoutBom_DoesNotProduceReplacementCharacters()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-latin1-" + Guid.NewGuid().ToString("N") + ".cs");
+        // 0xE9 is 'é' in Latin-1/Windows-1252, but is an invalid standalone UTF-8 byte.
+        var bytes = new byte[] { (byte)'/', (byte)'/', (byte)' ', 0xE9, (byte)'\n', (byte)'x', (byte)';', (byte)'\n' };
+        File.WriteAllBytes(path, bytes);
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
+            Assert.Equal(1, result.Comment);
+            Assert.Equal(1, result.Code);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Looks up a <see cref="LanguageDefinition"/> by file extension and asserts it was found.
     /// </summary>
     /// <param name="extension">

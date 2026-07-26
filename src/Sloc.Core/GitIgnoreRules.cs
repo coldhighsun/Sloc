@@ -84,7 +84,8 @@ public sealed class GitIgnoreRules
         IReadOnlySet<string> excludedDirectoryNames,
         bool recursive,
         Action<int, string>? onDirectoryVisited,
-        out IReadOnlyList<string> symlinkedDirectories)
+        out IReadOnlyList<string> symlinkedDirectories,
+        bool followSymlinks = false)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
@@ -102,14 +103,15 @@ public sealed class GitIgnoreRules
 
         var visited = 0;
         var symlinks = new List<string>();
-        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, symlinks, onDirectoryVisited, ref visited);
+        var ancestors = new List<string> { fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) };
+        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, symlinks, onDirectoryVisited, ref visited, ancestors, followSymlinks);
 
         var ordered = files.OrderBy(file => file.BaseDirectory.Length).ToList();
         symlinkedDirectories = symlinks;
         return new GitIgnoreRules(ordered);
     }
 
-    /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string})"/>
+    /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string}, bool)"/>
     public static GitIgnoreRules Load(
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
@@ -303,7 +305,9 @@ public sealed class GitIgnoreRules
         List<GitIgnoreFile> files,
         List<string> symlinkedDirectories,
         Action<int, string>? onDirectoryVisited,
-        ref int visited)
+        ref int visited,
+        List<string> ancestors,
+        bool followSymlinks)
     {
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
@@ -337,16 +341,55 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
-            // Do not follow directory symlinks/junctions: a self-referential link would
-            // otherwise make this recursion loop forever.
-            if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
+                continue;
+            }
+
+            // A directory symlink/junction. Resolve its target and check whether following
+            // it would loop back onto a directory already on the current path from the
+            // scan root (directly, or transitively through an earlier symlink) — not just
+            // the scan root itself, so chains of two or more symlinks are caught too.
+            string? target;
+            try
+            {
+                target = Directory.ResolveLinkTarget(subdirectory, returnFinalTarget: true)?.FullName;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 symlinkedDirectories.Add(subdirectory);
                 continue;
             }
 
-            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited);
+            if (target is null)
+            {
+                symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(target, ancestor));
+
+            if (isLoop || !followSymlinks)
+            {
+                // Not followed: either it would loop, or the caller opted out of following
+                // symlinked directories entirely. Either way, exclude it from the scan.
+                symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            ancestors.Add(target);
+            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
+            ancestors.RemoveAt(ancestors.Count - 1);
         }
+    }
+
+    private static bool IsAncestorOrSelf(string ancestor, string path)
+    {
+        var normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return normalizedPath.Equals(ancestor, StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
