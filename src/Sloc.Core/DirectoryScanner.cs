@@ -316,13 +316,18 @@ public sealed class DirectoryScanner
     private static IReadOnlyList<string> FindSymlinkedDirectoriesToExclude(string root, bool followSymlinks)
     {
         var toExclude = new List<string>();
-        var ancestors = new List<string> { root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) };
-        CollectSymlinkedDirectoriesToExclude(root, toExclude, ancestors, followSymlinks);
+        var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var ancestors = new List<string> { normalizedRoot };
+        var followedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot };
+        CollectSymlinkedDirectoriesToExclude(root, toExclude, ancestors, followedTargets, followSymlinks);
         return toExclude;
     }
 
+    // followedTargets tracks every real directory reached so far anywhere in the tree (not
+    // just on the current ancestors path), so two distinct symlink chains that both resolve
+    // to the same real directory don't each follow it and double-count its files.
     private static void CollectSymlinkedDirectoriesToExclude(
-        string directory, List<string> toExclude, List<string> ancestors, bool followSymlinks)
+        string directory, List<string> toExclude, List<string> ancestors, HashSet<string> followedTargets, bool followSymlinks)
     {
         string[] entries;
         try
@@ -345,20 +350,20 @@ public sealed class DirectoryScanner
             if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
             {
                 ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
+                CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followedTargets, followSymlinks);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
 
             var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
-            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks)
+            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks || !followedTargets.Add(resolution.Target!))
             {
                 toExclude.Add(subdirectory);
                 continue;
             }
 
             ancestors.Add(resolution.Target!);
-            CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
+            CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followedTargets, followSymlinks);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
     }
