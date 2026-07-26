@@ -472,12 +472,35 @@ internal sealed class GitIgnorePattern
             line = line[1..];
         }
 
+        if (!TryCompileBody(line, out var regex, out var directoryOnly))
+        {
+            return false;
+        }
+
+        pattern = new GitIgnorePattern(regex, isNegation, directoryOnly);
+        return true;
+    }
+
+    /// <summary>
+    /// Compiles a single gitignore-style glob pattern (no leading <c>!</c> negation, since
+    /// that syntax is specific to ignore files) to a regex. Shared with
+    /// <see cref="GitAttributesRules"/>, whose <c>.gitattributes</c> pattern column uses the
+    /// same glob dialect (anchoring, <c>**</c>, character classes, trailing-<c>/</c>
+    /// directory-only).
+    /// </summary>
+    internal static bool TryCompilePattern(string rawPattern, out Regex regex, out bool directoryOnly) =>
+        TryCompileBody(rawPattern, out regex, out directoryOnly);
+
+    private static bool TryCompileBody(string line, out Regex regex, out bool directoryOnly)
+    {
+        regex = null!;
+        directoryOnly = false;
+
         if (line.Length == 0)
         {
             return false;
         }
 
-        var directoryOnly = false;
         if (line.EndsWith('/'))
         {
             directoryOnly = true;
@@ -504,8 +527,9 @@ internal sealed class GitIgnorePattern
 
         var body = Translate(line);
         var prefix = anchored ? "^" : "(?:^|.*/)";
-        var regex = new Regex(prefix + body + "$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        pattern = new GitIgnorePattern(regex, isNegation, directoryOnly);
+        regex = new Regex(
+            prefix + body + "$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
         return true;
     }
 

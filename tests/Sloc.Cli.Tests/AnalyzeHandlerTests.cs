@@ -60,6 +60,27 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a report write failure (e.g. an output directory that doesn't exist)
+    /// is reported as <c>ExitCode.Error</c> rather than propagating an unhandled exception.
+    /// </summary>
+    [Fact]
+    public void Execute_JsonFormat_UnwritableOutputPathReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var outputFile = Path.Combine(_root, "missing-dir", "report.json");
+
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            OutputFile = outputFile
+        });
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.False(File.Exists(outputFile));
+    }
+
+    /// <summary>
     /// Verifies that <c>--list-file</c> analyzes exactly the listed files, ignoring
     /// <see cref="AnalyzeOptions.Path"/>, and reports a missing entry as skipped.
     /// </summary>

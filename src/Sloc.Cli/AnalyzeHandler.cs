@@ -515,7 +515,10 @@ public sealed class AnalyzeHandler
             }
             else if (options.Format == OutputFormat.Json)
             {
-                WriteToFile(options.OutputFile!, writer => DiffRenderer.RenderJson(writer, summary, baseline), options.Quiet);
+                if (!WriteToFile(options.OutputFile!, writer => DiffRenderer.RenderJson(writer, summary, baseline), options.Quiet))
+                {
+                    return ExitCode.Error;
+                }
             }
             else
             {
@@ -535,7 +538,10 @@ public sealed class AnalyzeHandler
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                if (!WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet))
+                {
+                    return ExitCode.Error;
+                }
             }
         }
         else if (options.Format == OutputFormat.Html)
@@ -543,11 +549,14 @@ public sealed class AnalyzeHandler
             // Html defaults to stdout (pipeable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new HtmlRenderer(Console.Out, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+                new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                if (!WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet))
+                {
+                    return ExitCode.Error;
+                }
             }
         }
         else if (options.Format == OutputFormat.Csv)
@@ -559,7 +568,10 @@ public sealed class AnalyzeHandler
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                if (!WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet))
+                {
+                    return ExitCode.Error;
+                }
             }
         }
         else if (options.Format == OutputFormat.Markdown)
@@ -567,11 +579,14 @@ public sealed class AnalyzeHandler
             // Markdown defaults to stdout (pasteable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new MarkdownRenderer(Console.Out, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+                new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                if (!WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet))
+                {
+                    return ExitCode.Error;
+                }
             }
         }
         else
@@ -678,18 +693,28 @@ public sealed class AnalyzeHandler
         return ExitCode.Success;
     }
 
-    private static void WriteToFile(string path, Action<TextWriter> render, bool quiet)
+    private static bool WriteToFile(string path, Action<TextWriter> render, bool quiet)
     {
-        // UTF-8 without a BOM so piped/consumed files (e.g. via jq) parse cleanly.
-        using (var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+        try
         {
-            render(writer);
+            // UTF-8 without a BOM so piped/consumed files (e.g. via jq) parse cleanly.
+            using (var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            {
+                render(writer);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"sloc: could not write to '{path}': {ex.Message}");
+            return false;
         }
 
         if (!quiet)
         {
             AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(path)}");
         }
+
+        return true;
     }
 
     /// <summary>
