@@ -113,6 +113,64 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that <see cref="GitIgnoreRules.TryParseExcludesFile"/> extracts
+    /// <c>core.excludesFile</c> from a <c>[core]</c> section, expands a leading
+    /// <c>~</c>, and ignores settings outside the <c>[core]</c> section.
+    /// </summary>
+    [Theory]
+    [InlineData("[core]\nexcludesFile = /etc/gitignore\n", "/etc/gitignore")]
+    [InlineData("[user]\nname = x\n[core]\n  excludesFile=/etc/gitignore\n", "/etc/gitignore")]
+    [InlineData("[core]\nautocrlf = true\n", null)]
+    [InlineData("[user]\nexcludesFile = /etc/gitignore\n", null)]
+    [InlineData("", null)]
+    public void TryParseExcludesFile_ExtractsCoreSectionSetting(string config, string? expected)
+    {
+        var found = GitIgnoreRules.TryParseExcludesFile(config, out var path);
+
+        Assert.Equal(expected is not null, found);
+        Assert.Equal(expected, path);
+    }
+
+    /// <summary>
+    /// Verifies that a leading <c>~</c> in <c>core.excludesFile</c> expands to the user's
+    /// home directory.
+    /// </summary>
+    [Fact]
+    public void TryParseExcludesFile_ExpandsHomeDirectoryTilde()
+    {
+        var found = GitIgnoreRules.TryParseExcludesFile("[core]\nexcludesFile = ~/.gitignore_global\n", out var path);
+
+        Assert.True(found);
+        Assert.Equal(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitignore_global"),
+            path);
+    }
+
+    /// <summary>
+    /// Verifies that a <c>.git/info/exclude</c> file at the scan root is honored, in
+    /// addition to <c>.gitignore</c> files.
+    /// </summary>
+    [Fact]
+    public void Load_GitInfoExclude_IsHonored()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sloc-gitinfo-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, ".git", "info"));
+        try
+        {
+            File.WriteAllText(Path.Combine(root, ".git", "info", "exclude"), "*.log\n");
+
+            var rules = GitIgnoreRules.Load(root, new HashSet<string>());
+
+            Assert.True(rules.IsIgnored("app.log"));
+            Assert.False(rules.IsIgnored("app.cs"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Verifies that a self-referential directory symlink does not make the search for
     /// <c>.gitignore</c> files recurse forever.
     /// </summary>
