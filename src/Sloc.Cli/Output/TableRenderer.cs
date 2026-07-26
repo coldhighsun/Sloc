@@ -6,11 +6,41 @@ namespace Sloc.Cli.Output;
 /// <summary>
 /// Renders analysis results as colored tables using Spectre.Console.
 /// </summary>
-public static class TableRenderer
+public sealed class TableRenderer : IResultRenderer
 {
     private readonly record struct DisplayItem(bool IsFolder, string FolderPath, FileAnalysis? File, string TreePrefix = "");
 
-    internal static Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false)
+    /// <inheritdoc />
+    /// <remarks>
+    /// Table-specific capabilities that the shared <see cref="IResultRenderer"/> signature
+    /// cannot express — pagination and the live-refreshing progress table — are not
+    /// available through this method; <see cref="AnalyzeHandler"/> calls
+    /// <see cref="RenderByFile"/> and <see cref="BuildLanguageTable"/> directly for those.
+    /// <paramref name="detailed"/> has no Table equivalent (a table shows either the
+    /// by-language or by-file view, never both) and is ignored, matching how the other
+    /// renderers treat it as meaningless for this format.
+    /// </remarks>
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+
+        if (summary.FileCount == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No files matched.[/]");
+        }
+        else if (byFile)
+        {
+            RenderByFile(summary, noHealth);
+        }
+        else
+        {
+            AnsiConsole.Write(BuildLanguageTable(summary, noHealth: noHealth));
+        }
+
+        RenderSkipped(summary);
+    }
+
+    internal Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false)
     {
         var table = new Table().Border(TableBorder.Rounded);
 
@@ -87,7 +117,7 @@ public static class TableRenderer
         return table;
     }
 
-    internal static void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false)
+    internal void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false)
     {
         var files = summary.Files;
         var grouped = BuildGroupedItems(files);
@@ -114,7 +144,7 @@ public static class TableRenderer
         }
     }
 
-    internal static void RenderSkipped(AnalysisSummary summary)
+    internal void RenderSkipped(AnalysisSummary summary)
     {
         if (summary.Skipped.Count == 0)
         {
@@ -134,7 +164,7 @@ public static class TableRenderer
         AnsiConsole.Write(table);
     }
 
-    private static void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool indented = false, string treePrefix = "")
+    private void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool indented = false, string treePrefix = "")
     {
         var codeCell = noHealth ? file.Code.ToString("N0") : WithPercent(file.Code, file.Total);
         var commentCell = noHealth ? file.Comment.ToString("N0") : WithPercent(file.Comment, file.Total);
@@ -165,7 +195,7 @@ public static class TableRenderer
         }
     }
 
-    private static void AddFileTotalRow(Table table, AnalysisSummary summary, bool noHealth)
+    private void AddFileTotalRow(Table table, AnalysisSummary summary, bool noHealth)
     {
         table.AddEmptyRow();
         var totalCodeCell = noHealth ? $"[bold]{summary.Code:N0}[/]" : WithPercent(summary.Code, summary.Total, bold: true);
@@ -194,7 +224,7 @@ public static class TableRenderer
         }
     }
 
-    private static void AddFolderHeaderRow(Table table, string folder, bool noHealth, string treePrefix = "")
+    private void AddFolderHeaderRow(Table table, string folder, bool noHealth, string treePrefix = "")
     {
         var label = string.IsNullOrEmpty(folder)
             ? $"{treePrefix}[grey].[/]"
@@ -209,7 +239,7 @@ public static class TableRenderer
         }
     }
 
-    private static List<DisplayItem> BuildGroupedItems(IReadOnlyList<FileAnalysis> files)
+    private List<DisplayItem> BuildGroupedItems(IReadOnlyList<FileAnalysis> files)
     {
         var root = BuildTree(files);
         var items = new List<DisplayItem>(files.Count + 32);
@@ -220,7 +250,7 @@ public static class TableRenderer
         return items;
     }
 
-    private static string BuildHealthCell(CommentHealthLevel health)
+    private string BuildHealthCell(CommentHealthLevel health)
     {
         if (health == CommentHealthLevel.NotApplicable)
         {
@@ -240,7 +270,7 @@ public static class TableRenderer
         return $"[{color}]■ {health}[/]";
     }
 
-    private static TreeNode BuildTree(IReadOnlyList<FileAnalysis> files)
+    private TreeNode BuildTree(IReadOnlyList<FileAnalysis> files)
     {
         var root = new TreeNode { IsFolder = true };
         var sortedFiles = files
@@ -275,7 +305,7 @@ public static class TableRenderer
         return root;
     }
 
-    private static Table CreateFileTable(bool noHealth)
+    private Table CreateFileTable(bool noHealth)
     {
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("File");
@@ -291,7 +321,7 @@ public static class TableRenderer
         return table;
     }
 
-    private static void FlattenNode(TreeNode node, string prefix, bool isLast, List<DisplayItem> items)
+    private void FlattenNode(TreeNode node, string prefix, bool isLast, List<DisplayItem> items)
     {
         var connector = isLast ? "└── " : "├── ";
         var treePrefix = prefix + connector;
@@ -308,7 +338,7 @@ public static class TableRenderer
         }
     }
 
-    private static void RenderByFilePaged(AnalysisSummary summary, List<DisplayItem> grouped, int pageSize, bool noHealth)
+    private void RenderByFilePaged(AnalysisSummary summary, List<DisplayItem> grouped, int pageSize, bool noHealth)
     {
         var total = summary.Files.Count;
         var filesShown = 0;
@@ -350,7 +380,7 @@ public static class TableRenderer
         }
     }
 
-    private static bool ShouldPaginate(int fileCount, out int pageSize)
+    private bool ShouldPaginate(int fileCount, out int pageSize)
     {
         const int overhead = 6;
         if (Console.IsOutputRedirected || Console.WindowHeight <= 0)
@@ -363,7 +393,7 @@ public static class TableRenderer
         return fileCount > pageSize;
     }
 
-    private static string ToRelative(string path)
+    private string ToRelative(string path)
     {
         try
         {
@@ -375,7 +405,7 @@ public static class TableRenderer
         }
     }
 
-    private static string WithPercent(int count, int total, bool bold = false)
+    private string WithPercent(int count, int total, bool bold = false)
     {
         if (total == 0)
         {

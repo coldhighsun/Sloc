@@ -10,7 +10,7 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class MarkdownRenderer : IResultRenderer
 {
-    private readonly DateTimeOffset _scanTime;
+    private readonly DateTimeOffset _generatedAt;
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -19,13 +19,14 @@ public sealed class MarkdownRenderer : IResultRenderer
     /// <param name="writer">
     /// The destination writer. Defaults to <see cref="Console.Out"/> when <see langword="null"/>.
     /// </param>
-    /// <param name="scanTime">
-    /// The time the scan was performed. Defaults to <see cref="DateTimeOffset.Now"/> when <see langword="null"/>.
+    /// <param name="generatedAt">
+    /// The report generation time. Defaults to <see cref="DateTimeOffset.Now"/> when
+    /// <see langword="null"/>; a fixed value is mainly useful for deterministic tests.
     /// </param>
-    public MarkdownRenderer(TextWriter? writer = null, DateTimeOffset? scanTime = null)
+    public MarkdownRenderer(TextWriter? writer = null, DateTimeOffset? generatedAt = null)
     {
         _writer = writer ?? Console.Out;
-        _scanTime = scanTime ?? DateTimeOffset.Now;
+        _generatedAt = generatedAt ?? DateTimeOffset.Now;
     }
 
     /// <inheritdoc />
@@ -38,7 +39,7 @@ public sealed class MarkdownRenderer : IResultRenderer
         sb.AppendLine("# Sloc Report");
         sb.AppendLine();
 
-        var generated = _scanTime.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         sb.AppendLine($"**Generated:** {generated} | **Files:** {summary.FileCount:N0} | **Total Lines:** {summary.Total:N0}");
         sb.AppendLine();
 

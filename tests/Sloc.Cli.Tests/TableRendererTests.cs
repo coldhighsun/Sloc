@@ -20,7 +20,7 @@ public class TableRendererTests
         var summary = BuildSummary();
         var console = new TestConsole();
 
-        console.Write(TableRenderer.BuildLanguageTable(summary, noHealth: false));
+        console.Write(new TableRenderer().BuildLanguageTable(summary, noHealth: false));
         var output = console.Output;
 
         Assert.Contains("C#", output);
@@ -37,7 +37,7 @@ public class TableRendererTests
         var summary = BuildSummary();
         var console = new TestConsole();
 
-        console.Write(TableRenderer.BuildLanguageTable(summary, noHealth: true));
+        console.Write(new TableRenderer().BuildLanguageTable(summary, noHealth: true));
         var output = console.Output;
 
         Assert.Contains("C#", output);

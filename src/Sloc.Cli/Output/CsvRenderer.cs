@@ -8,6 +8,13 @@ namespace Sloc.Cli.Output;
 /// spreadsheets and further data processing. A per-file breakdown is emitted when
 /// <c>byFile</c> or <c>detailed</c> is set; otherwise a per-language summary is emitted.
 /// </summary>
+/// <remarks>
+/// Unlike <see cref="JsonRenderer"/>, <see cref="HtmlRenderer"/>, and
+/// <see cref="MarkdownRenderer"/>, this renderer intentionally has no report-generation-time
+/// field: CSV consumers (spreadsheets, <c>pandas.read_csv</c>, etc.) parse a fixed number of
+/// columns starting from the first row, so an extra metadata line would either break parsing
+/// or be misread as a malformed data row.
+/// </remarks>
 public sealed class CsvRenderer : IResultRenderer
 {
     private readonly TextWriter _writer;
