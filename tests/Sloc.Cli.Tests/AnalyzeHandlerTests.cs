@@ -86,6 +86,30 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--unique</c> counts byte-identical files only once and reports
+    /// the later duplicate as skipped instead of double-counting its lines.
+    /// </summary>
+    [Fact]
+    public void Execute_Unique_CountsDuplicateContentOnce()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.cs"), "int x = 1;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            Unique = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        Assert.Equal(1, root.GetProperty("code").GetInt32());
+        Assert.Equal(1, root.GetProperty("skipped").GetArrayLength());
+    }
+
+    /// <summary>
     /// Verifies that a missing path returns exit code 1 rather than throwing.
     /// </summary>
     [Fact]

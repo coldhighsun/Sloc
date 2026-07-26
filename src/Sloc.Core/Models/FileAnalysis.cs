@@ -46,6 +46,15 @@ public sealed class FileAnalysis
     }
 
     /// <summary>
+    /// A content hash of the file, populated only when requested (e.g. for
+    /// <c>--unique</c> duplicate detection). <see langword="null"/> otherwise.
+    /// </summary>
+    public string? Hash
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// The total number of physical lines in the file.
     /// </summary>
     public int Total => Code + Comment + Blank;

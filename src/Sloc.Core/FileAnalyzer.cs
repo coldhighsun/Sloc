@@ -1,5 +1,6 @@
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Sloc.Core;
@@ -17,13 +18,18 @@ public sealed class FileAnalyzer
     /// </summary>
     /// <param name="path">The path of the file to analyze.</param>
     /// <param name="language">The language whose comment rules drive classification.</param>
+    /// <param name="computeHash">
+    /// When <see langword="true"/>, populates <see cref="FileAnalysis.Hash"/> with a
+    /// content hash of the file (used for <c>--unique</c> duplicate detection). Requires a
+    /// second read of the file, so it is opt-in.
+    /// </param>
     /// <returns>
     /// The line statistics for the file.
     /// </returns>
     /// <exception cref="BinaryFileException">
     /// The file appears to be binary (contains NUL bytes).
     /// </exception>
-    public FileAnalysis Analyze(string path, LanguageDefinition language)
+    public FileAnalysis Analyze(string path, LanguageDefinition language, bool computeHash = false)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(language);
@@ -36,7 +42,24 @@ public sealed class FileAnalyzer
 
         stream.Position = 0;
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return Count(path, language, reader);
+        var analysis = Count(path, language, reader);
+
+        if (!computeHash)
+        {
+            return analysis;
+        }
+
+        using var hashStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var hash = Convert.ToHexString(SHA256.HashData(hashStream));
+        return new FileAnalysis
+        {
+            Path = analysis.Path,
+            Language = analysis.Language,
+            Code = analysis.Code,
+            Comment = analysis.Comment,
+            Blank = analysis.Blank,
+            Hash = hash
+        };
     }
 
     private static bool LooksBinary(Stream stream)

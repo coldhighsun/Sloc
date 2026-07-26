@@ -240,6 +240,15 @@ public sealed class AnalyzeOptions
     public LanguageSort Sort { get; init; } = LanguageSort.Total;
 
     /// <summary>
+    /// When <see langword="true"/>, files with identical content are only counted once;
+    /// later duplicates are reported as skipped rather than double-counted.
+    /// </summary>
+    public bool Unique
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When set, keeps only the first this-many languages in the summary after sorting.
     /// </summary>
     public int? Top
@@ -375,7 +384,7 @@ public sealed class AnalyzeHandler
         {
             try
             {
-                var analysis = _analyzer.Analyze(files[i].Path, files[i].Language);
+                var analysis = _analyzer.Analyze(files[i].Path, files[i].Language, computeHash: options.Unique);
                 analyses[i] = analysis;
                 aggregator.Add(analysis);
             }
@@ -457,6 +466,11 @@ public sealed class AnalyzeHandler
             {
                 skipped.Add(fileSkip);
             }
+        }
+
+        if (options.Unique)
+        {
+            results = DeduplicateByHash(results, skipped);
         }
 
         var summary = new AnalysisSummary(
@@ -597,6 +611,35 @@ public sealed class AnalyzeHandler
         {
             // An update check must never break a normal analysis run.
         }
+    }
+
+    /// <summary>
+    /// Keeps only the first file (in scan order) for each distinct content hash; every
+    /// later duplicate is removed from <paramref name="results"/> and added to
+    /// <paramref name="skipped"/> so its lines aren't double-counted.
+    /// </summary>
+    private static List<FileAnalysis> DeduplicateByHash(List<FileAnalysis> results, List<SkippedEntry> skipped)
+    {
+        var unique = new List<FileAnalysis>(results.Count);
+        var firstPathByHash = new Dictionary<string, string>();
+
+        foreach (var analysis in results)
+        {
+            if (analysis.Hash is not { } hash || !firstPathByHash.TryGetValue(hash, out var firstPath))
+            {
+                if (analysis.Hash is { } h)
+                {
+                    firstPathByHash[h] = analysis.Path;
+                }
+
+                unique.Add(analysis);
+                continue;
+            }
+
+            skipped.Add(new SkippedEntry(analysis.Path, $"duplicate of {firstPath}"));
+        }
+
+        return unique;
     }
 
     private static IEnumerable<string> ReadListFile(string listFile)

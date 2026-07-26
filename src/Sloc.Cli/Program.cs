@@ -131,6 +131,11 @@ var noUpdateCheckOption = new Option<bool>("--no-update-check")
     Description = "Do not check GitHub for a newer release (checked by default, with a 2 second timeout)."
 };
 
+var uniqueOption = new Option<bool>("--unique")
+{
+    Description = "Count each distinct file content only once; later byte-identical duplicates are reported as skipped."
+};
+
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
@@ -155,7 +160,8 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     baselineOption,
     sortOption,
     topOption,
-    noUpdateCheckOption
+    noUpdateCheckOption,
+    uniqueOption
 };
 
 var helpOpt = rootCommand.Options.OfType<HelpOption>().FirstOrDefault();
@@ -217,7 +223,8 @@ rootCommand.SetAction(parseResult =>
         BaselinePath = parseResult.GetValue(baselineOption),
         Sort = parseResult.GetValue(sortOption),
         Top = top,
-        NoUpdateCheck = parseResult.GetValue(noUpdateCheckOption)
+        NoUpdateCheck = parseResult.GetValue(noUpdateCheckOption),
+        Unique = parseResult.GetValue(uniqueOption)
     };
 
     return new AnalyzeHandler().Execute(options);
