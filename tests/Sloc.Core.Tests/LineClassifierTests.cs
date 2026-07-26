@@ -10,6 +10,7 @@ public class LineClassifierTests
 {
     private static readonly LanguageDefinition CSharp = Resolve(".cs");
     private static readonly LanguageDefinition Python = Resolve(".py");
+    private static readonly LanguageDefinition Batch = Resolve(".bat");
 
     /// <summary>
     /// Verifies that a single-line block comment is classified as
@@ -157,6 +158,24 @@ public class LineClassifierTests
         var classifier = new LineClassifier(CSharp);
 
         Assert.Equal(LineKind.Blank, classifier.Classify(line));
+    }
+
+    /// <summary>
+    /// Verifies that Batch's <c>REM</c> line comment is recognized on its own (no trailing
+    /// text), regardless of case, but does not match inside a longer word.
+    /// </summary>
+    /// <param name="line">A line of Batch source to classify.</param>
+    /// <param name="expected">The expected classification.</param>
+    [Theory]
+    [InlineData("REM", LineKind.Comment)]
+    [InlineData("rem", LineKind.Comment)]
+    [InlineData("Rem this is a comment", LineKind.Comment)]
+    [InlineData("REMOVE.exe", LineKind.Code)]
+    public void Classify_BatchRem_MatchesWholeWordCaseInsensitive(string line, LineKind expected)
+    {
+        var classifier = new LineClassifier(Batch);
+
+        Assert.Equal(expected, classifier.Classify(line));
     }
 
     /// <summary>

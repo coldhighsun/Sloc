@@ -196,7 +196,11 @@ public sealed class LineClassifier
         }
     }
 
-    private static bool MatchesAt(string line, int index, string token)
+    private static bool MatchesAt(
+        string line,
+        int index,
+        string token,
+        StringComparison comparison = StringComparison.Ordinal)
     {
         if (token.Length == 0)
         {
@@ -208,7 +212,7 @@ public sealed class LineClassifier
             return false;
         }
 
-        return string.CompareOrdinal(line, index, token, 0, token.Length) == 0;
+        return line.AsSpan(index, token.Length).Equals(token, comparison);
     }
 
     private static bool MatchesBlockToken(string line, int index, string token, BlockComment block)
@@ -223,15 +227,42 @@ public sealed class LineClassifier
 
     private bool MatchesLineComment(string line, int index)
     {
+        var comparison = _language.CaseInsensitiveLineComments
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
         foreach (var token in _language.LineCommentTokens)
         {
-            if (MatchesAt(line, index, token))
+            if (!MatchesAt(line, index, token, comparison))
             {
-                return true;
+                continue;
             }
+
+            // A token made entirely of letters/digits (e.g. "REM") must be a whole word,
+            // so it doesn't match inside a longer identifier (e.g. "REMOVE").
+            var end = index + token.Length;
+            if (IsWordToken(token) && end < line.Length && char.IsLetterOrDigit(line[end]))
+            {
+                continue;
+            }
+
+            return true;
         }
 
         return false;
+    }
+
+    private static bool IsWordToken(string token)
+    {
+        foreach (var c in token)
+        {
+            if (!char.IsLetterOrDigit(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private bool TryMatchBlockOpen(string line, int index, [NotNullWhen(true)] out BlockComment? block)
