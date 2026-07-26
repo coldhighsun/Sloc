@@ -73,8 +73,17 @@ public sealed class LanguageDefinition
 
     /// <summary>
     /// The tokens that start a single-line comment (e.g. <c>//</c> or <c>#</c>).
+    /// A token consisting entirely of letters/digits (e.g. <c>REM</c>) is only recognized
+    /// as a whole word: it must be followed by whitespace or the end of the line, so it
+    /// does not match inside a longer identifier.
     /// </summary>
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
+
+    /// <summary>
+    /// Whether <see cref="LineCommentTokens"/> are matched case-insensitively, as with
+    /// Batch's <c>REM</c>.
+    /// </summary>
+    public bool CaseInsensitiveLineComments { get; init; }
 
     /// <summary>
     /// The string-literal delimiters recognized so that comment tokens inside strings

@@ -438,8 +438,9 @@ public static class LanguageRegistry
             {
                 Name = "Batch",
                 Extensions = [".bat", ".cmd"],
-                // REM is a line comment; :: is the idiomatic label-comment trick.
-                LineCommentTokens = ["REM ", "rem ", "::"],
+                // REM is a line comment (case-insensitive, whole-word); :: is the idiomatic label-comment trick.
+                LineCommentTokens = ["REM", "::"],
+                CaseInsensitiveLineComments = true,
                 StringLiterals = [doubleQuote]
             }
         };
