@@ -82,8 +82,11 @@ sloc ./src --by-file
 # Output as JSON
 sloc ./src --format json
 
-# Save results as HTML report (opens in a browser)
+# Save results as an HTML report (opens in a browser)
 sloc ./src --format html --output report.html
+
+# HTML printed to stdout (default when --output is omitted)
+sloc ./src --format html
 
 # Auto-detect format from file extension
 sloc ./src --output sloc-report.json
@@ -138,7 +141,7 @@ sloc . --format markdown --detailed -o -
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
 
-`Json` output is written to stdout by default (so it can be piped, e.g. `sloc . -f json | jq`); pass `--output` to write a file instead.
+All non-table formats (`Json`, `Html`, `Csv`, `Markdown`) are written to stdout by default (so they can be piped, e.g. `sloc . -f json | jq`); pass `--output <path>` to write a file instead.
 
 `.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed.
 
@@ -283,6 +286,9 @@ sloc ./src --format json
 # 保存为 HTML 报告（可在浏览器中打开）
 sloc ./src --format html --output report.html
 
+# HTML 输出到标准输出（省略 --output 时的默认行为）
+sloc ./src --format html
+
 # 根据文件扩展名自动推断格式
 sloc ./src --output sloc-report.json
 
@@ -336,7 +342,7 @@ sloc . --format markdown --detailed -o -
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |
 
-`Json` 默认输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output` 则写入文件。
+所有非表格格式(`Json`、`Html`、`Csv`、`Markdown`)默认都会输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output <路径>` 则写入文件。
 
 默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化。
 

@@ -478,13 +478,14 @@ public sealed class AnalyzeHandler
         }
         else if (options.Format == OutputFormat.Html)
         {
-            if (options.OutputFile == StdoutToken)
+            // Html defaults to stdout (pipeable); an explicit path writes a file.
+            if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
                 new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile ?? "sloc-report.html", writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else if (options.Format == OutputFormat.Csv)
