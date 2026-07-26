@@ -132,8 +132,8 @@ var noGitAttributesOption = new Option<bool>("--no-gitattributes")
 
 var followSymlinksOption = new Option<bool>("--follow-symlinks")
 {
-    Description = "Descend into symlinked/junctioned directories instead of skipping them. "
-        + "A symlink that loops directly back to one of its own ancestors is still skipped."
+    Description = "Include symlinked/junctioned directories and symlinked files instead of skipping them. "
+        + "A directory symlink that loops directly back to one of its own ancestors is still skipped."
 };
 
 var baselineOption = new Option<string>("--baseline")

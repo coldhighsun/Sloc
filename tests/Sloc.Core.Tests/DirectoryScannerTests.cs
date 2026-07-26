@@ -386,6 +386,35 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a symlinked file is skipped by default and only included once
+    /// <c>FollowSymlinks</c> is set, matching how symlinked directories are handled.
+    /// </summary>
+    [Fact]
+    public void Scan_SymlinkedFile_IsSkippedUnlessFollowSymlinksIsSet()
+    {
+        Write("real.cs", "// real");
+        var targetPath = Path.Combine(_root, "real.cs");
+        var linkPath = Path.Combine(_root, "linked.cs");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var defaultResult = _scanner.Scan(_root, new ScanOptions());
+        var defaultNames = defaultResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["real.cs"], defaultNames);
+
+        var followedResult = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+        var followedNames = followedResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["linked.cs", "real.cs"], followedNames);
+    }
+
+    /// <summary>
     /// Verifies that even with <c>FollowSymlinks</c> set, a symlink that loops back to one
     /// of its own ancestors is still skipped rather than followed forever.
     /// </summary>

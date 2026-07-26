@@ -139,7 +139,7 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
-| `--follow-symlinks` | | Descend into symlinked/junctioned directories instead of skipping them; a symlink that loops directly back to one of its own ancestors is still skipped |
+| `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors is still skipped |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, or `Name` |
 | `--top` | | Show only the top N languages in the summary |
@@ -346,7 +346,7 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
-| `--follow-symlinks` | | 跟随符号链接/联接目录进行扫描,而不是跳过它们;直接指向自身祖先目录的循环链接仍会被跳过 |
+| `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录的循环链接目录仍会被跳过 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files` 或 `Name` |
 | `--top` | | 仅显示汇总中排名前 N 的语言 |
