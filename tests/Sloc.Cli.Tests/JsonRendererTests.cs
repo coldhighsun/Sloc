@@ -33,19 +33,20 @@ public class JsonRendererTests
     }
 
     /// <summary>
-    /// Verifies that <c>noHealth</c> suppresses both the percentage and health fields.
+    /// Verifies that <c>noHealth</c> suppresses only the health field, while percentages
+    /// remain in the payload.
     /// </summary>
     [Fact]
-    public void Render_NoHealth_OmitsPercentagesAndHealth()
+    public void Render_NoHealth_KeepsPercentagesButOmitsHealth()
     {
         var summary = BuildSummary();
 
         var root = Render(summary, byFile: false, noHealth: true);
 
-        Assert.False(root.TryGetProperty("codePct", out _));
-        Assert.False(root.TryGetProperty("commentPct", out _));
+        Assert.True(root.TryGetProperty("codePct", out _));
+        Assert.True(root.TryGetProperty("commentPct", out _));
         var language = root.GetProperty("byLanguage")[0];
-        Assert.False(language.TryGetProperty("codePct", out _));
+        Assert.True(language.TryGetProperty("codePct", out _));
         Assert.False(language.TryGetProperty("health", out _));
     }
 

@@ -31,22 +31,22 @@ public sealed class JsonRenderer : IResultRenderer
         {
             FileCount = summary.FileCount,
             Code = summary.Code,
-            CodePct = Pct(summary.Code, summary.Total, noHealth),
+            CodePct = Pct(summary.Code, summary.Total),
             Comment = summary.Comment,
-            CommentPct = Pct(summary.Comment, summary.Total, noHealth),
+            CommentPct = Pct(summary.Comment, summary.Total),
             Blank = summary.Blank,
-            BlankPct = Pct(summary.Blank, summary.Total, noHealth),
+            BlankPct = Pct(summary.Blank, summary.Total),
             Total = summary.Total,
             ByLanguage = byFile ? null : summary.ByLanguage.Select(language => new JsonLanguage
             {
                 Language = language.Language,
                 Files = language.Files,
                 Code = language.Code,
-                CodePct = Pct(language.Code, language.Total, noHealth),
+                CodePct = Pct(language.Code, language.Total),
                 Comment = language.Comment,
-                CommentPct = Pct(language.Comment, language.Total, noHealth),
+                CommentPct = Pct(language.Comment, language.Total),
                 Blank = language.Blank,
-                BlankPct = Pct(language.Blank, language.Total, noHealth),
+                BlankPct = Pct(language.Blank, language.Total),
                 Total = language.Total,
                 Health = Health(language.Health, noHealth)
             }).ToList(),
@@ -56,11 +56,11 @@ public sealed class JsonRenderer : IResultRenderer
                     Path = file.Path,
                     Language = file.Language,
                     Code = file.Code,
-                    CodePct = Pct(file.Code, file.Total, noHealth),
+                    CodePct = Pct(file.Code, file.Total),
                     Comment = file.Comment,
-                    CommentPct = Pct(file.Comment, file.Total, noHealth),
+                    CommentPct = Pct(file.Comment, file.Total),
                     Blank = file.Blank,
-                    BlankPct = Pct(file.Blank, file.Total, noHealth),
+                    BlankPct = Pct(file.Blank, file.Total),
                     Total = file.Total,
                     Health = Health(file.Health, noHealth)
                 }).ToList()
@@ -75,15 +75,8 @@ public sealed class JsonRenderer : IResultRenderer
         _writer.WriteLine(JsonSerializer.Serialize(report, SlocJsonContext.Default.JsonReport));
     }
 
-    private static double? Pct(int count, int total, bool noHealth)
-    {
-        if (noHealth)
-        {
-            return null;
-        }
-
-        return total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
-    }
+    private static double Pct(int count, int total) =>
+        total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
 
     private static string? Health(CommentHealthLevel health, bool noHealth) =>
         noHealth || health == CommentHealthLevel.NotApplicable ? null : health.ToString();
