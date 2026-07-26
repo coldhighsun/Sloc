@@ -54,6 +54,19 @@ public sealed class ScanOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// Language display names (e.g. <c>"C#"</c>) to exclude, matched case-insensitively
+    /// against the resolved language's <see cref="LanguageDefinition.Name"/>.
+    /// </summary>
+    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
+
+    /// <summary>
+    /// Language display names (e.g. <c>"C#"</c>) to include. When empty, all resolved
+    /// languages are considered. Matched case-insensitively against the resolved
+    /// language's <see cref="LanguageDefinition.Name"/>.
+    /// </summary>
+    public IReadOnlyList<string> IncludeLangs { get; init; } = [];
 }
 
 /// <summary>
@@ -115,7 +128,7 @@ public sealed class DirectoryScanner
         if (File.Exists(root))
         {
             var single = Resolve(Path.GetFullPath(root), options.IncludeUnknown);
-            return single is null
+            return single is null || !MatchesLanguageFilter(single.Language, options)
                 ? new ScanResult([], [])
                 : new ScanResult([single], []);
         }
@@ -169,7 +182,7 @@ public sealed class DirectoryScanner
                 }
 
                 var scanned = Resolve(fullPath, options.IncludeUnknown);
-                if (scanned is not null)
+                if (scanned is not null && MatchesLanguageFilter(scanned.Language, options))
                 {
                     files.Add(scanned);
                     onFileFound?.Invoke(files.Count, scanned.Path);
@@ -225,6 +238,18 @@ public sealed class DirectoryScanner
 
             CollectSymlinkedDirectories(subdirectory, found);
         }
+    }
+
+    private static bool MatchesLanguageFilter(LanguageDefinition language, ScanOptions options)
+    {
+        if (options.IncludeLangs.Count > 0
+            && !options.IncludeLangs.Contains(language.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return options.ExcludeLangs.Count == 0
+            || !options.ExcludeLangs.Contains(language.Name, StringComparer.OrdinalIgnoreCase);
     }
 
     private static ScannedFile? Resolve(string path, bool includeUnknown)

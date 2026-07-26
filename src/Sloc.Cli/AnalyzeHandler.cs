@@ -101,6 +101,11 @@ public sealed class AnalyzeOptions
     public IReadOnlyList<string> Excludes { get; init; } = [];
 
     /// <summary>
+    /// Language display names to exclude (e.g. <c>"Markdown"</c>).
+    /// </summary>
+    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
+
+    /// <summary>
     /// The output format.
     /// </summary>
     public OutputFormat Format
@@ -112,6 +117,12 @@ public sealed class AnalyzeOptions
     /// Glob patterns of files to include.
     /// </summary>
     public IReadOnlyList<string> Includes { get; init; } = [];
+
+    /// <summary>
+    /// Language display names to include (e.g. <c>"C#"</c>). When empty, all languages
+    /// are considered.
+    /// </summary>
+    public IReadOnlyList<string> IncludeLangs { get; init; } = [];
 
     /// <summary>
     /// When <see langword="true"/>, files with unknown extensions are included.
@@ -283,6 +294,8 @@ public sealed class AnalyzeHandler
         {
             Includes = options.Includes,
             Excludes = options.Excludes,
+            IncludeLangs = options.IncludeLangs,
+            ExcludeLangs = options.ExcludeLangs,
             Recursive = !options.NoRecursive,
             IncludeUnknown = options.IncludeUnknown,
             RespectGitignore = options.RespectGitignore
