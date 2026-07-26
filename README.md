@@ -9,7 +9,7 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 44 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 47 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
 
 ## Features
 
@@ -119,8 +119,13 @@ sloc . --format markdown --detailed -o -
 | Option | Short | Description |
 | --- | --- | --- |
 | `path` (argument) | | File or directory to analyze, defaults to current directory `.` |
+| `--list-file` | | Analyze exactly the files listed one-per-line in this file instead of scanning `path`; use `-` to read the list from stdin |
 | `--include` | `-i` | File glob pattern to include, can be specified multiple times |
 | `--exclude` | `-e` | File glob pattern to exclude, can be specified multiple times |
+| `--exclude-dir` | | Directory name to exclude at any depth (e.g. `vendor`); shorthand for `--exclude "**/<name>/**"`, can be specified multiple times |
+| `--include-lang` | | Language display name to include (e.g. `"C#"`), matched case-insensitively; can be specified multiple times |
+| `--exclude-lang` | | Language display name to exclude, matched case-insensitively; can be specified multiple times |
+| `--unique` | | Count byte-identical files only once; later duplicates are reported as skipped |
 | `--format` | `-f` | Output format: `Table` (default), `Json`, `Html`, `Csv`, or `Markdown` |
 | `--output` | `-o` | Output file path for `Json` / `Html` / `Csv` / `Markdown` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
 | `--no-recursive` | | Do not recurse into subdirectories |
@@ -134,6 +139,7 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
+| `--follow-symlinks` | | Descend into symlinked/junctioned directories instead of skipping them; a symlink that loops directly back to one of its own ancestors is still skipped |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, or `Name` |
 | `--top` | | Show only the top N languages in the summary |
@@ -164,7 +170,7 @@ With `--by-file` (tree view per file):
 
 ## Supported Languages
 
-C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less, Dart, Scala, R, Lua, Perl, Elixir, Haskell, Objective-C, TOML, Markdown, Terraform, Makefile, Dockerfile, CMake, Groovy/Gradle, Julia, Clojure, Vue, Svelte, Protobuf, Batch.
+C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less, Dart, Scala, R, Lua, Perl, Elixir, Haskell, Objective-C, TOML, Markdown, Terraform, Makefile, Dockerfile, CMake, Groovy/Gradle, Julia, Clojure, Vue, Svelte, Protobuf, Batch, Assembly, INI, Jupyter Notebook.
 
 Files without an extension (e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`, `Rakefile`, `Gemfile`) are recognized by name.
 
@@ -190,7 +196,7 @@ sloc ./src
 ## Known Limitations
 
 - Line classification is based on text matching of comment symbols, not a full lexer.
-- String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled. Verbatim/doubled-quote escaping (e.g. C# `@"…""…"`) is not modeled, and interpolation expressions inside strings are not analyzed.
+- String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled, including C# verbatim strings (`@"…""…"`) and Rust raw strings (`r"…"`, `r#"…"#`). Rust raw strings with more than one `#` are not modeled, and interpolation expressions inside strings are not analyzed.
 - Python triple-quoted strings are counted as comments only when they begin a statement (docstrings); used as a value (e.g. `x = """…"""`) they are counted as code.
 
 ## License
@@ -210,7 +216,7 @@ This project is released under the [MIT License](https://opensource.org/licenses
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 44 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 47 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
 
 ## 功能特性
 
@@ -320,8 +326,13 @@ sloc . --format markdown --detailed -o -
 | 选项 | 简写 | 说明 |
 | --- | --- | --- |
 | `path`（参数） | | 要分析的文件或目录，默认为当前目录 `.` |
+| `--list-file` | | 分析该文件中逐行列出的文件列表,而不是扫描 `path`;用 `-` 表示从标准输入读取列表 |
 | `--include` | `-i` | 要包含的文件 glob 模式，可多次指定 |
 | `--exclude` | `-e` | 要排除的文件 glob 模式，可多次指定 |
+| `--exclude-dir` | | 要在任意深度排除的目录名(如 `vendor`);等价于 `--exclude "**/<name>/**"`,可多次指定 |
+| `--include-lang` | | 要包含的语言显示名称(如 `"C#"`),大小写不敏感匹配;可多次指定 |
+| `--exclude-lang` | | 要排除的语言显示名称,大小写不敏感匹配;可多次指定 |
+| `--unique` | | 内容字节完全相同的文件只计一次;后出现的重复文件计入跳过列表 |
 | `--format` | `-f` | 输出格式：`Table`（默认）、`Json`、`Html`、`Csv` 或 `Markdown` |
 | `--output` | `-o` | `Json` / `Html` / `Csv` / `Markdown` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
 | `--no-recursive` | | 不递归扫描子目录 |
@@ -335,6 +346,7 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
+| `--follow-symlinks` | | 跟随符号链接/联接目录进行扫描,而不是跳过它们;直接指向自身祖先目录的循环链接仍会被跳过 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files` 或 `Name` |
 | `--top` | | 仅显示汇总中排名前 N 的语言 |
@@ -365,7 +377,7 @@ sloc . --format markdown --detailed -o -
 
 ## 支持的语言
 
-C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less、Dart、Scala、R、Lua、Perl、Elixir、Haskell、Objective-C、TOML、Markdown、Terraform、Makefile、Dockerfile、CMake、Groovy/Gradle、Julia、Clojure、Vue、Svelte、Protobuf、Batch。
+C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less、Dart、Scala、R、Lua、Perl、Elixir、Haskell、Objective-C、TOML、Markdown、Terraform、Makefile、Dockerfile、CMake、Groovy/Gradle、Julia、Clojure、Vue、Svelte、Protobuf、Batch、Assembly、INI、Jupyter Notebook。
 
 无扩展名的文件（如 `Makefile`、`Dockerfile`、`CMakeLists.txt`、`Rakefile`、`Gemfile`）按文件名识别。
 
@@ -391,7 +403,7 @@ sloc ./src
 ## 已知限制
 
 - 行的分类基于注释符号的文本匹配，不是完整的词法分析器。
-- 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理。逐字字符串 / 双引号转义（例如 C# 的 `@"…""…"`）暂不支持，字符串内的插值表达式也不做分析。
+- 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理，包括 C# 逐字字符串（`@"…""…"`）和 Rust 原始字符串（`r"…"`、`r#"…"#`）。带多个 `#` 的 Rust 原始字符串暂不支持，字符串内的插值表达式也不做分析。
 - Python 三引号字符串仅在作为语句开头（docstring）时计为注释；作为值使用时（例如 `x = """…"""`）计为代码。
 
 ## 许可证
