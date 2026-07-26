@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -76,14 +77,146 @@ public sealed class GitIgnoreRules
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
-        var files = new List<GitIgnoreFile>();
         var fullRoot = Path.GetFullPath(root);
+
+        // Lowest precedence first: the user's global excludesFile, then the repo-local
+        // .git/info/exclude, then the per-directory .gitignore files discovered below
+        // (root .gitignore, then nested ones). All of these share BaseDirectory "", so a
+        // stable sort (not List<T>.Sort, which isn't stable) is required to preserve this
+        // relative order.
+        var files = new List<GitIgnoreFile>();
+        AddIfPresent(files, LoadGlobalExcludesFile());
+        AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
+
         var visited = 0;
         CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
 
-        // Shallower ignore files first, so deeper ones take precedence (evaluated later).
-        files.Sort((left, right) => left.BaseDirectory.Length.CompareTo(right.BaseDirectory.Length));
-        return new GitIgnoreRules(files);
+        var ordered = files.OrderBy(file => file.BaseDirectory.Length).ToList();
+        return new GitIgnoreRules(ordered);
+    }
+
+    private static void AddIfPresent(List<GitIgnoreFile> files, GitIgnoreFile? file)
+    {
+        if (file is not null)
+        {
+            files.Add(file);
+        }
+    }
+
+    /// <summary>
+    /// Loads the repo-local <c>.git/info/exclude</c> file at the scan root, if present.
+    /// Does not search upward for a repository boundary, matching how local
+    /// <c>.gitignore</c> discovery only looks at the scan root down.
+    /// </summary>
+    private static GitIgnoreFile? LoadRepoExcludeFile(string scanRoot)
+    {
+        var excludePath = Path.Combine(scanRoot, ".git", "info", "exclude");
+        return TryLoadIgnoreFile(excludePath);
+    }
+
+    /// <summary>
+    /// Loads the user's global <c>core.excludesFile</c>, if <c>~/.gitconfig</c> sets one
+    /// and it exists.
+    /// </summary>
+    private static GitIgnoreFile? LoadGlobalExcludesFile()
+    {
+        var gitConfigPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitconfig");
+
+        string configContents;
+        try
+        {
+            configContents = File.ReadAllText(gitConfigPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return TryParseExcludesFile(configContents, out var excludesFilePath)
+            ? TryLoadIgnoreFile(excludesFilePath)
+            : null;
+    }
+
+    private static GitIgnoreFile? TryLoadIgnoreFile(string path)
+    {
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        var patterns = CompilePatterns(lines);
+        return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns);
+    }
+
+    /// <summary>
+    /// Parses the <c>[core] excludesFile</c> setting out of raw <c>.gitconfig</c> contents.
+    /// A minimal, single-file parser: does not resolve <c>include</c> directives or other
+    /// config sources git would also consult.
+    /// </summary>
+    /// <param name="gitConfigContents">The raw contents of a git config file.</param>
+    /// <param name="excludesFilePath">
+    /// The resolved path (with a leading <c>~</c> expanded to the user's home directory),
+    /// if the setting was found.
+    /// </param>
+    /// <returns><see langword="true"/> if an <c>excludesFile</c> setting was found.</returns>
+    internal static bool TryParseExcludesFile(
+        string gitConfigContents,
+        [NotNullWhen(true)] out string? excludesFilePath)
+    {
+        excludesFilePath = null;
+        var inCoreSection = false;
+
+        foreach (var rawLine in gitConfigContents.Split('\n'))
+        {
+            var line = rawLine.Trim().TrimEnd('\r');
+            if (line.Length == 0 || line[0] == '#' || line[0] == ';')
+            {
+                continue;
+            }
+
+            if (line[0] == '[')
+            {
+                inCoreSection = line.Equals("[core]", StringComparison.OrdinalIgnoreCase)
+                    || line.StartsWith("[core ", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (!inCoreSection)
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf('=');
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var key = line[..separator].Trim();
+            if (!key.Equals("excludesFile", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = line[(separator + 1)..].Trim();
+            if (value.Length == 0)
+            {
+                continue;
+            }
+
+            excludesFilePath = value[0] == '~'
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), value[1..].TrimStart('/', '\\'))
+                : value;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

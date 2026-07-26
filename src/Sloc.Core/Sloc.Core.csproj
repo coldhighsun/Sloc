@@ -4,4 +4,8 @@
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sloc.Core.Tests" />
+  </ItemGroup>
+
 </Project>
