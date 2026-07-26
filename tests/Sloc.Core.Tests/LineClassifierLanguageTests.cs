@@ -155,6 +155,35 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("let s = r#\"not // \"a comment\"#;"));
     }
 
+    /// <summary>
+    /// Verifies that BASIC's <c>REM</c> line comment is matched case-insensitively and
+    /// that the <c>'</c> shorthand comment is recognized too.
+    /// </summary>
+    [Fact]
+    public void Classify_BasicRemComment_IsCaseInsensitive()
+    {
+        var classifier = new LineClassifier(Resolve(".bas"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("rem a basic comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("' a basic comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("PRINT \"hello\""));
+    }
+
+    /// <summary>
+    /// Verifies that Pascal's <c>{ }</c> and <c>(* *)</c> block comments are both
+    /// recognized, alongside its <c>//</c> line comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PascalBlockComments_BothDelimitersRecognized()
+    {
+        var classifier = new LineClassifier(Resolve(".pas"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("{ a brace comment }"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("(* a paren comment *)"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a line comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("writeln('hello');"));
+    }
+
     private static LanguageDefinition Resolve(string extension)
     {
         LanguageRegistry.TryGetByExtension(extension, out var language);

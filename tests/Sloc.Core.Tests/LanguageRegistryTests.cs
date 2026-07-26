@@ -153,6 +153,24 @@ public class LanguageRegistryTests
     }
 
     /// <summary>
+    /// Verifies that BASIC and Pascal extensions resolve to the correct language.
+    /// </summary>
+    /// <param name="extension">An extension to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData(".bas", "BASIC")]
+    [InlineData(".pas", "Pascal")]
+    [InlineData(".pp", "Pascal")]
+    [InlineData(".inc", "Pascal")]
+    public void TryGetByExtension_BasicAndPascal_Resolve(string extension, string expectedName)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.True(found);
+        Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
     /// Verifies that extensionless files identified by name (e.g. Makefile, Dockerfile)
     /// resolve to the correct language, case-insensitively and regardless of directory.
     /// </summary>

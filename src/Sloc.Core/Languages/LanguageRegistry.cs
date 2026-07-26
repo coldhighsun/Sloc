@@ -477,6 +477,23 @@ public static class LanguageRegistry
                 Name = "Jupyter Notebook",
                 Extensions = [".ipynb"],
                 ShowHealth = false
+            },
+            new()
+            {
+                Name = "BASIC",
+                Extensions = [".bas"],
+                // REM is a line comment (case-insensitive, whole-word); ' is the modern shorthand (QBasic/VB6).
+                LineCommentTokens = ["REM", "'"],
+                CaseInsensitiveLineComments = true,
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Pascal",
+                Extensions = [".pas", ".pp", ".inc"],
+                LineCommentTokens = ["//"],
+                BlockComments = [new BlockComment("{", "}"), new BlockComment("(*", "*)")],
+                StringLiterals = [singleQuote]
             }
         };
     }
