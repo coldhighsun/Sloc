@@ -351,45 +351,19 @@ public sealed class GitIgnoreRules
             // it would loop back onto a directory already on the current path from the
             // scan root (directly, or transitively through an earlier symlink) — not just
             // the scan root itself, so chains of two or more symlinks are caught too.
-            string? target;
-            try
+            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
+            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks)
             {
-                target = Directory.ResolveLinkTarget(subdirectory, returnFinalTarget: true)?.FullName;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
+                // Not followed: resolution failed, it would loop, or the caller opted out
+                // of following symlinked directories entirely. Either way, exclude it.
                 symlinkedDirectories.Add(subdirectory);
                 continue;
             }
 
-            if (target is null)
-            {
-                symlinkedDirectories.Add(subdirectory);
-                continue;
-            }
-
-            target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(target, ancestor));
-
-            if (isLoop || !followSymlinks)
-            {
-                // Not followed: either it would loop, or the caller opted out of following
-                // symlinked directories entirely. Either way, exclude it from the scan.
-                symlinkedDirectories.Add(subdirectory);
-                continue;
-            }
-
-            ancestors.Add(target);
+            ancestors.Add(resolution.Target!);
             CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
-    }
-
-    private static bool IsAncestorOrSelf(string ancestor, string path)
-    {
-        var normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.Equals(ancestor, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
@@ -445,25 +419,8 @@ public sealed class GitIgnoreRules
 
         public IReadOnlyList<GitIgnorePattern> Patterns { get; } = patterns;
 
-        public bool TryGetRelativePath(string path, out string relativeToBase)
-        {
-            if (BaseDirectory.Length == 0)
-            {
-                relativeToBase = path;
-                return true;
-            }
-
-            if (path.Length > BaseDirectory.Length
-                && path.StartsWith(BaseDirectory, StringComparison.Ordinal)
-                && path[BaseDirectory.Length] == '/')
-            {
-                relativeToBase = path[(BaseDirectory.Length + 1)..];
-                return true;
-            }
-
-            relativeToBase = string.Empty;
-            return false;
-        }
+        public bool TryGetRelativePath(string path, out string relativeToBase) =>
+            RelativePathResolver.TryGetRelativePath(BaseDirectory, path, out relativeToBase);
     }
 }
 
