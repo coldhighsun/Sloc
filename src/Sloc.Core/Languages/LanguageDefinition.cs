@@ -38,12 +38,32 @@ public sealed record BlockComment(string Open, string Close, bool AllowNested = 
 /// literal. Set to <see langword="false"/> for raw strings (e.g. Go backtick strings).
 /// </param>
 /// <param name="EscapeChar">The escape character used inside the literal.</param>
+/// <param name="CloseDelimiter">
+/// The token that closes the literal, when different from <paramref name="Delimiter"/>
+/// (e.g. C# verbatim strings open with <c>@"</c> but close with <c>"</c>, and Rust
+/// hash-delimited raw strings open with <c>r#"</c> but close with <c>"#</c>). Defaults to
+/// <paramref name="Delimiter"/> when not set.
+/// </param>
+/// <param name="DoubledClosingEscape">
+/// Whether a doubled closing delimiter inside the literal is an escaped literal
+/// occurrence rather than the end of the string, as with C# verbatim strings
+/// (<c>@"a""b"</c> is the single string <c>a"b</c>).
+/// </param>
 public sealed record StringLiteral(
     string Delimiter,
     bool Multiline = false,
     bool IsDocComment = false,
     bool AllowEscape = true,
-    char EscapeChar = '\\');
+    char EscapeChar = '\\',
+    string? CloseDelimiter = null,
+    bool DoubledClosingEscape = false)
+{
+    /// <summary>
+    /// The token that closes the literal (<see cref="CloseDelimiter"/> if set, otherwise
+    /// <see cref="Delimiter"/>).
+    /// </summary>
+    public string Closing => CloseDelimiter ?? Delimiter;
+}
 
 /// <summary>
 /// Describes how a programming language expresses comments so that source

@@ -86,6 +86,20 @@ public static class LanguageRegistry
         var pyTripleSingle = new StringLiteral("'''", Multiline: true, IsDocComment: true);
         var rawTripleDouble = new StringLiteral("\"\"\"", Multiline: true, AllowEscape: false);
         var rawTripleSingle = new StringLiteral("'''", Multiline: true, AllowEscape: false);
+        var csVerbatimString = new StringLiteral(
+            "@\"",
+            Multiline: true,
+            AllowEscape: false,
+            CloseDelimiter: "\"",
+            DoubledClosingEscape: true);
+        // Rust raw strings (`r"…"` / `r#"…"#`). Delimiters with more than one `#` are not
+        // modeled; they are rare in practice and would require a variable-length delimiter.
+        var rustRawStringNoHash = new StringLiteral("r\"", Multiline: true, AllowEscape: false);
+        var rustRawStringOneHash = new StringLiteral(
+            "r#\"",
+            Multiline: true,
+            AllowEscape: false,
+            CloseDelimiter: "\"#");
 
         return new List<LanguageDefinition>
         {
@@ -95,7 +109,7 @@ public static class LanguageRegistry
                 Extensions = [".cs", ".csx"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [csVerbatimString, doubleQuote, singleQuote]
             },
             new()
             {
@@ -168,7 +182,7 @@ public static class LanguageRegistry
                 BlockComments = [nestedCStyleBlock],
                 // Single quotes denote lifetimes as well as char literals in Rust, so they
                 // are not treated as string delimiters here.
-                StringLiterals = [doubleQuote]
+                StringLiterals = [rustRawStringOneHash, rustRawStringNoHash, doubleQuote]
             },
             new()
             {
@@ -442,6 +456,27 @@ public static class LanguageRegistry
                 LineCommentTokens = ["REM", "::"],
                 CaseInsensitiveLineComments = true,
                 StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Assembly",
+                Extensions = [".asm", ".s"],
+                LineCommentTokens = [";"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "INI",
+                Extensions = [".ini", ".editorconfig"],
+                LineCommentTokens = [";", "#"],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Jupyter Notebook",
+                Extensions = [".ipynb"],
+                ShowHealth = false
             }
         };
     }

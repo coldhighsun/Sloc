@@ -38,6 +38,22 @@ public sealed class CsvRenderer : IResultRenderer
         {
             RenderByLanguage(summary, noHealth);
         }
+
+        if (summary.Skipped.Count > 0)
+        {
+            RenderSkipped(summary);
+        }
+    }
+
+    private void RenderSkipped(AnalysisSummary summary)
+    {
+        _writer.Write("\r\n");
+        WriteRow(["Path", "Reason"]);
+
+        foreach (var entry in summary.Skipped)
+        {
+            WriteRow([entry.Path, entry.Reason]);
+        }
     }
 
     private void RenderByLanguage(AnalysisSummary summary, bool noHealth)

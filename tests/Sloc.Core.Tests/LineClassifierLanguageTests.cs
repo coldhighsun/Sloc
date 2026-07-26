@@ -103,6 +103,58 @@ public class LineClassifierLanguageTests
         Assert.False(classifier.InBlockComment);
     }
 
+    /// <summary>
+    /// Verifies that a C# verbatim string containing a doubled quote (an escaped literal
+    /// quote) does not end the string early, so a trailing <c>//</c> after it is still
+    /// inside code, not treated as a real comment token outside a string.
+    /// </summary>
+    [Fact]
+    public void Classify_CSharpVerbatimStringWithDoubledQuote_StaysOneString()
+    {
+        var classifier = new LineClassifier(Resolve(".cs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("var s = @\"a\"\"b // not a comment\";"));
+        Assert.False(classifier.InMultilineString);
+    }
+
+    /// <summary>
+    /// Verifies that a C# verbatim string can span multiple physical lines.
+    /// </summary>
+    [Fact]
+    public void Classify_CSharpVerbatimString_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".cs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("var s = @\"line one"));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("line two\";"));
+        Assert.False(classifier.InMultilineString);
+    }
+
+    /// <summary>
+    /// Verifies that a Rust raw string (<c>r"…"</c>) hides a <c>//</c> token from being
+    /// treated as a line comment.
+    /// </summary>
+    [Fact]
+    public void Classify_RustRawString_HidesCommentToken()
+    {
+        var classifier = new LineClassifier(Resolve(".rs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("let s = r\"not // a comment\";"));
+    }
+
+    /// <summary>
+    /// Verifies that a hash-delimited Rust raw string (<c>r#"…"#</c>) is recognized, and a
+    /// bare <c>"#</c> that only partially matches the opening does not close it early.
+    /// </summary>
+    [Fact]
+    public void Classify_RustHashRawString_HidesCommentToken()
+    {
+        var classifier = new LineClassifier(Resolve(".rs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("let s = r#\"not // \"a comment\"#;"));
+    }
+
     private static LanguageDefinition Resolve(string extension)
     {
         LanguageRegistry.TryGetByExtension(extension, out var language);

@@ -103,7 +103,23 @@ public class CsvRendererTests
         Assert.DoesNotContain("Path", lines[0]);
     }
 
-    private static AnalysisSummary BuildSummary(string path)
+    /// <summary>
+    /// Verifies that skipped files are appended as a second table after a blank line.
+    /// </summary>
+    [Fact]
+    public void Render_WithSkippedFiles_AppendsSkippedTable()
+    {
+        var summary = BuildSummary("a.cs", skipped: [new SkippedEntry("bad.cs", "binary file")]);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Path,Reason", lines[^2]);
+        Assert.Equal("bad.cs,binary file", lines[^1]);
+    }
+
+    private static AnalysisSummary BuildSummary(string path, IReadOnlyList<SkippedEntry>? skipped = null)
     {
         var file = new FileAnalysis
         {
@@ -113,6 +129,6 @@ public class CsvRendererTests
             Comment = 20,
             Blank = 5
         };
-        return new AnalysisSummary([file]);
+        return new AnalysisSummary([file], skipped);
     }
 }

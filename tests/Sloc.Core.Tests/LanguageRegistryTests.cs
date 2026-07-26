@@ -139,6 +139,11 @@ public class LanguageRegistryTests
     [InlineData(".proto", "Protobuf")]
     [InlineData(".bat", "Batch")]
     [InlineData(".cmd", "Batch")]
+    [InlineData(".asm", "Assembly")]
+    [InlineData(".s", "Assembly")]
+    [InlineData(".ini", "INI")]
+    [InlineData(".editorconfig", "INI")]
+    [InlineData(".ipynb", "Jupyter Notebook")]
     public void TryGetByExtension_ReviewLanguages_Resolve(string extension, string expectedName)
     {
         var found = LanguageRegistry.TryGetByExtension(extension, out var language);
