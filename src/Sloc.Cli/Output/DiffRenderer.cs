@@ -48,7 +48,11 @@ internal static class DiffRenderer
     /// </summary>
     /// <param name="current">The current analysis summary.</param>
     /// <param name="baseline">The baseline report.</param>
-    public static void RenderTable(AnalysisSummary current, JsonReport baseline)
+    /// <param name="console">
+    /// The console to write to. Defaults to <see cref="AnsiConsole.Console"/> when
+    /// <see langword="null"/>; supply a test console to capture the output.
+    /// </param>
+    public static void RenderTable(AnalysisSummary current, JsonReport baseline, IAnsiConsole? console = null)
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(baseline);
@@ -81,7 +85,7 @@ internal static class DiffRenderer
             SignedBold(deltas.Total.Blank),
             SignedBold(deltas.Total.Total));
 
-        AnsiConsole.Write(table);
+        (console ?? AnsiConsole.Console).Write(table);
     }
 
     /// <summary>

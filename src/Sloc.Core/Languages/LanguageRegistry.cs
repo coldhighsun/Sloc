@@ -386,6 +386,61 @@ public static class LanguageRegistry
                 Filenames = ["CMakeLists.txt"],
                 LineCommentTokens = ["#"],
                 StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Groovy",
+                Extensions = [".groovy", ".gradle"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Julia",
+                Extensions = [".jl"],
+                LineCommentTokens = ["#"],
+                BlockComments = [new BlockComment("#=", "=#", AllowNested: true)],
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "Clojure",
+                Extensions = [".clj", ".cljs", ".cljc", ".edn"],
+                LineCommentTokens = [";"],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Vue",
+                Extensions = [".vue"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock, htmlBlock],
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Svelte",
+                Extensions = [".svelte"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock, htmlBlock],
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Protobuf",
+                Extensions = [".proto"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Batch",
+                Extensions = [".bat", ".cmd"],
+                // REM is a line comment; :: is the idiomatic label-comment trick.
+                LineCommentTokens = ["REM ", "rem ", "::"],
+                StringLiterals = [doubleQuote]
             }
         };
     }
