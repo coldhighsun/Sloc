@@ -208,6 +208,26 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that scanning an explicit single-file path still honors a <c>.gitignore</c>
+    /// in its parent directory when <see cref="ScanOptions.RespectGitignore"/> is set, and
+    /// includes the file otherwise.
+    /// </summary>
+    [Fact]
+    public void Scan_SingleFilePath_HonorsGitignoreInParentDirectory()
+    {
+        Write(".gitignore", "*.log\n");
+        Write("debug.log", "noise");
+
+        var ignoredPath = Path.Combine(_root, "debug.log");
+
+        var honored = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+        Assert.Empty(honored.Files);
+
+        var ignoredToggleOff = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = false, IncludeUnknown = true });
+        Assert.Single(ignoredToggleOff.Files);
+    }
+
+    /// <summary>
     /// Verifies that a non-recursive scan does not descend into subdirectories to search for
     /// nested <c>.gitignore</c> files, matching the shallow file discovery it performs.
     /// </summary>
