@@ -12,8 +12,10 @@ namespace Sloc.Core;
 /// A classifier is stateful: it tracks open block comments and multi-line string
 /// literals across calls to <see cref="Classify"/>, so a single instance must be used
 /// for the lines of a single file, in order. Comment tokens appearing inside string
-/// literals are skipped for languages that declare their string delimiters. Verbatim
-/// and doubled-quote escaping (e.g. C# <c>@"…""…"</c>) is not modeled.
+/// literals are skipped for languages that declare their string delimiters, including
+/// literals whose open and close tokens differ (see <see cref="StringLiteral.CloseDelimiter"/>)
+/// and doubled-closing-delimiter escaping (see <see cref="StringLiteral.DoubledClosingEscape"/>,
+/// e.g. C# <c>@"…""…"</c>).
 /// </remarks>
 public sealed class LineClassifier
 {
@@ -169,11 +171,19 @@ public sealed class LineClassifier
             return index + 2;
         }
 
-        if (MatchesAt(line, index, literal.Delimiter))
+        if (literal.DoubledClosingEscape
+            && MatchesAt(line, index, literal.Closing)
+            && MatchesAt(line, index + literal.Closing.Length, literal.Closing))
+        {
+            MarkString(ref sawCode, ref sawComment);
+            return index + (literal.Closing.Length * 2);
+        }
+
+        if (MatchesAt(line, index, literal.Closing))
         {
             MarkString(ref sawCode, ref sawComment);
             _activeString = null;
-            return index + literal.Delimiter.Length;
+            return index + literal.Closing.Length;
         }
 
         if (!char.IsWhiteSpace(line[index]))

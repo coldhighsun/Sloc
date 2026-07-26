@@ -53,6 +53,19 @@ public class AnalysisSummarySortTests
         Assert.Equal(["C#", "Python"], summary.ByLanguage.Select(s => s.Language).ToArray());
     }
 
+    /// <summary>
+    /// Verifies that a <c>top</c> value below 1 is ignored rather than limiting the
+    /// result to zero rows, matching the CLI's <c>--top</c> validation which rejects
+    /// values below 1 before they would ever reach this API.
+    /// </summary>
+    [Fact]
+    public void ByLanguage_TopBelowOne_IsIgnored()
+    {
+        var summary = new AnalysisSummary(Sample(), top: 0);
+
+        Assert.Equal(3, summary.ByLanguage.Count);
+    }
+
     private static IReadOnlyList<FileAnalysis> Sample() =>
     [
         new() { Path = "a.cs", Language = "C#", Code = 100, Comment = 5, Blank = 0 },

@@ -120,7 +120,11 @@ public sealed class AnalysisSummary
     /// <param name="skipped">Entries that were skipped due to read errors.</param>
     /// <param name="sortBy">The key by which to order the per-language statistics.</param>
     /// <param name="descending">Whether to order the sort key in descending order.</param>
-    /// <param name="top">When set, keeps only the first this-many languages after sorting.</param>
+    /// <param name="top">
+    /// When set to 1 or greater, keeps only the first this-many languages after sorting.
+    /// Values less than 1 are ignored (no limit is applied), matching the CLI's
+    /// <c>--top</c> validation, which rejects values below 1.
+    /// </param>
     public AnalysisSummary(
         IReadOnlyList<FileAnalysis> files,
         IReadOnlyList<SkippedEntry>? skipped = null,
@@ -169,7 +173,11 @@ public sealed class AnalysisSummary
     /// <param name="languages">The per-language statistics to order.</param>
     /// <param name="sortBy">The key by which to order the statistics.</param>
     /// <param name="descending">Whether to order the sort key in descending order.</param>
-    /// <param name="top">When set, keeps only the first this-many languages after sorting.</param>
+    /// <param name="top">
+    /// When set to 1 or greater, keeps only the first this-many languages after sorting.
+    /// Values less than 1 are ignored (no limit is applied), matching the CLI's
+    /// <c>--top</c> validation, which rejects values below 1.
+    /// </param>
     public static IReadOnlyList<LanguageStatistics> OrderAndLimit(
         IEnumerable<LanguageStatistics> languages,
         LanguageSort sortBy = LanguageSort.Total,
@@ -177,7 +185,7 @@ public sealed class AnalysisSummary
         int? top = null)
     {
         var sorted = Order(languages, sortBy, descending);
-        if (top is { } limit && limit >= 0)
+        if (top is { } limit && limit >= 1)
         {
             sorted = sorted.Take(limit);
         }
