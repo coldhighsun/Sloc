@@ -122,7 +122,7 @@ internal static class DiffRenderer
 
     private static Deltas Compute(AnalysisSummary current, JsonReport baseline)
     {
-        var baseByLanguage = (baseline.ByLanguage ?? [])
+        var baseByLanguage = ResolveBaselineLanguages(baseline)
             .ToDictionary(language => language.Language, StringComparer.OrdinalIgnoreCase);
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -164,6 +164,40 @@ internal static class DiffRenderer
             current.Total - baseline.Total);
 
         return new Deltas(languages, total);
+    }
+
+    /// <summary>
+    /// Resolves the per-language breakdown of a baseline report. Reports saved with
+    /// <c>--by-file</c> have no <see cref="JsonReport.ByLanguage"/>; in that case the
+    /// breakdown is reconstructed by aggregating the per-file entries so language deltas
+    /// stay correct.
+    /// </summary>
+    /// <param name="baseline">The baseline report.</param>
+    /// <returns>The per-language statistics of the baseline.</returns>
+    private static IReadOnlyList<JsonLanguage> ResolveBaselineLanguages(JsonReport baseline)
+    {
+        if (baseline.ByLanguage is { Count: > 0 })
+        {
+            return baseline.ByLanguage;
+        }
+
+        if (baseline.Files is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        return baseline.Files
+            .GroupBy(file => file.Language, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new JsonLanguage
+            {
+                Language = group.Key,
+                Files = group.Count(),
+                Code = group.Sum(file => file.Code),
+                Comment = group.Sum(file => file.Comment),
+                Blank = group.Sum(file => file.Blank),
+                Total = group.Sum(file => file.Total)
+            })
+            .ToList();
     }
 
     private static string Signed(int value) => value switch
