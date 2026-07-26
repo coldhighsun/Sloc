@@ -344,7 +344,9 @@ public sealed class DirectoryScanner
 
             if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
             {
+                ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 CollectSymlinkedDirectoriesToExclude(subdirectory, toExclude, ancestors, followSymlinks);
+                ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
 
