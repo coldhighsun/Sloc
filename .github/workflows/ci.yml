@@ -12,8 +12,12 @@ permissions:
 
 jobs:
   build-and-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
       - name: Checkout
@@ -33,7 +37,14 @@ jobs:
         run: dotnet build Sloc.slnx --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test Sloc.slnx --no-build --configuration Release --verbosity normal
+        run: dotnet test Sloc.slnx --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: ./coverage/**/coverage.cobertura.xml
+          if-no-files-found: warn
 
   publish:
     name: Publish (${{ matrix.rid }})
