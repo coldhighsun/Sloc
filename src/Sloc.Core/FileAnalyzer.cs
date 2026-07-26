@@ -41,16 +41,21 @@ public sealed class FileAnalyzer
         }
 
         stream.Position = 0;
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var analysis = Count(path, language, reader);
 
         if (!computeHash)
         {
-            return analysis;
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return Count(path, language, reader);
         }
 
-        using var hashStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var hash = Convert.ToHexString(SHA256.HashData(hashStream));
+        // Hash the bytes as they're read for line classification, rather than reading the
+        // file a second time from scratch.
+        using var hashing = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var hashingStream = new HashingStream(stream, hashing);
+        using var hashingReader = new StreamReader(hashingStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var analysis = Count(path, language, hashingReader);
+        var hash = Convert.ToHexString(hashing.GetHashAndReset());
+
         return new FileAnalysis
         {
             Path = analysis.Path,
@@ -60,6 +65,51 @@ public sealed class FileAnalyzer
             Blank = analysis.Blank,
             Hash = hash
         };
+    }
+
+    /// <summary>
+    /// A read-only stream wrapper that feeds every byte read from the inner stream into an
+    /// <see cref="IncrementalHash"/>, so a caller can compute a content hash while reading
+    /// without a second pass over the file.
+    /// </summary>
+    private sealed class HashingStream(Stream inner, IncrementalHash hash) : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = inner.Read(buffer);
+            if (read > 0)
+            {
+                hash.AppendData(buffer[..read]);
+            }
+
+            return read;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static bool LooksBinary(Stream stream)
