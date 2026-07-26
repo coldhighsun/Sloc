@@ -184,6 +184,120 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("writeln('hello');"));
     }
 
+    /// <summary>
+    /// Verifies that a Zig <c>//</c> line comment is classified as a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_ZigLineComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".zig"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a zig comment"));
+    }
+
+    /// <summary>
+    /// Verifies that a Nim <c>#[ ]#</c> block comment nests.
+    /// </summary>
+    [Fact]
+    public void Classify_NimNestedBlockComment_RequiresMatchingCloses()
+    {
+        var classifier = new LineClassifier(Resolve(".nim"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("#[ outer #[ inner ]#"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment ]#"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that an OCaml <c>(* *)</c> block comment spanning multiple lines keeps the
+    /// block open across lines.
+    /// </summary>
+    [Fact]
+    public void Classify_OCamlMultiLineBlock_KeepsBlockOpen()
+    {
+        var classifier = new LineClassifier(Resolve(".ml"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("(* start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end *)"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that an Erlang <c>%</c> line comment is classified as a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_ErlangLineComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".erl"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("% an erlang comment"));
+    }
+
+    /// <summary>
+    /// Verifies that an Elm <c>{- -}</c> block comment nests.
+    /// </summary>
+    [Fact]
+    public void Classify_ElmNestedBlockComment_RequiresMatchingCloses()
+    {
+        var classifier = new LineClassifier(Resolve(".elm"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("{- outer {- inner -}"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment -}"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a Solidity <c>//</c> line comment is classified as a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_SolidityLineComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".sol"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a solidity comment"));
+    }
+
+    /// <summary>
+    /// Verifies that a GraphQL <c>#</c> line comment is classified as a comment while a
+    /// field line is classified as code.
+    /// </summary>
+    [Fact]
+    public void Classify_GraphQl_DistinguishesCommentFromCode()
+    {
+        var classifier = new LineClassifier(Resolve(".graphql"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("# a graphql comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("field: String"));
+    }
+
+    /// <summary>
+    /// Verifies that Bazel/Starlark <c>BUILD</c> and <c>WORKSPACE</c> files (identified by
+    /// filename, not extension) resolve to the same language as <c>.bzl</c> files.
+    /// </summary>
+    [Theory]
+    [InlineData("BUILD")]
+    [InlineData("BUILD.bazel")]
+    [InlineData("WORKSPACE")]
+    public void TryGetByPath_BazelFilenames_ResolveToStarlark(string fileName)
+    {
+        Assert.True(LanguageRegistry.TryGetByPath(fileName, out var language));
+        Assert.Equal("Bazel/Starlark", language.Name);
+    }
+
+    /// <summary>
+    /// Verifies that a Nix <c>#</c> line comment is classified as a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_NixLineComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".nix"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("# a nix comment"));
+    }
+
     private static LanguageDefinition Resolve(string extension)
     {
         LanguageRegistry.TryGetByExtension(extension, out var language);
