@@ -249,9 +249,11 @@ public sealed class LineClassifier
             }
 
             // A token made entirely of letters/digits (e.g. "REM") must be a whole word,
-            // so it doesn't match inside a longer identifier (e.g. "REMOVE").
+            // so it doesn't match inside a longer identifier (e.g. "REMOVE" or "XREM").
             var end = index + token.Length;
-            if (IsWordToken(token) && end < line.Length && char.IsLetterOrDigit(line[end]))
+            if (IsWordToken(token)
+                && ((end < line.Length && char.IsLetterOrDigit(line[end]))
+                    || (index > 0 && char.IsLetterOrDigit(line[index - 1]))))
             {
                 continue;
             }

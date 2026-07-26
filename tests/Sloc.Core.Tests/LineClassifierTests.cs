@@ -171,6 +171,7 @@ public class LineClassifierTests
     [InlineData("rem", LineKind.Comment)]
     [InlineData("Rem this is a comment", LineKind.Comment)]
     [InlineData("REMOVE.exe", LineKind.Code)]
+    [InlineData("XREM foo", LineKind.Code)]
     public void Classify_BatchRem_MatchesWholeWordCaseInsensitive(string line, LineKind expected)
     {
         var classifier = new LineClassifier(Batch);

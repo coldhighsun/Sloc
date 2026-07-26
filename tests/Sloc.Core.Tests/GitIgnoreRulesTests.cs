@@ -8,6 +8,38 @@ namespace Sloc.Core.Tests;
 public class GitIgnoreRulesTests
 {
     /// <summary>
+    /// Verifies the precedence order documented on <see cref="GitIgnoreRules.Load"/>: the
+    /// repo-local <c>.git/info/exclude</c> is lowest precedence among the tiers testable
+    /// without touching the real user profile, so a later, more specific <c>.gitignore</c>
+    /// pattern (negation) can override it. The global <c>core.excludesFile</c> tier sits
+    /// below this and is covered separately by <see cref="TryParseExcludesFile_ExtractsCoreSectionSetting"/>
+    /// at the parsing level — exercising it end-to-end would require pointing
+    /// <c>~/.gitconfig</c> at a temp file, which is not safe to do from a test that may run
+    /// concurrently with others on a developer's real machine.
+    /// </summary>
+    [Fact]
+    public void Load_RepoExcludeIsOverriddenByLaterGitignoreNegation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sloc-gitignore-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, ".git", "info"));
+        try
+        {
+            File.WriteAllText(Path.Combine(root, ".git", "info", "exclude"), "*.log\n");
+            File.WriteAllText(Path.Combine(root, ".gitignore"), "!keep.log\n");
+
+            var rules = GitIgnoreRules.Load(root, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git" });
+
+            Assert.True(rules.IsIgnored("debug.log"));
+            Assert.False(rules.IsIgnored("keep.log"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+
+    /// <summary>
     /// Verifies that a bare name matches at any depth, and a non-matching path does not.
     /// </summary>
     [Theory]
