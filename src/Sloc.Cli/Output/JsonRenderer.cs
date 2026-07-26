@@ -23,9 +23,12 @@ public sealed class JsonRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
+
+        var includeLanguages = detailed || !byFile;
+        var includeFiles = detailed || byFile;
 
         var report = new JsonReport
         {
@@ -37,7 +40,7 @@ public sealed class JsonRenderer : IResultRenderer
             Blank = summary.Blank,
             BlankPct = Pct(summary.Blank, summary.Total),
             Total = summary.Total,
-            ByLanguage = byFile ? null : summary.ByLanguage.Select(language => new JsonLanguage
+            ByLanguage = !includeLanguages ? null : summary.ByLanguage.Select(language => new JsonLanguage
             {
                 Language = language.Language,
                 Files = language.Files,
@@ -50,7 +53,7 @@ public sealed class JsonRenderer : IResultRenderer
                 Total = language.Total,
                 Health = Health(language.Health, noHealth)
             }).ToList(),
-            Files = byFile
+            Files = includeFiles
                 ? summary.Files.Select(file => new JsonFile
                 {
                     Path = file.Path,

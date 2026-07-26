@@ -66,6 +66,23 @@ public class JsonRendererTests
         Assert.Equal("a.cs", files[0].GetProperty("path").GetString());
     }
 
+    /// <summary>
+    /// Verifies that <c>detailed</c> emits both the by-language summary and the per-file
+    /// array in the same document.
+    /// </summary>
+    [Fact]
+    public void Render_Detailed_EmitsLanguagesAndFilesTogether()
+    {
+        var summary = BuildSummary();
+
+        using var writer = new StringWriter();
+        new JsonRenderer(writer).Render(summary, byFile: false, noHealth: false, detailed: true);
+        var root = JsonSerializer.Deserialize<JsonElement>(writer.ToString());
+
+        Assert.Equal(1, root.GetProperty("byLanguage").GetArrayLength());
+        Assert.Equal(1, root.GetProperty("files").GetArrayLength());
+    }
+
     private static JsonElement Render(AnalysisSummary summary, bool byFile, bool noHealth)
     {
         using var writer = new StringWriter();

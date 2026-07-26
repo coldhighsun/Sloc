@@ -13,5 +13,9 @@ public interface IResultRenderer
     /// <param name="summary">The summary to render.</param>
     /// <param name="byFile">Whether to include a per-file breakdown.</param>
     /// <param name="noHealth">When <see langword="true"/>, the Comment Health column and percentage breakdowns are hidden.</param>
-    void Render(AnalysisSummary summary, bool byFile, bool noHealth);
+    /// <param name="detailed">
+    /// When <see langword="true"/>, emit both the by-language summary and the per-file
+    /// breakdown together instead of one or the other.
+    /// </param>
+    void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false);
 }

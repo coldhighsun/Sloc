@@ -120,6 +120,7 @@ sloc . --sort comment --top 5
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
 | `--by-file` | | Show per-file details in addition to the language summary |
+| `--detailed` | | In `Json` / `Html` output, include both the language summary and the per-file breakdown |
 | `--paged` | `-p` | Show paged output |
 | `--all` | | Include files with unknown extensions (grouped as `Other`) |
 | `--quiet` | `-q` | Suppress the banner, progress UI, and `Saved to` message |
@@ -314,6 +315,7 @@ sloc . --sort comment --top 5
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |
+| `--detailed` | | 在 `Json` / `Html` 输出中同时包含语言汇总和逐文件明细 |
 | `--paged` | `-p` | 显示分页输出 |
 | `--all` | | 包含扩展名未知的文件（归入 `Other`） |
 | `--quiet` | `-q` | 抑制横幅、进度 UI 和 `Saved to` 提示 |
