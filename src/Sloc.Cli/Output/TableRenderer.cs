@@ -263,7 +263,7 @@ public sealed class TableRenderer : IResultRenderer
             CommentHealthLevel.Low => "red",
             CommentHealthLevel.Fair => "yellow",
             CommentHealthLevel.Good => "green",
-            CommentHealthLevel.High => "yellow",
+            CommentHealthLevel.High => "cyan",
             _ => "red"
         };
 
@@ -369,6 +369,11 @@ public sealed class TableRenderer : IResultRenderer
 
             if (filesShown < total)
             {
+                if (Console.IsInputRedirected)
+                {
+                    continue;
+                }
+
                 AnsiConsole.Markup($"[grey]-- {filesShown}/{total} shown, press any key to continue, [bold]Q[/] to stop --[/] ");
                 var key = Console.ReadKey(intercept: true);
                 AnsiConsole.WriteLine();

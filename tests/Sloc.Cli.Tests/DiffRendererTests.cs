@@ -37,6 +37,26 @@ public class DiffRendererTests
         }
     }
 
+    /// <summary>
+    /// Verifies that loading a baseline JSON with neither <c>byLanguage</c> nor <c>files</c>
+    /// populated throws rather than silently succeeding, since diffing against it would
+    /// otherwise report every current language as entirely new.
+    /// </summary>
+    [Fact]
+    public void Load_BaselineWithNoBreakdown_Throws()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-empty-baseline-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path, """{"code":0,"comment":0,"blank":0,"total":0}""");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => DiffRenderer.Load(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteBaseline(int code, int comment, int blank)
     {
         var path = Path.Combine(Path.GetTempPath(), "sloc-baseline-" + Guid.NewGuid().ToString("N") + ".json");

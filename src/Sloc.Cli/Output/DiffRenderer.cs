@@ -31,15 +31,24 @@ internal static class DiffRenderer
             throw new InvalidOperationException($"Could not read baseline '{path}': {ex.Message}");
         }
 
+        JsonReport report;
         try
         {
-            return JsonSerializer.Deserialize(json, SlocJsonContext.Default.JsonReport)
+            report = JsonSerializer.Deserialize(json, SlocJsonContext.Default.JsonReport)
                 ?? throw new InvalidOperationException($"Baseline '{path}' is empty.");
         }
         catch (JsonException ex)
         {
             throw new InvalidOperationException($"Baseline '{path}' is not a valid Sloc JSON report: {ex.Message}");
         }
+
+        if (report.ByLanguage is not { Count: > 0 } && report.Files is not { Count: > 0 })
+        {
+            throw new InvalidOperationException(
+                $"Baseline '{path}' has no per-language or per-file breakdown to diff against.");
+        }
+
+        return report;
     }
 
     /// <summary>
