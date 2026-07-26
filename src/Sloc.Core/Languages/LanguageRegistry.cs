@@ -494,6 +494,76 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [new BlockComment("{", "}"), new BlockComment("(*", "*)")],
                 StringLiterals = [singleQuote]
+            },
+            new()
+            {
+                Name = "Zig",
+                Extensions = [".zig"],
+                LineCommentTokens = ["//"],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Nim",
+                Extensions = [".nim", ".nims"],
+                LineCommentTokens = ["#"],
+                BlockComments = [new BlockComment("#[", "]#", AllowNested: true)],
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "OCaml",
+                Extensions = [".ml", ".mli"],
+                BlockComments = [new BlockComment("(*", "*)", AllowNested: true)],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Erlang",
+                Extensions = [".erl", ".hrl"],
+                LineCommentTokens = ["%"],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Elm",
+                Extensions = [".elm"],
+                LineCommentTokens = ["--"],
+                BlockComments = [new BlockComment("{-", "-}", AllowNested: true)],
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "Solidity",
+                Extensions = [".sol"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "GraphQL",
+                Extensions = [".graphql", ".gql"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [rawTripleDouble, doubleQuote]
+            },
+            new()
+            {
+                Name = "Bazel/Starlark",
+                Extensions = [".bzl"],
+                Filenames = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Nix",
+                Extensions = [".nix"],
+                LineCommentTokens = ["#"],
+                BlockComments = [cStyleBlock],
+                // Nix's indented strings ('' … '') are not modeled; only double-quoted
+                // strings are tracked here.
+                StringLiterals = [doubleQuote]
             }
         };
     }
