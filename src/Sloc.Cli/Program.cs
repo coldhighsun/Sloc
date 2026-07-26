@@ -1,9 +1,15 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Help;
+using System.Globalization;
 using Sloc.Cli;
 using Sloc.Core.Models;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+// Render all numbers with the invariant culture so report output (thousands separators,
+// percentages) is deterministic regardless of the host's regional settings.
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 
 var pathArgument = new Argument<string>("path")
 {

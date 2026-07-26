@@ -111,6 +111,21 @@ public class MarkdownRendererTests
         Assert.Contains("weird\\|name.cs", text);
     }
 
+    /// <summary>
+    /// Verifies that skipped entries are rendered in a trailing Skipped section.
+    /// </summary>
+    [Fact]
+    public void Render_WithSkipped_AppendsSkippedSection()
+    {
+        var file = new FileAnalysis { Path = "a.cs", Language = "C#", Code = 80, Comment = 20, Blank = 5 };
+        var summary = new AnalysisSummary([file], [new SkippedEntry("bad.bin", "binary file")]);
+
+        var text = Render(summary, byFile: false, noHealth: false);
+
+        Assert.Contains("## Skipped", text);
+        Assert.Contains("- bad.bin — binary file", text);
+    }
+
     private static string Render(AnalysisSummary summary, bool byFile, bool noHealth)
     {
         using var writer = new StringWriter();

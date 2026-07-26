@@ -27,6 +27,23 @@ public class HtmlRendererTests
     }
 
     /// <summary>
+    /// Verifies that the injected scan time is stamped in the report header rather than the
+    /// render-time clock, so it matches other formats produced from the same run.
+    /// </summary>
+    [Fact]
+    public void Render_WithScanTime_StampsInjectedTimeInHeader()
+    {
+        var summary = BuildSummary();
+        var scanTime = new DateTimeOffset(2026, 7, 26, 10, 30, 0, TimeSpan.Zero);
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer, scanTime).Render(summary, byFile: false, noHealth: false);
+        var html = writer.ToString();
+
+        Assert.Contains("2026-07-26T10:30:00Z", html);
+    }
+
+    /// <summary>
     /// Verifies that <c>noHealth</c> suppresses the health label in the output.
     /// </summary>
     [Fact]

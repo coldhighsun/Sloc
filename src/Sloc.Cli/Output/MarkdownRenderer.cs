@@ -65,7 +65,27 @@ public sealed class MarkdownRenderer : IResultRenderer
             AppendFileTable(sb, summary, noHealth);
         }
 
+        if (summary.Skipped.Count > 0)
+        {
+            AppendSkippedSection(sb, summary);
+        }
+
         _writer.Write(sb.ToString());
+    }
+
+    private static void AppendSkippedSection(StringBuilder sb, AnalysisSummary summary)
+    {
+        sb.AppendLine();
+        sb.AppendLine("## Skipped");
+        sb.AppendLine();
+
+        foreach (var entry in summary.Skipped)
+        {
+            sb.Append("- ");
+            sb.Append(Escape(entry.Path));
+            sb.Append(" — ");
+            sb.AppendLine(Escape(entry.Reason));
+        }
     }
 
     private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)

@@ -26,7 +26,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - CI-friendly: JSON to stdout for piping (e.g. `| jq`), meaningful exit codes, and a `--min-comment-pct` threshold gate
 - Compare against a saved JSON report with `--baseline` to see how line counts changed
 - Sort and limit the language summary with `--sort` / `--top`
-- Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end
+- Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end (in every format except `Csv`, which stays a single machine-parsable table)
 
 ## Installation
 
@@ -126,7 +126,7 @@ sloc . --format markdown --detailed -o -
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
 | `--by-file` | | Show per-file details in addition to the language summary |
-| `--detailed` | | In `Json` / `Html` / `Markdown` output, include both the language summary and the per-file breakdown |
+| `--detailed` | | In `Json` / `Html` / `Markdown` output, include both the language summary and the per-file breakdown. In `Csv` output it selects the language summary only (a single well-formed table) |
 | `--paged` | `-p` | Show paged output |
 | `--all` | | Include files with unknown extensions (grouped as `Other`) |
 | `--quiet` | `-q` | Suppress the banner, progress UI, and `Saved to` message |
@@ -227,7 +227,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 适配 CI：JSON 可输出到标准输出便于管道处理（例如 `| jq`）、提供有意义的退出码、以及 `--min-comment-pct` 阈值门禁
 - 通过 `--baseline` 与已保存的 JSON 报告对比，查看行数变化
 - 通过 `--sort` / `--top` 对语言汇总排序和限制条数
-- 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因
+- 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因（除 `Csv` 外的所有格式;CSV 保持为单张可机器解析的表格）
 
 ## 安装
 
@@ -327,7 +327,7 @@ sloc . --format markdown --detailed -o -
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |
-| `--detailed` | | 在 `Json` / `Html` / `Markdown` 输出中同时包含语言汇总和逐文件明细 |
+| `--detailed` | | 在 `Json` / `Html` / `Markdown` 输出中同时包含语言汇总和逐文件明细;在 `Csv` 输出中仅选择语言汇总(保持单张规范表格) |
 | `--paged` | `-p` | 显示分页输出 |
 | `--all` | | 包含扩展名未知的文件（归入 `Other`） |
 | `--quiet` | `-q` | 抑制横幅、进度 UI 和 `Saved to` 提示 |

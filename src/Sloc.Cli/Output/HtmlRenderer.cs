@@ -185,6 +185,7 @@ public sealed class HtmlRenderer : IResultRenderer
     })();
     """;
 
+    private readonly DateTimeOffset _scanTime;
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -193,9 +194,14 @@ public sealed class HtmlRenderer : IResultRenderer
     /// <param name="writer">
     /// The destination writer. Defaults to <see cref="Console.Out"/> when <see langword="null"/>.
     /// </param>
-    public HtmlRenderer(TextWriter? writer = null)
+    /// <param name="scanTime">
+    /// The time the scan was performed, stamped in the report header. Defaults to
+    /// <see cref="DateTimeOffset.Now"/> when <see langword="null"/>.
+    /// </param>
+    public HtmlRenderer(TextWriter? writer = null, DateTimeOffset? scanTime = null)
     {
         _writer = writer ?? Console.Out;
+        _scanTime = scanTime ?? DateTimeOffset.Now;
     }
 
     /// <inheritdoc />
@@ -208,7 +214,7 @@ public sealed class HtmlRenderer : IResultRenderer
         _writer.Write(sb);
     }
 
-    private static void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed)
+    private void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed)
     {
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html lang=\"en\">");
@@ -222,7 +228,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine("</head>");
         sb.AppendLine("<body>");
         sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
-        var generated = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var generated = _scanTime.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(generated)} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
 
         if (detailed || !byFile)

@@ -28,7 +28,9 @@ public sealed class CsvRenderer : IResultRenderer
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        if (byFile || detailed)
+        // Unlike the other formats, CSV's --detailed emits only the language summary (a
+        // single well-formed table), so --by-file alone selects the per-file view.
+        if (byFile && !detailed)
         {
             RenderByFile(summary, noHealth);
         }
@@ -66,6 +68,8 @@ public sealed class CsvRenderer : IResultRenderer
 
             WriteRow(row);
         }
+
+        WriteTotalRow(summary, noHealth, summary.FileCount.ToString());
     }
 
     private void RenderByFile(AnalysisSummary summary, bool noHealth)
@@ -96,6 +100,29 @@ public sealed class CsvRenderer : IResultRenderer
 
             WriteRow(row);
         }
+
+        WriteTotalRow(summary, noHealth, string.Empty);
+    }
+
+    // The second column is the file/language count for the by-language table and blank for
+    // the by-file table; every numeric column carries the run-wide total.
+    private void WriteTotalRow(AnalysisSummary summary, bool noHealth, string secondColumn)
+    {
+        var row = new List<string>
+        {
+            "Total",
+            secondColumn,
+            summary.Code.ToString(),
+            summary.Comment.ToString(),
+            summary.Blank.ToString(),
+            summary.Total.ToString()
+        };
+        if (!noHealth)
+        {
+            row.Add(string.Empty);
+        }
+
+        WriteRow(row);
     }
 
     private static string HealthCell(CommentHealthLevel health) =>
