@@ -133,6 +133,15 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When set, a file listing paths (one per line) to analyze directly instead of
+    /// scanning <see cref="Path"/>. <c>-</c> reads the list from stdin.
+    /// </summary>
+    public string? ListFile
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// The maximum number of files to analyze in parallel. When <see langword="null"/>
     /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
     /// fully sequential analysis.
@@ -304,7 +313,11 @@ public sealed class AnalyzeHandler
         ScanResult scanResult;
         try
         {
-            if (showProgress)
+            if (options.ListFile is { } listFile)
+            {
+                scanResult = _scanner.ScanFiles(ReadListFile(listFile), scanOptions);
+            }
+            else if (showProgress)
             {
                 ScanResult? result = null;
                 var refreshTimer = Stopwatch.StartNew();
@@ -583,6 +596,23 @@ public sealed class AnalyzeHandler
         catch
         {
             // An update check must never break a normal analysis run.
+        }
+    }
+
+    private static IEnumerable<string> ReadListFile(string listFile)
+    {
+        var lines = listFile == StdoutToken
+            ? ReadAllLines(Console.In)
+            : File.ReadLines(listFile);
+
+        return lines.Where(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    private static IEnumerable<string> ReadAllLines(TextReader reader)
+    {
+        while (reader.ReadLine() is { } line)
+        {
+            yield return line;
         }
     }
 

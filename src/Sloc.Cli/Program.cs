@@ -17,6 +17,11 @@ var pathArgument = new Argument<string>("path")
     DefaultValueFactory = _ => "."
 };
 
+var listFileOption = new Option<string>("--list-file")
+{
+    Description = "Analyze exactly the files listed (one path per line) in this file instead of scanning a directory. Use '-' to read the list from stdin. Ignores 'path'."
+};
+
 var includeOption = new Option<string[]>("--include", "-i")
 {
     Description = "Glob pattern of files to include. Can be specified multiple times.",
@@ -129,6 +134,7 @@ var noUpdateCheckOption = new Option<bool>("--no-update-check")
 var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines in source files.")
 {
     pathArgument,
+    listFileOption,
     includeOption,
     excludeOption,
     includeLangOption,
@@ -190,6 +196,7 @@ rootCommand.SetAction(parseResult =>
     var options = new AnalyzeOptions
     {
         Path = parseResult.GetValue(pathArgument) ?? ".",
+        ListFile = parseResult.GetValue(listFileOption),
         Includes = parseResult.GetValue(includeOption) ?? [],
         Excludes = parseResult.GetValue(excludeOption) ?? [],
         IncludeLangs = parseResult.GetValue(includeLangOption) ?? [],

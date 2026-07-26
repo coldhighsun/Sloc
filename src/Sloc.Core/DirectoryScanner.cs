@@ -199,6 +199,48 @@ public sealed class DirectoryScanner
     }
 
     /// <summary>
+    /// Resolves an explicit list of file paths for analysis, bypassing directory
+    /// globbing, recursion, and <c>.gitignore</c> filtering. Intended for
+    /// <c>--list-file</c>/stdin input, where the caller has already decided exactly which
+    /// files to analyze.
+    /// </summary>
+    /// <param name="paths">The file paths to resolve.</param>
+    /// <param name="options">
+    /// The scan options; only <see cref="ScanOptions.IncludeUnknown"/>,
+    /// <see cref="ScanOptions.IncludeLangs"/>, and <see cref="ScanOptions.ExcludeLangs"/>
+    /// apply.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ScanResult"/> containing the resolved files and an entry in
+    /// <see cref="ScanResult.Skipped"/> for every path that does not exist.
+    /// </returns>
+    public ScanResult ScanFiles(IEnumerable<string> paths, ScanOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var files = new List<ScannedFile>();
+        var skipped = new List<SkippedEntry>();
+
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path))
+            {
+                skipped.Add(new SkippedEntry(path, "not found"));
+                continue;
+            }
+
+            var scanned = Resolve(Path.GetFullPath(path), options.IncludeUnknown);
+            if (scanned is not null && MatchesLanguageFilter(scanned.Language, options))
+            {
+                files.Add(scanned);
+            }
+        }
+
+        return new ScanResult(files, skipped);
+    }
+
+    /// <summary>
     /// Finds directories under <paramref name="root"/> that are symlinks/junctions, so
     /// callers can exclude them from traversal rather than risk following a
     /// self-referential link forever. Never recurses into a symlinked directory itself.

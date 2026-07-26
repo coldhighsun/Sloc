@@ -60,6 +60,32 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--list-file</c> analyzes exactly the listed files, ignoring
+    /// <see cref="AnalyzeOptions.Path"/>, and reports a missing entry as skipped.
+    /// </summary>
+    [Fact]
+    public void Execute_ListFile_AnalyzesListedFilesAndSkipsMissing()
+    {
+        var keep = Path.Combine(_root, "a.cs");
+        File.WriteAllText(keep, "int x = 1;\n");
+        var missing = Path.Combine(_root, "missing.cs");
+        var listFile = Path.Combine(_root, "list.txt");
+        File.WriteAllText(listFile, $"{keep}\n{missing}\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "does-not-exist"),
+            ListFile = listFile,
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        Assert.Equal(1, root.GetProperty("skipped").GetArrayLength());
+    }
+
+    /// <summary>
     /// Verifies that a missing path returns exit code 1 rather than throwing.
     /// </summary>
     [Fact]
