@@ -56,6 +56,12 @@ public sealed class ScanOptions
     }
 
     /// <summary>
+    /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
+    /// in <c>.gitattributes</c> files discovered under the scan root.
+    /// </summary>
+    public bool RespectGitAttributes { get; init; } = true;
+
+    /// <summary>
     /// Language display names (e.g. <c>"C#"</c>) to exclude, matched case-insensitively
     /// against the resolved language's <see cref="LanguageDefinition.Name"/>.
     /// </summary>
@@ -195,14 +201,24 @@ public sealed class DirectoryScanner
             matcher.AddExclude($"**/{relative}/**");
         }
 
+        var gitattributes = options.RespectGitAttributes
+            ? GitAttributesRules.Load(root, DefaultExcludeDirectoryNames, options.Recursive)
+            : null;
+
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>();
         try
         {
             foreach (var fullPath in matcher.GetResultsInFullPath(root))
             {
-                if (gitignore is { IsEmpty: false }
-                    && gitignore.IsIgnored(Path.GetRelativePath(fullRoot, fullPath)))
+                var relativePath = Path.GetRelativePath(fullRoot, fullPath);
+
+                if (gitignore is { IsEmpty: false } && gitignore.IsIgnored(relativePath))
+                {
+                    continue;
+                }
+
+                if (gitattributes is { IsEmpty: false } && gitattributes.IsVendoredOrGenerated(relativePath))
                 {
                     continue;
                 }

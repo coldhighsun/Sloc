@@ -226,6 +226,27 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that files marked <c>linguist-vendored</c> in a <c>.gitattributes</c> file
+    /// are excluded when <see cref="ScanOptions.RespectGitAttributes"/> is set, and included
+    /// otherwise.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitAttributes_ExcludesVendoredFiles()
+    {
+        Write(".gitattributes", "vendor/** linguist-vendored\n");
+        Write("app.cs", "// app");
+        Write("vendor/lib.cs", "// vendored");
+
+        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = true });
+        var honoredNames = honored.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+
+        Assert.Equal(["app.cs"], honoredNames);
+
+        var toggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = false });
+        Assert.Contains(toggleOff.Files, f => Path.GetFileName(f.Path) == "lib.cs");
+    }
+
+    /// <summary>
     /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
     /// </summary>
     [Fact]
