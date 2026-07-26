@@ -10,6 +10,8 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class MarkdownRenderer : IResultRenderer
 {
+    private readonly string? _scanPath;
+    private readonly DateTimeOffset _scanTime;
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -18,9 +20,17 @@ public sealed class MarkdownRenderer : IResultRenderer
     /// <param name="writer">
     /// The destination writer. Defaults to <see cref="Console.Out"/> when <see langword="null"/>.
     /// </param>
-    public MarkdownRenderer(TextWriter? writer = null)
+    /// <param name="scanPath">
+    /// The path that was scanned, shown in the report header. Omitted from the output when <see langword="null"/>.
+    /// </param>
+    /// <param name="scanTime">
+    /// The time the scan was performed. Defaults to <see cref="DateTimeOffset.Now"/> when <see langword="null"/>.
+    /// </param>
+    public MarkdownRenderer(TextWriter? writer = null, string? scanPath = null, DateTimeOffset? scanTime = null)
     {
         _writer = writer ?? Console.Out;
+        _scanPath = scanPath;
+        _scanTime = scanTime ?? DateTimeOffset.Now;
     }
 
     /// <inheritdoc />
@@ -32,7 +42,11 @@ public sealed class MarkdownRenderer : IResultRenderer
 
         sb.AppendLine("# Sloc Report");
         sb.AppendLine();
-        sb.AppendLine($"**{summary.FileCount:N0} files · {summary.Total:N0} lines**");
+        if (_scanPath is not null)
+        {
+            sb.AppendLine($"**Scan Path:** `{_scanPath}`");
+        }
+        sb.AppendLine($"**Scan Time:** {_scanTime:yyyy-MM-dd HH:mm:ss zzz}");
         sb.AppendLine();
 
         if (detailed || !byFile)
@@ -59,6 +73,55 @@ public sealed class MarkdownRenderer : IResultRenderer
         }
 
         _writer.Write(sb.ToString());
+    }
+
+    private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
+    {
+        var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
+        var aligns = new List<string> { ":---", ":---", "---:", "---:", "---:", "---:" };
+        if (!noHealth)
+        {
+            header.Add("Health");
+            aligns.Add(":---");
+        }
+
+        AppendRow(sb, header);
+        AppendRow(sb, aligns);
+
+        foreach (var file in summary.Files)
+        {
+            var row = new List<string>
+            {
+                Escape(file.Path),
+                Escape(file.Language),
+                file.Code.ToString("N0"),
+                file.Comment.ToString("N0"),
+                file.Blank.ToString("N0"),
+                file.Total.ToString("N0")
+            };
+            if (!noHealth)
+            {
+                row.Add(HealthCell(file.Health));
+            }
+
+            AppendRow(sb, row);
+        }
+
+        var totalRow = new List<string>
+        {
+            "**Total**",
+            string.Empty,
+            summary.Code.ToString("N0"),
+            summary.Comment.ToString("N0"),
+            summary.Blank.ToString("N0"),
+            summary.Total.ToString("N0")
+        };
+        if (!noHealth)
+        {
+            totalRow.Add(string.Empty);
+        }
+
+        AppendRow(sb, totalRow);
     }
 
     private static void AppendLanguageTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
@@ -93,43 +156,23 @@ public sealed class MarkdownRenderer : IResultRenderer
 
             AppendRow(sb, row);
         }
-    }
 
-    private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
-    {
-        var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
-        var aligns = new List<string> { ":---", ":---", "---:", "---:", "---:", "---:" };
+        var totalRow = new List<string>
+        {
+            "**Total**",
+            summary.FileCount.ToString("N0"),
+            summary.Code.ToString("N0"),
+            summary.Comment.ToString("N0"),
+            summary.Blank.ToString("N0"),
+            summary.Total.ToString("N0")
+        };
         if (!noHealth)
         {
-            header.Add("Health");
-            aligns.Add(":---");
+            totalRow.Add(string.Empty);
         }
 
-        AppendRow(sb, header);
-        AppendRow(sb, aligns);
-
-        foreach (var file in summary.Files)
-        {
-            var row = new List<string>
-            {
-                Escape(file.Path),
-                Escape(file.Language),
-                file.Code.ToString("N0"),
-                file.Comment.ToString("N0"),
-                file.Blank.ToString("N0"),
-                file.Total.ToString("N0")
-            };
-            if (!noHealth)
-            {
-                row.Add(HealthCell(file.Health));
-            }
-
-            AppendRow(sb, row);
-        }
+        AppendRow(sb, totalRow);
     }
-
-    private static string HealthCell(CommentHealthLevel health) =>
-        health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
 
     private static void AppendRow(StringBuilder sb, IReadOnlyList<string> cells)
     {
@@ -140,4 +183,7 @@ public sealed class MarkdownRenderer : IResultRenderer
 
     private static string Escape(string cell) =>
         cell.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+
+    private static string HealthCell(CommentHealthLevel health) =>
+                health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
 }

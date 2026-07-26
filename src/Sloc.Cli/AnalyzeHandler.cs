@@ -277,6 +277,8 @@ public sealed class AnalyzeHandler
         // asked for a quiet / no-progress run.
         var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
 
+        var scanTime = DateTimeOffset.Now;
+
         var scanOptions = new ScanOptions
         {
             Includes = options.Includes,
@@ -502,11 +504,11 @@ public sealed class AnalyzeHandler
             // Markdown defaults to stdout (pasteable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+                new MarkdownRenderer(Console.Out, options.Path, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer, options.Path, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else
