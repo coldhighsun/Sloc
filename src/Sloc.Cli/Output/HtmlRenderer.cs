@@ -60,6 +60,25 @@ public sealed class HtmlRenderer : IResultRenderer
             cursor: pointer;
         }
         .file-name { display: inline-block; padding-left: 32px; }
+        @media (prefers-color-scheme: dark) {
+            body { color: #e6edf3; background: #0d1117; }
+            h1 { border-bottom-color: #30363d; }
+            .meta { color: #8b949e; }
+            th { background: #161b22; border-color: #30363d; }
+            td { border-color: #30363d; }
+            tr:hover > td { background: #161b22; }
+            tfoot > tr > td { background: #161b22; }
+            .pct { color: #8b949e; }
+            .h-none, .h-low { color: #ff7b72; }
+            .h-fair, .h-high { color: #d29922; }
+            .h-good { color: #3fb950; }
+            .h-dense { color: #ff7b72; }
+            .h-na { color: #8b949e; }
+            .control-btn { border-color: #30363d; background: #21262d; color: #e6edf3; }
+            .control-btn:hover { background: #30363d; }
+            .folder-row > td { background: #161b22; }
+            .folder-toggle { border-color: #30363d; background: #0d1117; color: #e6edf3; }
+        }
         """;
 
     private const string Script = """
@@ -203,7 +222,8 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine("</head>");
         sb.AppendLine("<body>");
         sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
-        sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"))} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
+        var generated = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(generated)} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
 
         if (byFile)
         {
