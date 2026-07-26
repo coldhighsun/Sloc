@@ -143,14 +143,14 @@ sloc . --format markdown --detailed -o -
 
 All non-table formats (`Json`, `Html`, `Csv`, `Markdown`) are written to stdout by default (so they can be piped, e.g. `sloc . -f json | jq`); pass `--output <path>` to write a file instead.
 
-`.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed.
+`.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed. Baseline diff output is only rendered as a console table or as JSON (`-f json`); other formats fall back to the table.
 
 ### Exit Codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `1` | Path not found or unreadable |
+| `1` | Path not found or unreadable, or invalid command-line arguments |
 | `2` | A threshold (e.g. `--min-comment-pct`) was not met |
 | `3` | Unexpected error |
 
@@ -344,14 +344,14 @@ sloc . --format markdown --detailed -o -
 
 所有非表格格式(`Json`、`Html`、`Csv`、`Markdown`)默认都会输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output <路径>` 则写入文件。
 
-默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化。
+默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化。baseline 差异仅支持控制台表格或 JSON(`-f json`)输出;其它格式会回退为表格。
 
 ### 退出码
 
 | 码 | 含义 |
 | --- | --- |
 | `0` | 成功 |
-| `1` | 路径不存在或不可读 |
+| `1` | 路径不存在或不可读,或命令行参数无效 |
 | `2` | 未达到阈值(如 `--min-comment-pct`) |
 | `3` | 意外错误 |
 

@@ -143,18 +143,15 @@ rootCommand.SetAction(parseResult =>
     var outputFile = parseResult.GetValue(outputOption);
     var explicitFormat = parseResult.GetValue(formatOption);
 
-    var format = explicitFormat ?? outputFile switch
+    var format = FormatResolver.Resolve(explicitFormat, outputFile);
+
+    // Table output never writes a file, so an --output path would be silently discarded.
+    // Warn rather than fail so scripts relying on the exit code are unaffected.
+    if (FormatResolver.OutputIgnoredForTable(format, outputFile))
     {
-        not null => Path.GetExtension(outputFile).ToLowerInvariant() switch
-        {
-            ".json" => OutputFormat.Json,
-            ".html" or ".htm" => OutputFormat.Html,
-            ".csv" => OutputFormat.Csv,
-            ".md" or ".markdown" => OutputFormat.Markdown,
-            _ => OutputFormat.Table
-        },
-        _ => OutputFormat.Table
-    };
+        Console.Error.WriteLine(
+            "sloc: --output is ignored for Table format; pass -f json|html|csv|markdown or use a recognized file extension.");
+    }
 
     var options = new AnalyzeOptions
     {
