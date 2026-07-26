@@ -62,6 +62,8 @@ public sealed class ScanOptions
 /// </summary>
 public sealed class DirectoryScanner
 {
+    // Single source of truth for built-in directory excludes; the glob list below is
+    // derived from it so the two never drift out of sync.
     private static readonly IReadOnlySet<string> DefaultExcludeDirectoryNames =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -69,16 +71,7 @@ public sealed class DirectoryScanner
         };
 
     private static readonly string[] DefaultExcludes =
-        [
-        "**/bin/**",
-        "**/obj/**",
-        "**/artifacts/**",
-        "**/.git/**",
-        "**/.vs/**",
-        "**/.vscode/**",
-        "**/.idea/**",
-        "**/node_modules/**"
-    ];
+        DefaultExcludeDirectoryNames.Select(name => $"**/{name}/**").ToArray();
 
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
