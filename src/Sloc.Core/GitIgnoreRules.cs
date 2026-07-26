@@ -343,7 +343,9 @@ public sealed class GitIgnoreRules
 
             if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
             {
+                ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
+                ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
 
