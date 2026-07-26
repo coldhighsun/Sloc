@@ -141,6 +141,16 @@ public sealed class DirectoryScanner
             matcher.AddExcludePatterns(options.Excludes);
         }
 
+        // Do not follow directory symlinks/junctions: a self-referential link would
+        // otherwise make the matcher's "**" traversal recurse forever. The pre-pass below
+        // never recurses into a flagged directory, so it cannot loop either.
+        var fullRootForSymlinks = Path.GetFullPath(root);
+        foreach (var symlinked in FindSymlinkedDirectories(fullRootForSymlinks))
+        {
+            var relative = Path.GetRelativePath(fullRootForSymlinks, symlinked).Replace('\\', '/');
+            matcher.AddExclude($"**/{relative}/**");
+        }
+
         var gitignore = options.RespectGitignore
             ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan)
             : null;
@@ -173,6 +183,48 @@ public sealed class DirectoryScanner
 
         files.Sort(static (left, right) => string.CompareOrdinal(left.Path, right.Path));
         return new ScanResult(files, skipped);
+    }
+
+    /// <summary>
+    /// Finds directories under <paramref name="root"/> that are symlinks/junctions, so
+    /// callers can exclude them from traversal rather than risk following a
+    /// self-referential link forever. Never recurses into a symlinked directory itself.
+    /// </summary>
+    private static IEnumerable<string> FindSymlinkedDirectories(string root)
+    {
+        var found = new List<string>();
+        CollectSymlinkedDirectories(root, found);
+        return found;
+    }
+
+    private static void CollectSymlinkedDirectories(string directory, List<string> found)
+    {
+        string[] entries;
+        try
+        {
+            entries = Directory.GetDirectories(directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        foreach (var subdirectory in entries)
+        {
+            var name = Path.GetFileName(subdirectory);
+            if (DefaultExcludeDirectoryNames.Contains(name))
+            {
+                continue;
+            }
+
+            if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                found.Add(subdirectory);
+                continue;
+            }
+
+            CollectSymlinkedDirectories(subdirectory, found);
+        }
     }
 
     private static ScannedFile? Resolve(string path, bool includeUnknown)

@@ -168,6 +168,13 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
+            // Do not follow directory symlinks/junctions: a self-referential link would
+            // otherwise make this recursion loop forever.
+            if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                continue;
+            }
+
             CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
         }
     }
