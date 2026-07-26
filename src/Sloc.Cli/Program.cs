@@ -43,6 +43,11 @@ var byFileOption = new Option<bool>("--by-file")
     Description = "Show a per-file breakdown in addition to the language summary."
 };
 
+var detailedOption = new Option<bool>("--detailed")
+{
+    Description = "In Json and Html output, include both the language summary and the per-file breakdown."
+};
+
 var pagedOption = new Option<bool>("--paged", "-p")
 {
     Description = "Enable pagination when displaying the per-file breakdown."
@@ -111,6 +116,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     formatOption,
     noRecursiveOption,
     byFileOption,
+    detailedOption,
     pagedOption,
     allOption,
     outputOption,
@@ -156,6 +162,7 @@ rootCommand.SetAction(parseResult =>
         Format = format,
         NoRecursive = parseResult.GetValue(noRecursiveOption),
         ByFile = parseResult.GetValue(byFileOption),
+        Detailed = parseResult.GetValue(detailedOption),
         Paged = parseResult.GetValue(pagedOption),
         IncludeUnknown = parseResult.GetValue(allOption),
         OutputFile = outputFile,

@@ -199,16 +199,16 @@ public sealed class HtmlRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
         var sb = new StringBuilder();
-        BuildDocument(sb, summary, byFile, noHealth);
+        BuildDocument(sb, summary, byFile, noHealth, detailed);
         _writer.Write(sb);
     }
 
-    private static void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth)
+    private static void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed)
     {
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html lang=\"en\">");
@@ -225,13 +225,14 @@ public sealed class HtmlRenderer : IResultRenderer
         var generated = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(generated)} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
 
-        if (byFile)
-        {
-            BuildFileSection(sb, summary, noHealth);
-        }
-        else
+        if (detailed || !byFile)
         {
             BuildLanguageSection(sb, summary, noHealth);
+        }
+
+        if (detailed || byFile)
+        {
+            BuildFileSection(sb, summary, noHealth);
         }
 
         if (summary.Skipped.Count > 0)

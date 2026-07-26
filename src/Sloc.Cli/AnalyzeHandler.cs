@@ -77,6 +77,15 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When <see langword="true"/>, JSON and HTML output includes both the by-language
+    /// summary and the per-file breakdown together (only meaningful for those formats).
+    /// </summary>
+    public bool Detailed
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// Glob patterns of files to exclude.
     /// </summary>
     public IReadOnlyList<string> Excludes { get; init; } = [];
@@ -443,22 +452,22 @@ public sealed class AnalyzeHandler
             // JSON defaults to stdout (pipeable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth);
+                new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth), options.Quiet);
+                WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else if (options.Format == OutputFormat.Html)
         {
             if (options.OutputFile == StdoutToken)
             {
-                new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth);
+                new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile ?? "sloc-report.html", writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth), options.Quiet);
+                WriteToFile(options.OutputFile ?? "sloc-report.html", writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else
