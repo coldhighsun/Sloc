@@ -73,6 +73,31 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that a zero-byte file on disk is analyzed as an empty file (all zero line
+    /// counts) rather than being misdetected as binary — the NUL-byte scan over an empty
+    /// buffer must not throw or produce a false positive.
+    /// </summary>
+    [Fact]
+    public void Analyze_ZeroByteFile_ReturnsZerosAndIsNotBinary()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-empty-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllBytes(path, []);
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
+            Assert.Equal(0, result.Code);
+            Assert.Equal(0, result.Comment);
+            Assert.Equal(0, result.Blank);
+            Assert.Equal(0, result.Total);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that analyzing an empty string returns zero for all line counts.
     /// </summary>
     [Fact]

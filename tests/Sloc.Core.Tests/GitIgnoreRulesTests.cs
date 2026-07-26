@@ -54,6 +54,21 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that pattern matching is case-insensitive, consistent with the
+    /// <c>--include</c>/<c>--exclude</c> glob matching used elsewhere in the scanner.
+    /// </summary>
+    [Theory]
+    [InlineData("Node_Modules", "node_modules/pkg/index.js", true)]
+    [InlineData("*.LOG", "debug.log", true)]
+    [InlineData("build", "SRC/BUILD/out.txt", true)]
+    public void IsIgnored_Pattern_MatchesCaseInsensitively(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
     /// Verifies that a character class matches any one of its listed characters, and that
     /// a leading <c>!</c> negates the class (matching any character not listed).
     /// </summary>
