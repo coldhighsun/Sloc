@@ -41,6 +41,23 @@ public class HtmlRendererTests
         Assert.DoesNotContain(">Good<", html);
     }
 
+    /// <summary>
+    /// Verifies that the document carries a dark-theme stylesheet and a reproducible
+    /// UTC timestamp (ISO-8601, <c>Z</c> suffix) rather than a local-time string.
+    /// </summary>
+    [Fact]
+    public void Render_EmitsDarkThemeAndUtcTimestamp()
+    {
+        var summary = BuildSummary();
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(summary, byFile: false, noHealth: false);
+        var html = writer.ToString();
+
+        Assert.Contains("prefers-color-scheme: dark", html);
+        Assert.Matches(@"Generated:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", html);
+    }
+
     private static AnalysisSummary BuildSummary()
     {
         var file = new FileAnalysis
