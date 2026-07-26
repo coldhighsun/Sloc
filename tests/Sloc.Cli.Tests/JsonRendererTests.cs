@@ -83,6 +83,23 @@ public class JsonRendererTests
         Assert.Equal(1, root.GetProperty("files").GetArrayLength());
     }
 
+    /// <summary>
+    /// Verifies that <c>generatedAt</c> is stamped with the constructor-supplied time,
+    /// formatted as UTC.
+    /// </summary>
+    [Fact]
+    public void Render_GeneratedAt_UsesSuppliedTime()
+    {
+        var summary = BuildSummary();
+        var generatedAt = new DateTimeOffset(2026, 7, 26, 10, 30, 0, TimeSpan.Zero);
+
+        using var writer = new StringWriter();
+        new JsonRenderer(writer, generatedAt).Render(summary, byFile: false, noHealth: false);
+        var root = JsonSerializer.Deserialize<JsonElement>(writer.ToString());
+
+        Assert.Equal("2026-07-26T10:30:00Z", root.GetProperty("generatedAt").GetString());
+    }
+
     private static JsonElement Render(AnalysisSummary summary, bool byFile, bool noHealth)
     {
         using var writer = new StringWriter();

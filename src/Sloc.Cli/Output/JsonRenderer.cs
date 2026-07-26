@@ -10,6 +10,7 @@ namespace Sloc.Cli.Output;
 public sealed class JsonRenderer : IResultRenderer
 {
     private readonly TextWriter _writer;
+    private readonly DateTimeOffset _generatedAt;
 
     /// <summary>
     /// Initializes a new instance of <see cref="JsonRenderer"/>.
@@ -17,9 +18,15 @@ public sealed class JsonRenderer : IResultRenderer
     /// <param name="writer">
     /// The destination writer. Defaults to <see cref="Console.Out"/> when <see langword="null"/>.
     /// </param>
-    public JsonRenderer(TextWriter? writer = null)
+    /// <param name="generatedAt">
+    /// The report generation time, stamped in the <c>generatedAt</c> field. Defaults to
+    /// <see cref="DateTimeOffset.Now"/> when <see langword="null"/>; a fixed value is
+    /// mainly useful for deterministic tests.
+    /// </param>
+    public JsonRenderer(TextWriter? writer = null, DateTimeOffset? generatedAt = null)
     {
         _writer = writer ?? Console.Out;
+        _generatedAt = generatedAt ?? DateTimeOffset.Now;
     }
 
     /// <inheritdoc />
@@ -32,6 +39,7 @@ public sealed class JsonRenderer : IResultRenderer
 
         var report = new JsonReport
         {
+            GeneratedAt = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
             FileCount = summary.FileCount,
             Code = summary.Code,
             CodePct = Pct(summary.Code, summary.Total),
@@ -90,6 +98,8 @@ public sealed class JsonRenderer : IResultRenderer
 /// </summary>
 internal sealed class JsonReport
 {
+    public required string GeneratedAt { get; init; }
+
     public int FileCount { get; init; }
 
     public int Code { get; init; }

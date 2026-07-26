@@ -278,6 +278,7 @@ public sealed class AnalyzeHandler
 {
     private const string StdoutToken = "-";
     private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan LiveTableRefreshInterval = TimeSpan.FromMilliseconds(300);
 
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
@@ -319,7 +320,7 @@ public sealed class AnalyzeHandler
         // asked for a quiet / no-progress run.
         var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
 
-        var scanTime = DateTimeOffset.Now;
+        var tableRenderer = new TableRenderer();
 
         var scanOptions = new ScanOptions
         {
@@ -428,7 +429,7 @@ public sealed class AnalyzeHandler
         }
         else if (options is { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
         {
-            AnsiConsole.Live(TableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth))
+            AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth))
                 .AutoClear(false)
                 .Start(ctx =>
                 {
@@ -437,15 +438,15 @@ public sealed class AnalyzeHandler
                     var work = Task.Run(() => Parallel.For(0, files.Count, parallelOptions, AnalyzeAt));
                     while (!work.IsCompleted)
                     {
-                        ctx.UpdateTarget(TableRenderer.BuildLanguageTable(
+                        ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
                             aggregator.ToSummary(),
                             $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
                             noHealth: options.NoHealth));
-                        Thread.Sleep(100);
+                        Thread.Sleep(LiveTableRefreshInterval);
                     }
 
                     work.GetAwaiter().GetResult();
-                    ctx.UpdateTarget(TableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth));
+                    ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth));
                 });
         }
         else
@@ -605,15 +606,15 @@ public sealed class AnalyzeHandler
             }
             else if (options.ByFile)
             {
-                TableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
+                tableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
             }
             else if (!showProgress)
             {
                 // The live table only renders during progress; render it here otherwise.
-                AnsiConsole.Write(TableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth));
+                AnsiConsole.Write(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth));
             }
 
-            TableRenderer.RenderSkipped(summary);
+            tableRenderer.RenderSkipped(summary);
         }
 
         ReportUpdate(updateCheck, version);
