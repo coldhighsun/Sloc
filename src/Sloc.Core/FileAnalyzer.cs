@@ -11,8 +11,6 @@ namespace Sloc.Core;
 /// </summary>
 public sealed class FileAnalyzer
 {
-    private const int BinarySniffLength = 8000;
-
     /// <summary>
     /// Reads and analyzes the file at <paramref name="path"/> using the supplied language.
     /// </summary>
@@ -35,13 +33,12 @@ public sealed class FileAnalyzer
         ArgumentNullException.ThrowIfNull(language);
 
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (LooksBinary(stream))
+        var (isBinary, fallbackEncoding) = DetectBinaryAndEncoding(stream);
+        if (isBinary)
         {
             throw new BinaryFileException();
         }
 
-        stream.Position = 0;
-        var fallbackEncoding = DetectFallbackEncoding(stream);
         stream.Position = 0;
 
         if (!computeHash)
@@ -114,61 +111,81 @@ public sealed class FileAnalyzer
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    private static bool LooksBinary(Stream stream)
-    {
-        Span<byte> buffer = stackalloc byte[BinarySniffLength];
-        var read = stream.Read(buffer);
-        var window = buffer[..read];
-
-        // A recognized Unicode BOM means the file is text whose encoding legitimately
-        // contains NUL bytes (UTF-16/UTF-32), so the NUL heuristic below does not apply.
-        if (HasTextBom(window))
-        {
-            return false;
-        }
-
-        foreach (var b in window)
-        {
-            if (b == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>
-    /// Picks the encoding <see cref="StreamReader"/> should fall back to when the file has
-    /// no byte-order mark. A BOM (if present) still takes precedence via
-    /// <c>detectEncodingFromByteOrderMarks</c>; this only decides what to assume otherwise.
-    /// Files that don't decode as valid UTF-8 (e.g. Latin-1/Windows-1252 source files) would
-    /// otherwise be silently corrupted with U+FFFD replacement characters.
+    /// Scans <paramref name="stream"/> once to decide both whether it is binary (contains a
+    /// NUL byte outside a recognized text BOM) and, if not, which encoding
+    /// <see cref="StreamReader"/> should fall back to when the file has no byte-order mark.
+    /// Combines what used to be two separate full-file passes (<c>LooksBinary</c> and
+    /// <c>DetectFallbackEncoding</c>) into one, and in doing so checks the whole file for NUL
+    /// bytes instead of only a leading window.
     /// </summary>
-    private static Encoding DetectFallbackEncoding(Stream stream)
+    /// <remarks>
+    /// A BOM (if present) still takes precedence via <c>detectEncodingFromByteOrderMarks</c>
+    /// on the caller's <see cref="StreamReader"/>; the returned encoding only decides what to
+    /// assume otherwise. Files that don't decode as valid UTF-8 (e.g. Latin-1/Windows-1252
+    /// source files) would otherwise be silently corrupted with U+FFFD replacement characters.
+    /// </remarks>
+    private static (bool IsBinary, Encoding FallbackEncoding) DetectBinaryAndEncoding(Stream stream)
     {
-        // Validates the entire file, not just a leading window: a file can be valid UTF-8
-        // for its first few KB and contain an invalid byte sequence further in, and
-        // StreamReader would otherwise silently corrupt that with U+FFFD replacement chars.
         var decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetDecoder();
         Span<byte> buffer = stackalloc byte[4096];
         Span<char> chars = stackalloc char[4096];
 
-        try
+        var isValidUtf8 = true;
+        var first = true;
+        var hasTextBom = false;
+
+        int read;
+        while ((read = stream.Read(buffer)) > 0)
         {
-            int read;
-            while ((read = stream.Read(buffer)) > 0)
+            var window = buffer[..read];
+
+            if (first)
             {
-                decoder.GetChars(buffer[..read], chars, flush: false);
+                // A recognized Unicode BOM means the file is text whose encoding legitimately
+                // contains NUL bytes (UTF-16/UTF-32), so the NUL heuristic below does not apply.
+                hasTextBom = HasTextBom(window);
+                first = false;
             }
 
-            decoder.GetChars([], chars, flush: true);
-            return Encoding.UTF8;
+            if (!hasTextBom)
+            {
+                foreach (var b in window)
+                {
+                    if (b == 0)
+                    {
+                        // Binary: no need to keep reading or to finish UTF-8 validation.
+                        return (IsBinary: true, FallbackEncoding: Encoding.UTF8);
+                    }
+                }
+            }
+
+            if (isValidUtf8)
+            {
+                try
+                {
+                    decoder.GetChars(window, chars, flush: false);
+                }
+                catch (DecoderFallbackException)
+                {
+                    isValidUtf8 = false;
+                }
+            }
         }
-        catch (DecoderFallbackException)
+
+        if (isValidUtf8)
         {
-            return Encoding.Latin1;
+            try
+            {
+                decoder.GetChars([], chars, flush: true);
+            }
+            catch (DecoderFallbackException)
+            {
+                isValidUtf8 = false;
+            }
         }
+
+        return (IsBinary: false, FallbackEncoding: isValidUtf8 ? Encoding.UTF8 : Encoding.Latin1);
     }
 
     private static bool HasTextBom(ReadOnlySpan<byte> bytes)

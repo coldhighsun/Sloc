@@ -30,6 +30,28 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that a NUL byte located after the first 8000 bytes of the file is still
+    /// detected as binary, not just one in a leading window.
+    /// </summary>
+    [Fact]
+    public void Analyze_BinaryFileWithNulPastLeadingWindow_ThrowsBinaryFileException()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-bin-late-" + Guid.NewGuid().ToString("N") + ".cs");
+        var bytes = new byte[10_000];
+        Array.Fill(bytes, (byte)'a');
+        bytes[9000] = 0x00;
+        File.WriteAllBytes(path, bytes);
+        try
+        {
+            Assert.Throws<BinaryFileException>(() => new FileAnalyzer().Analyze(path, CSharp));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that a UTF-16 file (whose ASCII characters contain NUL bytes) is not
     /// misdetected as binary when it carries a byte-order mark, and its lines are counted.
     /// </summary>
