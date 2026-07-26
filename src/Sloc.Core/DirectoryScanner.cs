@@ -142,7 +142,30 @@ public sealed class DirectoryScanner
 
         if (File.Exists(root))
         {
-            var single = Resolve(Path.GetFullPath(root), options.IncludeUnknown);
+            var fullPath = Path.GetFullPath(root);
+            var parentDir = Path.GetDirectoryName(fullPath) ?? fullPath;
+            var fileName = Path.GetFileName(fullPath);
+
+            if (options.RespectGitignore)
+            {
+                var fileGitignore = GitIgnoreRules.Load(
+                    parentDir, DefaultExcludeDirectoryNames, recursive: false, onDirectoryVisited: null, out _, options.FollowSymlinks);
+                if (fileGitignore is { IsEmpty: false } && fileGitignore.IsIgnored(fileName))
+                {
+                    return new ScanResult([], []);
+                }
+            }
+
+            if (options.RespectGitAttributes)
+            {
+                var fileGitattributes = GitAttributesRules.Load(parentDir, DefaultExcludeDirectoryNames, recursive: false);
+                if (fileGitattributes is { IsEmpty: false } && fileGitattributes.IsVendoredOrGenerated(fileName))
+                {
+                    return new ScanResult([], []);
+                }
+            }
+
+            var single = Resolve(fullPath, options.IncludeUnknown);
             return single is null || !MatchesLanguageFilter(single.Language, options)
                 ? new ScanResult([], [])
                 : new ScanResult([single], []);
