@@ -25,9 +25,39 @@ public sealed record ScanResult(IReadOnlyList<ScannedFile> Files, IReadOnlyList<
 public sealed class ScanOptions
 {
     /// <summary>
+    /// Language display names (e.g. <c>"C#"</c>) to exclude, matched case-insensitively
+    /// against the resolved language's <see cref="LanguageDefinition.Name"/>.
+    /// </summary>
+    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
+
+    /// <summary>
     /// Glob patterns of files to exclude, applied on top of the built-in excludes.
     /// </summary>
     public IReadOnlyList<string> Excludes { get; init; } = [];
+
+    /// <summary>
+    /// Whether to include symlinked/junctioned directories and symlinked files rather than
+    /// skip them. Defaults to <see langword="false"/>. A directory symlink whose resolved
+    /// target would loop back onto a directory already on the path from the scan root is
+    /// always skipped regardless of this setting, including cycles formed by two or more
+    /// distinct symlinks chained together. A symlink whose target lies at or under the scan
+    /// root is likewise skipped, since the normal tree walk already covers those files and
+    /// following the link would double-count them; only targets outside the scan root are
+    /// actually followed. Has no effect when the scan <c>root</c> passed
+    /// to <see cref="DirectoryScanner.Scan"/> is itself an explicit single file, which is
+    /// always analyzed regardless of whether it is a symlink.
+    /// </summary>
+    public bool FollowSymlinks
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// Language display names (e.g. <c>"C#"</c>) to include. When empty, all resolved
+    /// languages are considered. Matched case-insensitively against the resolved
+    /// language's <see cref="LanguageDefinition.Name"/>.
+    /// </summary>
+    public IReadOnlyList<string> IncludeLangs { get; init; } = [];
 
     /// <summary>
     /// Glob patterns of files to include. When empty, all files are considered.
@@ -48,45 +78,18 @@ public sealed class ScanOptions
     public bool Recursive { get; init; } = true;
 
     /// <summary>
-    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
-    /// </summary>
-    public bool RespectGitignore
-    {
-        get; init;
-    }
-
-    /// <summary>
     /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
     /// in <c>.gitattributes</c> files discovered under the scan root.
     /// </summary>
     public bool RespectGitAttributes { get; init; } = true;
 
     /// <summary>
-    /// Language display names (e.g. <c>"C#"</c>) to exclude, matched case-insensitively
-    /// against the resolved language's <see cref="LanguageDefinition.Name"/>.
+    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
     /// </summary>
-    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
-
-    /// <summary>
-    /// Language display names (e.g. <c>"C#"</c>) to include. When empty, all resolved
-    /// languages are considered. Matched case-insensitively against the resolved
-    /// language's <see cref="LanguageDefinition.Name"/>.
-    /// </summary>
-    public IReadOnlyList<string> IncludeLangs { get; init; } = [];
-
-    /// <summary>
-    /// Whether to include symlinked/junctioned directories and symlinked files rather than
-    /// skip them. Defaults to <see langword="false"/>. A directory symlink whose resolved
-    /// target would loop back onto a directory already on the path from the scan root is
-    /// always skipped regardless of this setting, including cycles formed by two or more
-    /// distinct symlinks chained together. A symlink whose target lies at or under the scan
-    /// root is likewise skipped, since the normal tree walk already covers those files and
-    /// following the link would double-count them; only targets outside the scan root are
-    /// actually followed. Has no effect when the scan <c>root</c> passed
-    /// to <see cref="DirectoryScanner.Scan"/> is itself an explicit single file, which is
-    /// always analyzed regardless of whether it is a symlink.
-    /// </summary>
-    public bool FollowSymlinks { get; init; }
+    public bool RespectGitignore
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -123,8 +126,8 @@ public sealed class DirectoryScanner
     /// progress on long-running scans; has no effect on the result.
     /// </param>
     /// <param name="onGitignoreScan">
-    /// An optional callback invoked while searching for <c>.gitignore</c> files (when
-    /// <see cref="ScanOptions.RespectGitignore"/> is set), before file discovery begins,
+    /// An optional callback invoked once per directory visited during the tree walk that
+    /// discovers <c>.gitignore</c>/<c>.gitattributes</c> files and candidate file paths,
     /// receiving the running count of directories visited and the current directory's
     /// full path. Used to report progress on long-running scans; has no effect on the
     /// result.
@@ -199,68 +202,56 @@ public sealed class DirectoryScanner
 
         var fullRoot = Path.GetFullPath(root);
 
-        // Do not follow directory symlinks/junctions: a self-referential link would
-        // otherwise make the matcher's "**" traversal recurse forever. The pre-pass below
-        // never recurses into a flagged directory, so it cannot loop either. When
-        // .gitignore discovery also walks the tree, reuse the symlinks it already found
-        // instead of walking the tree a second time.
-        GitIgnoreRules? gitignore;
-        IReadOnlyList<string> directoriesToExclude;
-        if (options.RespectGitignore)
-        {
-            gitignore = GitIgnoreRules.Load(
-                root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan, out directoriesToExclude, options.FollowSymlinks);
-        }
-        else
-        {
-            gitignore = null;
-            directoriesToExclude = FindSymlinkedDirectoriesToExclude(fullRoot, options.FollowSymlinks);
-        }
+        // A single tree walk discovers .gitignore files, .gitattributes files, candidate
+        // file paths, and symlink/junction loop protection all at once, instead of walking
+        // the same directory tree separately for each concern.
+        var walk = ScanTreeWalker.Walk(
+            root, DefaultExcludeDirectoryNames, options.Recursive, options.FollowSymlinks,
+            options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
 
-        foreach (var excluded in directoriesToExclude)
-        {
-            var relative = Path.GetRelativePath(fullRoot, excluded).Replace('\\', '/');
-            matcher.AddExclude($"**/{relative}/**");
-        }
-
-        var gitattributes = options.RespectGitAttributes
-            ? GitAttributesRules.Load(root, DefaultExcludeDirectoryNames, options.Recursive)
-            : null;
+        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles) : null;
+        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles) : null;
 
         var files = new List<ScannedFile>();
-        var skipped = new List<SkippedEntry>();
-        try
+        var skipped = new List<SkippedEntry>(walk.Skipped);
+        foreach (var fullPath in walk.FilePaths)
         {
-            foreach (var fullPath in matcher.GetResultsInFullPath(root))
+            var relativePath = Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/');
+
+            if (!matcher.Match([relativePath]).HasMatches)
             {
-                var relativePath = Path.GetRelativePath(fullRoot, fullPath);
+                continue;
+            }
 
-                if (gitignore is { IsEmpty: false } && gitignore.IsIgnored(relativePath))
-                {
-                    continue;
-                }
+            if (gitignore is { IsEmpty: false } && gitignore.IsIgnored(relativePath))
+            {
+                continue;
+            }
 
-                if (gitattributes is { IsEmpty: false } && gitattributes.IsVendoredOrGenerated(relativePath))
-                {
-                    continue;
-                }
+            if (gitattributes is { IsEmpty: false } && gitattributes.IsVendoredOrGenerated(relativePath))
+            {
+                continue;
+            }
 
+            try
+            {
                 if (!options.FollowSymlinks && new FileInfo(fullPath).Attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
                     continue;
                 }
-
-                var scanned = Resolve(fullPath, options.IncludeUnknown);
-                if (scanned is not null && MatchesLanguageFilter(scanned.Language, options))
-                {
-                    files.Add(scanned);
-                    onFileFound?.Invoke(files.Count, scanned.Path);
-                }
             }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            skipped.Add(new SkippedEntry(root, ex.Message));
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                skipped.Add(new SkippedEntry(fullPath, ex.Message));
+                continue;
+            }
+
+            var scanned = Resolve(fullPath, options.IncludeUnknown);
+            if (scanned is not null && MatchesLanguageFilter(scanned.Language, options))
+            {
+                files.Add(scanned);
+                onFileFound?.Invoke(files.Count, scanned.Path);
+            }
         }
 
         files.Sort(static (left, right) => string.CompareOrdinal(left.Path, right.Path));
@@ -307,73 +298,6 @@ public sealed class DirectoryScanner
         }
 
         return new ScanResult(files, skipped);
-    }
-
-    /// <summary>
-    /// Finds directories under <paramref name="root"/> that must be excluded from
-    /// traversal: every symlink/junction when <paramref name="followSymlinks"/> is
-    /// <see langword="false"/>, or only the ones that would loop back onto a directory
-    /// already on the current path from <paramref name="root"/> (directly, or
-    /// transitively through an earlier followed symlink) when it is <see langword="true"/>.
-    /// </summary>
-    private static IReadOnlyList<string> FindSymlinkedDirectoriesToExclude(string root, bool followSymlinks)
-    {
-        var toExclude = new List<string>();
-        var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var ancestors = new List<string> { normalizedRoot };
-        var followedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot };
-        CollectSymlinkedDirectoriesToExclude(root, normalizedRoot, toExclude, ancestors, followedTargets, followSymlinks);
-        return toExclude;
-    }
-
-    // followedTargets tracks every real directory reached so far anywhere in the tree (not
-    // just on the current ancestors path), so two distinct symlink chains that both resolve
-    // to the same real directory don't each follow it and double-count its files.
-    private static void CollectSymlinkedDirectoriesToExclude(
-        string directory, string normalizedRoot, List<string> toExclude, List<string> ancestors, HashSet<string> followedTargets, bool followSymlinks)
-    {
-        string[] entries;
-        try
-        {
-            entries = Directory.GetDirectories(directory);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return;
-        }
-
-        foreach (var subdirectory in entries)
-        {
-            var name = Path.GetFileName(subdirectory);
-            if (DefaultExcludeDirectoryNames.Contains(name))
-            {
-                continue;
-            }
-
-            if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
-            {
-                ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                CollectSymlinkedDirectoriesToExclude(subdirectory, normalizedRoot, toExclude, ancestors, followedTargets, followSymlinks);
-                ancestors.RemoveAt(ancestors.Count - 1);
-                continue;
-            }
-
-            // A target at or under the scan root is already covered by the normal tree walk;
-            // following it would double-count those files, so exclude it regardless of whether
-            // it forms an ancestor loop.
-            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
-            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks
-                || SymlinkGuard.IsAncestorOrSelf(normalizedRoot, resolution.Target!)
-                || !followedTargets.Add(resolution.Target!))
-            {
-                toExclude.Add(subdirectory);
-                continue;
-            }
-
-            ancestors.Add(resolution.Target!);
-            CollectSymlinkedDirectoriesToExclude(subdirectory, normalizedRoot, toExclude, ancestors, followedTargets, followSymlinks);
-            ancestors.RemoveAt(ancestors.Count - 1);
-        }
     }
 
     private static bool MatchesLanguageFilter(LanguageDefinition language, ScanOptions options)

@@ -18,13 +18,13 @@ namespace Sloc.Core;
 /// </remarks>
 public sealed class GitIgnoreRules
 {
-    private readonly IReadOnlyList<GitIgnoreFile> _files;
-
     // Caches the cumulative ignored/not-ignored state through each ancestor directory, so
     // sibling files under the same directory only re-evaluate patterns for their own leaf
     // name instead of re-walking every ancestor directory's patterns each time. Not safe
     // for concurrent use; IsIgnored is only called from the scanner's sequential file walk.
     private readonly Dictionary<string, bool> _directoryIgnoreCache = new();
+
+    private readonly IReadOnlyList<GitIgnoreFile> _files;
 
     private GitIgnoreRules(IReadOnlyList<GitIgnoreFile> files)
     {
@@ -90,25 +90,12 @@ public sealed class GitIgnoreRules
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
-        var fullRoot = Path.GetFullPath(root);
+        var walk = ScanTreeWalker.Walk(
+            root, excludedDirectoryNames, recursive, followSymlinks,
+            collectGitignore: true, collectGitattributes: false, collectFiles: false, onDirectoryVisited);
 
-        // Lowest precedence first: the user's global excludesFile, then the repo-local
-        // .git/info/exclude, then the per-directory .gitignore files discovered below
-        // (root .gitignore, then nested ones). All of these share BaseDirectory "", so a
-        // stable sort (not List<T>.Sort, which isn't stable) is required to preserve this
-        // relative order.
-        var files = new List<GitIgnoreFile>();
-        AddIfPresent(files, LoadGlobalExcludesFile());
-        AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
-
-        var visited = 0;
-        var symlinks = new List<string>();
-        var ancestors = new List<string> { fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) };
-        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, symlinks, onDirectoryVisited, ref visited, ancestors, followSymlinks);
-
-        var ordered = files.OrderBy(file => file.BaseDirectory.Length).ToList();
-        symlinkedDirectories = symlinks;
-        return new GitIgnoreRules(ordered);
+        symlinkedDirectories = walk.SymlinkedDirectories;
+        return FromWalk(root, walk.GitignoreFiles);
     }
 
     /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string}, bool)"/>
@@ -119,63 +106,101 @@ public sealed class GitIgnoreRules
         Action<int, string>? onDirectoryVisited = null) =>
         Load(root, excludedDirectoryNames, recursive, onDirectoryVisited, out _);
 
-    private static void AddIfPresent(List<GitIgnoreFile> files, GitIgnoreFile? file)
+    /// <summary>
+    /// Determines whether the given path (relative to the scan root, using either
+    /// separator) is ignored.
+    /// </summary>
+    /// <param name="relativePath">The path relative to the scan root.</param>
+    /// <returns><see langword="true"/> if the path is ignored.</returns>
+    public bool IsIgnored(string relativePath)
     {
-        if (file is not null)
+        ArgumentNullException.ThrowIfNull(relativePath);
+
+        if (_files.Count == 0)
         {
-            files.Add(file);
+            return false;
         }
+
+        var normalized = relativePath.Replace('\\', '/').Trim('/');
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        var segments = normalized.Split('/');
+        var ignored = false;
+
+        // Evaluate each ancestor directory then the leaf, last match wins. Once a
+        // directory is ignored, its descendants stay ignored unless a later pattern
+        // explicitly re-includes them. Ancestor directories' cumulative state is cached,
+        // since many files typically share the same parent directories.
+        for (var depth = 0; depth < segments.Length; depth++)
+        {
+            var isDirectory = depth < segments.Length - 1;
+            var partial = string.Join('/', segments, 0, depth + 1);
+
+            if (isDirectory && _directoryIgnoreCache.TryGetValue(partial, out var cached))
+            {
+                ignored = cached;
+                continue;
+            }
+
+            var decision = Evaluate(partial, isDirectory);
+            if (decision.HasValue)
+            {
+                ignored = decision.Value;
+            }
+
+            if (isDirectory)
+            {
+                _directoryIgnoreCache[partial] = ignored;
+            }
+        }
+
+        return ignored;
+    }
+
+    internal static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
+    {
+        var patterns = new List<GitIgnorePattern>();
+        foreach (var line in lines)
+        {
+            if (GitIgnorePattern.TryCompile(line, out var pattern))
+            {
+                patterns.Add(pattern);
+            }
+        }
+
+        return patterns;
     }
 
     /// <summary>
-    /// Loads the repo-local <c>.git/info/exclude</c> file at the scan root, if present.
-    /// Does not search upward for a repository boundary, matching how local
-    /// <c>.gitignore</c> discovery only looks at the scan root down.
+    /// Builds a rule set from <c>.gitignore</c> files already discovered by a
+    /// <see cref="ScanTreeWalker"/> pass, adding the user's global <c>core.excludesFile</c>
+    /// and the repo-local <c>.git/info/exclude</c> (lowest precedence, evaluated first),
+    /// without walking the directory tree again.
     /// </summary>
-    private static GitIgnoreFile? LoadRepoExcludeFile(string scanRoot)
+    internal static GitIgnoreRules FromWalk(string root, IReadOnlyList<GitIgnoreFile> walkedFiles)
     {
-        var excludePath = Path.Combine(scanRoot, ".git", "info", "exclude");
-        return TryLoadIgnoreFile(excludePath);
+        var fullRoot = Path.GetFullPath(root);
+
+        // Lowest precedence first: the user's global excludesFile, then the repo-local
+        // .git/info/exclude, then the per-directory .gitignore files discovered below
+        // (root .gitignore, then nested ones). All of these share BaseDirectory "", so a
+        // stable sort (not List<T>.Sort, which isn't stable) is required to preserve this
+        // relative order.
+        var files = new List<GitIgnoreFile>();
+        AddIfPresent(files, LoadGlobalExcludesFile());
+        AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
+        files.AddRange(walkedFiles);
+
+        return new GitIgnoreRules(files.OrderBy(file => file.BaseDirectory.Length).ToList());
     }
 
-    /// <summary>
-    /// Loads the user's global <c>core.excludesFile</c>, if <c>~/.gitconfig</c> sets one
-    /// and it exists.
-    /// </summary>
-    private static GitIgnoreFile? LoadGlobalExcludesFile()
+    internal static string NormalizeBase(string baseDirectory)
     {
-        var gitConfigPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitconfig");
-
-        string configContents;
-        try
-        {
-            configContents = File.ReadAllText(gitConfigPath);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        return TryParseExcludesFile(configContents, out var excludesFilePath)
-            ? TryLoadIgnoreFile(excludesFilePath)
-            : null;
-    }
-
-    private static GitIgnoreFile? TryLoadIgnoreFile(string path)
-    {
-        string[] lines;
-        try
-        {
-            lines = File.ReadAllLines(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        var patterns = CompilePatterns(lines);
-        return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns);
+        var normalized = baseDirectory.Replace('\\', '/').Trim('/');
+        return normalized == "." ? string.Empty : normalized;
     }
 
     /// <summary>
@@ -243,154 +268,63 @@ public sealed class GitIgnoreRules
         return false;
     }
 
-    /// <summary>
-    /// Determines whether the given path (relative to the scan root, using either
-    /// separator) is ignored.
-    /// </summary>
-    /// <param name="relativePath">The path relative to the scan root.</param>
-    /// <returns><see langword="true"/> if the path is ignored.</returns>
-    public bool IsIgnored(string relativePath)
+    private static void AddIfPresent(List<GitIgnoreFile> files, GitIgnoreFile? file)
     {
-        ArgumentNullException.ThrowIfNull(relativePath);
-
-        if (_files.Count == 0)
+        if (file is not null)
         {
-            return false;
+            files.Add(file);
         }
-
-        var normalized = relativePath.Replace('\\', '/').Trim('/');
-        if (normalized.Length == 0)
-        {
-            return false;
-        }
-
-        var segments = normalized.Split('/');
-        var ignored = false;
-
-        // Evaluate each ancestor directory then the leaf, last match wins. Once a
-        // directory is ignored, its descendants stay ignored unless a later pattern
-        // explicitly re-includes them. Ancestor directories' cumulative state is cached,
-        // since many files typically share the same parent directories.
-        for (var depth = 0; depth < segments.Length; depth++)
-        {
-            var isDirectory = depth < segments.Length - 1;
-            var partial = string.Join('/', segments, 0, depth + 1);
-
-            if (isDirectory && _directoryIgnoreCache.TryGetValue(partial, out var cached))
-            {
-                ignored = cached;
-                continue;
-            }
-
-            var decision = Evaluate(partial, isDirectory);
-            if (decision.HasValue)
-            {
-                ignored = decision.Value;
-            }
-
-            if (isDirectory)
-            {
-                _directoryIgnoreCache[partial] = ignored;
-            }
-        }
-
-        return ignored;
     }
 
-    private static void CollectGitIgnoreFiles(
-        string directory,
-        string root,
-        IReadOnlySet<string> excludedDirectoryNames,
-        bool recursive,
-        List<GitIgnoreFile> files,
-        List<string> symlinkedDirectories,
-        Action<int, string>? onDirectoryVisited,
-        ref int visited,
-        List<string> ancestors,
-        bool followSymlinks)
+    /// <summary>
+    /// Loads the user's global <c>core.excludesFile</c>, if <c>~/.gitconfig</c> sets one
+    /// and it exists.
+    /// </summary>
+    private static GitIgnoreFile? LoadGlobalExcludesFile()
     {
-        visited++;
-        onDirectoryVisited?.Invoke(visited, directory);
+        var gitConfigPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitconfig");
 
-        string[] entries;
+        string configContents;
         try
         {
-            var ignorePath = Path.Combine(directory, ".gitignore");
-            if (File.Exists(ignorePath))
-            {
-                var patterns = CompilePatterns(File.ReadAllLines(ignorePath));
-                if (patterns.Count > 0)
-                {
-                    var baseDir = NormalizeBase(Path.GetRelativePath(root, directory));
-                    files.Add(new GitIgnoreFile(baseDir, patterns));
-                }
-            }
-
-            entries = recursive ? Directory.GetDirectories(directory) : [];
+            configContents = File.ReadAllText(gitConfigPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return;
+            return null;
         }
 
-        foreach (var subdirectory in entries)
-        {
-            var name = Path.GetFileName(subdirectory);
-            if (excludedDirectoryNames.Contains(name))
-            {
-                continue;
-            }
-
-            if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
-            {
-                ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
-                ancestors.RemoveAt(ancestors.Count - 1);
-                continue;
-            }
-
-            // A directory symlink/junction. Resolve its target and check whether following
-            // it would loop back onto a directory already on the current path from the
-            // scan root (directly, or transitively through an earlier symlink) — not just
-            // the scan root itself, so chains of two or more symlinks are caught too. A
-            // target at or under the scan root is also excluded: the normal tree walk
-            // already covers those files, so following the link would double-count them.
-            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
-            var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks
-                || SymlinkGuard.IsAncestorOrSelf(normalizedRoot, resolution.Target!))
-            {
-                // Not followed: resolution failed, it would loop, the target is inside the
-                // scan root, or the caller opted out of following symlinked directories
-                // entirely. Either way, exclude it.
-                symlinkedDirectories.Add(subdirectory);
-                continue;
-            }
-
-            ancestors.Add(resolution.Target!);
-            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, symlinkedDirectories, onDirectoryVisited, ref visited, ancestors, followSymlinks);
-            ancestors.RemoveAt(ancestors.Count - 1);
-        }
+        return TryParseExcludesFile(configContents, out var excludesFilePath)
+            ? TryLoadIgnoreFile(excludesFilePath)
+            : null;
     }
 
-    private static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
+    /// <summary>
+    /// Loads the repo-local <c>.git/info/exclude</c> file at the scan root, if present.
+    /// Does not search upward for a repository boundary, matching how local
+    /// <c>.gitignore</c> discovery only looks at the scan root down.
+    /// </summary>
+    private static GitIgnoreFile? LoadRepoExcludeFile(string scanRoot)
     {
-        var patterns = new List<GitIgnorePattern>();
-        foreach (var line in lines)
-        {
-            if (GitIgnorePattern.TryCompile(line, out var pattern))
-            {
-                patterns.Add(pattern);
-            }
-        }
-
-        return patterns;
+        var excludePath = Path.Combine(scanRoot, ".git", "info", "exclude");
+        return TryLoadIgnoreFile(excludePath);
     }
 
-    private static string NormalizeBase(string baseDirectory)
+    private static GitIgnoreFile? TryLoadIgnoreFile(string path)
     {
-        var normalized = baseDirectory.Replace('\\', '/').Trim('/');
-        return normalized == "." ? string.Empty : normalized;
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        var patterns = CompilePatterns(lines);
+        return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns);
     }
 
     private bool? Evaluate(string path, bool isDirectory)
@@ -420,7 +354,7 @@ public sealed class GitIgnoreRules
         return result;
     }
 
-    private sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
+    internal sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
     {
         public string BaseDirectory { get; } = baseDirectory;
 
@@ -497,48 +431,6 @@ internal sealed class GitIgnorePattern
     /// </summary>
     internal static bool TryCompilePattern(string rawPattern, out Regex regex, out bool directoryOnly) =>
         TryCompileBody(rawPattern, out regex, out directoryOnly);
-
-    private static bool TryCompileBody(string line, out Regex regex, out bool directoryOnly)
-    {
-        regex = null!;
-        directoryOnly = false;
-
-        if (line.Length == 0)
-        {
-            return false;
-        }
-
-        if (line.EndsWith('/'))
-        {
-            directoryOnly = true;
-            line = line[..^1];
-        }
-
-        if (line.Length == 0)
-        {
-            return false;
-        }
-
-        // A pattern is anchored to the base directory if it contains a slash (a trailing
-        // slash was already removed above); a leading slash also anchors and is stripped.
-        var anchored = line.Contains('/');
-        if (line[0] == '/')
-        {
-            line = line[1..];
-        }
-
-        if (line.Length == 0)
-        {
-            return false;
-        }
-
-        var body = Translate(line);
-        var prefix = anchored ? "^" : "(?:^|.*/)";
-        regex = new Regex(
-            prefix + body + "$",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-        return true;
-    }
 
     private static string Translate(string pattern)
     {
@@ -651,5 +543,47 @@ internal sealed class GitIgnorePattern
         }
 
         return line[..end];
+    }
+
+    private static bool TryCompileBody(string line, out Regex regex, out bool directoryOnly)
+    {
+        regex = null!;
+        directoryOnly = false;
+
+        if (line.Length == 0)
+        {
+            return false;
+        }
+
+        if (line.EndsWith('/'))
+        {
+            directoryOnly = true;
+            line = line[..^1];
+        }
+
+        if (line.Length == 0)
+        {
+            return false;
+        }
+
+        // A pattern is anchored to the base directory if it contains a slash (a trailing
+        // slash was already removed above); a leading slash also anchors and is stripped.
+        var anchored = line.Contains('/');
+        if (line[0] == '/')
+        {
+            line = line[1..];
+        }
+
+        if (line.Length == 0)
+        {
+            return false;
+        }
+
+        var body = Translate(line);
+        var prefix = anchored ? "^" : "(?:^|.*/)";
+        regex = new Regex(
+            prefix + body + "$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        return true;
     }
 }

@@ -96,14 +96,23 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// Language display names to exclude (e.g. <c>"Markdown"</c>).
+    /// </summary>
+    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
+
+    /// <summary>
     /// Glob patterns of files to exclude.
     /// </summary>
     public IReadOnlyList<string> Excludes { get; init; } = [];
 
     /// <summary>
-    /// Language display names to exclude (e.g. <c>"Markdown"</c>).
+    /// Whether to descend into symlinked/junctioned directories rather than skip them.
+    /// Defaults to <see langword="false"/>.
     /// </summary>
-    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
+    public bool FollowSymlinks
+    {
+        get; init;
+    }
 
     /// <summary>
     /// The output format.
@@ -114,15 +123,15 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
-    /// Glob patterns of files to include.
-    /// </summary>
-    public IReadOnlyList<string> Includes { get; init; } = [];
-
-    /// <summary>
     /// Language display names to include (e.g. <c>"C#"</c>). When empty, all languages
     /// are considered.
     /// </summary>
     public IReadOnlyList<string> IncludeLangs { get; init; } = [];
+
+    /// <summary>
+    /// Glob patterns of files to include.
+    /// </summary>
+    public IReadOnlyList<string> Includes { get; init; } = [];
 
     /// <summary>
     /// When <see langword="true"/>, files with unknown extensions are included.
@@ -133,20 +142,20 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
-    /// When set, a file listing paths (one per line) to analyze directly instead of
-    /// scanning <see cref="Path"/>. <c>-</c> reads the list from stdin.
-    /// </summary>
-    public string? ListFile
-    {
-        get; init;
-    }
-
-    /// <summary>
     /// The maximum number of files to analyze in parallel. When <see langword="null"/>
     /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
     /// fully sequential analysis.
     /// </summary>
     public int? Jobs
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// When set, a file listing paths (one per line) to analyze directly instead of
+    /// scanning <see cref="Path"/>. <c>-</c> reads the list from stdin.
+    /// </summary>
+    public string? ListFile
     {
         get; init;
     }
@@ -229,12 +238,6 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
-    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
-    /// Defaults to <see langword="true"/>.
-    /// </summary>
-    public bool RespectGitignore { get; init; } = true;
-
-    /// <summary>
     /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
     /// in <c>.gitattributes</c> files discovered under the scan root. Defaults to
     /// <see langword="true"/>.
@@ -242,10 +245,10 @@ public sealed class AnalyzeOptions
     public bool RespectGitAttributes { get; init; } = true;
 
     /// <summary>
-    /// Whether to descend into symlinked/junctioned directories rather than skip them.
-    /// Defaults to <see langword="false"/>.
+    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
+    /// Defaults to <see langword="true"/>.
     /// </summary>
-    public bool FollowSymlinks { get; init; }
+    public bool RespectGitignore { get; init; } = true;
 
     /// <summary>
     /// The key by which the per-language summary is ordered.
@@ -253,18 +256,18 @@ public sealed class AnalyzeOptions
     public LanguageSort Sort { get; init; } = LanguageSort.Total;
 
     /// <summary>
-    /// When <see langword="true"/>, files with identical content are only counted once;
-    /// later duplicates are reported as skipped rather than double-counted.
+    /// When set, keeps only the first this-many languages in the summary after sorting.
     /// </summary>
-    public bool Unique
+    public int? Top
     {
         get; init;
     }
 
     /// <summary>
-    /// When set, keeps only the first this-many languages in the summary after sorting.
+    /// When <see langword="true"/>, files with identical content are only counted once;
+    /// later duplicates are reported as skipped rather than double-counted.
     /// </summary>
-    public int? Top
+    public bool Unique
     {
         get; init;
     }
@@ -277,9 +280,8 @@ public sealed class AnalyzeOptions
 public sealed class AnalyzeHandler
 {
     private const string StdoutToken = "-";
-    private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan LiveTableRefreshInterval = TimeSpan.FromMilliseconds(300);
-
+    private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
 
@@ -371,7 +373,7 @@ public sealed class AnalyzeHandler
                                 }
 
                                 refreshTimer.Restart();
-                                ctx.Status($"Scanning... checking .gitignore ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                                ctx.Status($"Scanning... checking .gitignore/.gitattributes ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
                             });
                     });
                 scanResult = result ?? throw new InvalidOperationException("Scan did not complete.");
@@ -628,29 +630,6 @@ public sealed class AnalyzeHandler
         return ThresholdResult(options, summary);
     }
 
-    private static void ReportUpdate(Task<UpdateCheckResult?>? updateCheck, string? currentVersion)
-    {
-        if (updateCheck is null || string.IsNullOrEmpty(currentVersion))
-        {
-            return;
-        }
-
-        try
-        {
-            var result = updateCheck.GetAwaiter().GetResult();
-            if (result is not null)
-            {
-                Console.Error.WriteLine(
-                    $"A new version of sloc is available: {result.LatestVersion} (current: {currentVersion})");
-                Console.Error.WriteLine($"Download: {result.ReleaseUrl}");
-            }
-        }
-        catch
-        {
-            // An update check must never break a normal analysis run.
-        }
-    }
-
     /// <summary>
     /// Keeps only the first file (in scan order) for each distinct content hash; every
     /// later duplicate is removed from <paramref name="results"/> and added to
@@ -680,6 +659,14 @@ public sealed class AnalyzeHandler
         return unique;
     }
 
+    private static IEnumerable<string> ReadAllLines(TextReader reader)
+    {
+        while (reader.ReadLine() is { } line)
+        {
+            yield return line;
+        }
+    }
+
     private static IEnumerable<string> ReadListFile(string listFile)
     {
         var lines = listFile == StdoutToken
@@ -689,11 +676,26 @@ public sealed class AnalyzeHandler
         return lines.Where(line => !string.IsNullOrWhiteSpace(line));
     }
 
-    private static IEnumerable<string> ReadAllLines(TextReader reader)
+    private static void ReportUpdate(Task<UpdateCheckResult?>? updateCheck, string? currentVersion)
     {
-        while (reader.ReadLine() is { } line)
+        if (updateCheck is null || string.IsNullOrEmpty(currentVersion))
         {
-            yield return line;
+            return;
+        }
+
+        try
+        {
+            var result = updateCheck.GetAwaiter().GetResult();
+            if (result is not null)
+            {
+                Console.Error.WriteLine(
+                    $"A new version of sloc is available: {result.LatestVersion} (current: {currentVersion})");
+                Console.Error.WriteLine($"Download: {result.ReleaseUrl}");
+            }
+        }
+        catch
+        {
+            // An update check must never break a normal analysis run.
         }
     }
 

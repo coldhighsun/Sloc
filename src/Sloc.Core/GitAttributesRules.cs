@@ -17,8 +17,8 @@ namespace Sloc.Core;
 /// </remarks>
 public sealed class GitAttributesRules
 {
-    private readonly IReadOnlyList<AttributesFile> _files;
     private readonly Dictionary<string, bool> _cache = new();
+    private readonly IReadOnlyList<AttributesFile> _files;
 
     private GitAttributesRules(IReadOnlyList<AttributesFile> files)
     {
@@ -62,20 +62,25 @@ public sealed class GitAttributesRules
     /// <see langword="false"/>, only the <paramref name="root"/> directory itself is checked,
     /// matching the shallow file discovery performed by the scanner.
     /// </param>
+    /// <param name="onDirectoryVisited">
+    /// Invoked once for every directory visited while searching for <c>.gitattributes</c>
+    /// files, with a running visited-directory count and the directory path.
+    /// </param>
     /// <returns>The loaded rule set (possibly empty).</returns>
     public static GitAttributesRules Load(
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
-        bool recursive)
+        bool recursive,
+        Action<int, string>? onDirectoryVisited = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
-        var fullRoot = Path.GetFullPath(root);
-        var files = new List<AttributesFile>();
-        Collect(fullRoot, fullRoot, excludedDirectoryNames, recursive, files);
+        var walk = ScanTreeWalker.Walk(
+            root, excludedDirectoryNames, recursive, followSymlinks: false,
+            collectGitignore: false, collectGitattributes: true, collectFiles: false, onDirectoryVisited);
 
-        return new GitAttributesRules(files.OrderBy(file => file.BaseDirectory.Length).ToList());
+        return FromFiles(walk.AttributesFiles);
     }
 
     /// <summary>
@@ -137,54 +142,7 @@ public sealed class GitAttributesRules
         return result;
     }
 
-    private static void Collect(
-        string directory,
-        string root,
-        IReadOnlySet<string> excludedDirectoryNames,
-        bool recursive,
-        List<AttributesFile> files)
-    {
-        string[] entries;
-        try
-        {
-            var attributesPath = Path.Combine(directory, ".gitattributes");
-            if (File.Exists(attributesPath))
-            {
-                var patterns = CompilePatterns(File.ReadAllLines(attributesPath));
-                if (patterns.Count > 0)
-                {
-                    var baseDir = NormalizeBase(Path.GetRelativePath(root, directory));
-                    files.Add(new AttributesFile(baseDir, patterns));
-                }
-            }
-
-            entries = recursive ? Directory.GetDirectories(directory) : [];
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return;
-        }
-
-        foreach (var subdirectory in entries)
-        {
-            var name = Path.GetFileName(subdirectory);
-            if (excludedDirectoryNames.Contains(name))
-            {
-                continue;
-            }
-
-            // Do not follow directory symlinks/junctions, matching the scanner's own
-            // loop protection.
-            if (new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
-            {
-                continue;
-            }
-
-            Collect(subdirectory, root, excludedDirectoryNames, recursive, files);
-        }
-    }
-
-    private static List<AttributePattern> CompilePatterns(IEnumerable<string> lines)
+    internal static List<AttributePattern> CompilePatterns(IEnumerable<string> lines)
     {
         var patterns = new List<AttributePattern>();
         foreach (var line in lines)
@@ -198,13 +156,20 @@ public sealed class GitAttributesRules
         return patterns;
     }
 
-    private static string NormalizeBase(string baseDirectory)
+    /// <summary>
+    /// Builds a rule set from <c>.gitattributes</c> files already discovered by a
+    /// <see cref="ScanTreeWalker"/> pass, without walking the directory tree again.
+    /// </summary>
+    internal static GitAttributesRules FromFiles(IReadOnlyList<AttributesFile> files) =>
+        new(files.OrderBy(file => file.BaseDirectory.Length).ToList());
+
+    internal static string NormalizeBase(string baseDirectory)
     {
         var normalized = baseDirectory.Replace('\\', '/').Trim('/');
         return normalized == "." ? string.Empty : normalized;
     }
 
-    private sealed class AttributesFile(string baseDirectory, IReadOnlyList<AttributePattern> patterns)
+    internal sealed class AttributesFile(string baseDirectory, IReadOnlyList<AttributePattern> patterns)
     {
         public string BaseDirectory { get; } = baseDirectory;
 
@@ -221,8 +186,8 @@ public sealed class GitAttributesRules
 /// </summary>
 internal sealed class AttributePattern
 {
-    private const string VendoredAttribute = "linguist-vendored";
     private const string GeneratedAttribute = "linguist-generated";
+    private const string VendoredAttribute = "linguist-vendored";
 
     private AttributePattern(Regex regex, bool? vendored, bool? generated)
     {
@@ -231,11 +196,20 @@ internal sealed class AttributePattern
         Generated = generated;
     }
 
-    public Regex Regex { get; }
+    public bool? Generated
+    {
+        get;
+    }
 
-    public bool? Vendored { get; }
+    public Regex Regex
+    {
+        get;
+    }
 
-    public bool? Generated { get; }
+    public bool? Vendored
+    {
+        get;
+    }
 
     public static bool TryCompile(string rawLine, out AttributePattern pattern)
     {
