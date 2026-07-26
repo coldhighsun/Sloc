@@ -357,6 +357,12 @@ public sealed class AnalyzeHandler
             {
                 fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
             }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                // Any other per-file failure (e.g. a decoding error) skips just that file
+                // rather than aborting the whole run; fatal conditions are left to propagate.
+                fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
+            }
         }
 
         var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
