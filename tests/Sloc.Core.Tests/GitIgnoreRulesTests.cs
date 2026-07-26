@@ -22,6 +22,54 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that a character class matches any one of its listed characters, and that
+    /// a leading <c>!</c> negates the class (matching any character not listed).
+    /// </summary>
+    [Theory]
+    [InlineData("file[123].txt", "file1.txt", true)]
+    [InlineData("file[123].txt", "file4.txt", false)]
+    [InlineData("file[!123].txt", "file4.txt", true)]
+    [InlineData("file[!123].txt", "file1.txt", false)]
+    public void IsIgnored_CharacterClass_MatchesListedCharacters(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a literal <c>^</c> inside a character class matches the caret
+    /// character itself rather than being interpreted as a regex negation, since
+    /// gitignore character classes only support <c>!</c> for negation.
+    /// </summary>
+    [Theory]
+    [InlineData("file[^12].txt", "file^.txt", true)]
+    [InlineData("file[^12].txt", "file1.txt", true)]
+    [InlineData("file[^12].txt", "file3.txt", false)]
+    public void IsIgnored_CaretInCharacterClass_IsTreatedAsLiteral(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that an un-escaped backslash inside a character class does not form a
+    /// regex escape sequence with the following character (e.g. <c>\b</c> inside a .NET
+    /// regex character class means a literal backspace, not the letter "b"): the class
+    /// still matches "b" as an ordinary literal member.
+    /// </summary>
+    [Fact]
+    public void IsIgnored_BackslashInCharacterClass_DoesNotFormEscapeSequence()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [@"file[a\b].txt"]);
+
+        Assert.True(rules.IsIgnored("filea.txt"));
+        Assert.True(rules.IsIgnored("fileb.txt"));
+        Assert.False(rules.IsIgnored("filec.txt"));
+    }
+
+    /// <summary>
     /// Verifies that an extension glob matches files with that extension anywhere.
     /// </summary>
     [Theory]
