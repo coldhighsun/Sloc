@@ -124,6 +124,42 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that <c>Hash</c> is left <see langword="null"/> by default, is populated
+    /// when requested, and is identical for byte-identical files.
+    /// </summary>
+    [Fact]
+    public void Analyze_ComputeHash_PopulatesHashForIdenticalContentOnly()
+    {
+        var pathA = Path.Combine(Path.GetTempPath(), "sloc-hash-a-" + Guid.NewGuid().ToString("N") + ".cs");
+        var pathB = Path.Combine(Path.GetTempPath(), "sloc-hash-b-" + Guid.NewGuid().ToString("N") + ".cs");
+        var pathC = Path.Combine(Path.GetTempPath(), "sloc-hash-c-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(pathA, "int x = 1;\n");
+        File.WriteAllText(pathB, "int x = 1;\n");
+        File.WriteAllText(pathC, "int y = 2;\n");
+        try
+        {
+            var analyzer = new FileAnalyzer();
+
+            var withoutHash = analyzer.Analyze(pathA, CSharp);
+            Assert.Null(withoutHash.Hash);
+
+            var a = analyzer.Analyze(pathA, CSharp, computeHash: true);
+            var b = analyzer.Analyze(pathB, CSharp, computeHash: true);
+            var c = analyzer.Analyze(pathC, CSharp, computeHash: true);
+
+            Assert.NotNull(a.Hash);
+            Assert.Equal(a.Hash, b.Hash);
+            Assert.NotEqual(a.Hash, c.Hash);
+        }
+        finally
+        {
+            File.Delete(pathA);
+            File.Delete(pathB);
+            File.Delete(pathC);
+        }
+    }
+
+    /// <summary>
     /// Looks up a <see cref="LanguageDefinition"/> by file extension and asserts it was found.
     /// </summary>
     /// <param name="extension">
