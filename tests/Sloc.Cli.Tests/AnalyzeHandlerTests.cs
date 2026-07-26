@@ -202,6 +202,44 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a baseline saved with <c>--by-file</c> (no by-language section) still
+    /// yields correct per-language deltas, rather than treating every language as newly added.
+    /// </summary>
+    [Fact]
+    public void Execute_ByFileBaselineDiff_ReportsIncrementalDeltas()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            ByFile = true,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        // Add another code line, then diff against the by-file baseline.
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(diff);
+        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
+        // The delta must be +1 line, not the full +2 that a missing baseline breakdown would produce.
+        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
     /// Verifies that a missing baseline file returns the error exit code instead of throwing.
     /// </summary>
     [Fact]
