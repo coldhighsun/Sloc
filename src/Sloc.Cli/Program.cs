@@ -1,7 +1,9 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Help;
 using System.Globalization;
+using System.Linq;
 using Sloc.Cli;
+using Sloc.Core.Languages;
 using Sloc.Core.Models;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -41,15 +43,19 @@ var excludeDirOption = new Option<string[]>("--exclude-dir")
     AllowMultipleArgumentsPerToken = true
 };
 
+var supportedLangNames = string.Join(", ", LanguageRegistry.Languages
+    .Select(language => language.Name)
+    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
 var includeLangOption = new Option<string[]>("--include-lang")
 {
-    Description = "Language name to include (e.g. \"C#\"). Can be specified multiple times.",
+    Description = $"Language name to include, matched case-insensitively. Can be specified multiple times. Supported: {supportedLangNames}.",
     AllowMultipleArgumentsPerToken = true
 };
 
 var excludeLangOption = new Option<string[]>("--exclude-lang")
 {
-    Description = "Language name to exclude (e.g. \"Markdown\"). Can be specified multiple times.",
+    Description = $"Language name to exclude, matched case-insensitively. Can be specified multiple times. Supported: {supportedLangNames}.",
     AllowMultipleArgumentsPerToken = true
 };
 
