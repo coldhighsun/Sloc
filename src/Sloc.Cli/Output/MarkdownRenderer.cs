@@ -10,7 +10,6 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class MarkdownRenderer : IResultRenderer
 {
-    private readonly string? _scanPath;
     private readonly DateTimeOffset _scanTime;
     private readonly TextWriter _writer;
 
@@ -20,16 +19,12 @@ public sealed class MarkdownRenderer : IResultRenderer
     /// <param name="writer">
     /// The destination writer. Defaults to <see cref="Console.Out"/> when <see langword="null"/>.
     /// </param>
-    /// <param name="scanPath">
-    /// The path that was scanned, shown in the report header. Omitted from the output when <see langword="null"/>.
-    /// </param>
     /// <param name="scanTime">
     /// The time the scan was performed. Defaults to <see cref="DateTimeOffset.Now"/> when <see langword="null"/>.
     /// </param>
-    public MarkdownRenderer(TextWriter? writer = null, string? scanPath = null, DateTimeOffset? scanTime = null)
+    public MarkdownRenderer(TextWriter? writer = null, DateTimeOffset? scanTime = null)
     {
         _writer = writer ?? Console.Out;
-        _scanPath = scanPath;
         _scanTime = scanTime ?? DateTimeOffset.Now;
     }
 
@@ -42,11 +37,9 @@ public sealed class MarkdownRenderer : IResultRenderer
 
         sb.AppendLine("# Sloc Report");
         sb.AppendLine();
-        if (_scanPath is not null)
-        {
-            sb.AppendLine($"**Scan Path:** `{_scanPath}`");
-        }
-        sb.AppendLine($"**Scan Time:** {_scanTime:yyyy-MM-dd HH:mm:ss zzz}");
+
+        var generated = _scanTime.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        sb.AppendLine($"**Generated:** {generated} | **Files:** {summary.FileCount:N0} | **Total Lines:** {summary.Total:N0}");
         sb.AppendLine();
 
         if (detailed || !byFile)

@@ -250,7 +250,7 @@ public static class TableRenderer
         {
             var dirPart = Path.GetDirectoryName(relative) ?? string.Empty;
             var segments = string.IsNullOrEmpty(dirPart)
-                ? Array.Empty<string>()
+                ? []
                 : dirPart.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
             var current = root;
             for (var i = 0; i < segments.Length; i++)
@@ -393,7 +393,7 @@ public static class TableRenderer
         public List<TreeNode> Children
         {
             get;
-        } = new();
+        } = [];
 
         public FileAnalysis? File
         {

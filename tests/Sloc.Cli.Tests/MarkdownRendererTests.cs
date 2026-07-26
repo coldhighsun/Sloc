@@ -23,7 +23,7 @@ public class MarkdownRendererTests
             .ToArray();
 
         Assert.Contains("# Sloc Report", lines);
-        Assert.Contains("**1 files · 105 lines**", lines);
+        Assert.Contains(lines, line => line.StartsWith("**Generated:**") && line.Contains("**Files:** 1") && line.Contains("**Total Lines:** 105"));
         Assert.Contains("| Language | Files | Code | Comment | Blank | Total | Health |", lines);
         Assert.Contains("| :--- | ---: | ---: | ---: | ---: | ---: | :--- |", lines);
         Assert.Contains(lines, line => line.StartsWith("| C# | 1 | 80 | 20 | 5 | 105 |"));
@@ -65,11 +65,10 @@ public class MarkdownRendererTests
         var scanTime = new DateTimeOffset(2026, 7, 26, 10, 30, 0, TimeSpan.Zero);
 
         using var writer = new StringWriter();
-        new MarkdownRenderer(writer, "X:\\Sloc\\src", scanTime).Render(summary, byFile: false, noHealth: false);
+        new MarkdownRenderer(writer, scanTime).Render(summary, byFile: false, noHealth: false);
         var text = writer.ToString();
 
-        Assert.Contains("**Scan Path:** `X:\\Sloc\\src`", text);
-        Assert.Contains("**Scan Time:** 2026-07-26 10:30:00", text);
+        Assert.Contains("**Generated:** 2026-07-26T10:30:00Z", text);
     }
 
     /// <summary>

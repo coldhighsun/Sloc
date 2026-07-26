@@ -504,11 +504,11 @@ public sealed class AnalyzeHandler
             // Markdown defaults to stdout (pasteable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
             {
-                new MarkdownRenderer(Console.Out, options.Path, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
+                new MarkdownRenderer(Console.Out, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed);
             }
             else
             {
-                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer, options.Path, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
+                WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer, scanTime).Render(summary, options.ByFile, options.NoHealth, options.Detailed), options.Quiet);
             }
         }
         else
