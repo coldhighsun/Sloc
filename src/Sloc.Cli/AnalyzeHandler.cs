@@ -330,10 +330,10 @@ public sealed class AnalyzeHandler
                 scanResult = _scanner.Scan(options.Path, scanOptions);
             }
         }
-        catch (DirectoryNotFoundException ex)
+        catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
         {
             Console.Error.WriteLine(ex.Message);
-            return 1;
+            return ExitCode.Error;
         }
 
         var files = scanResult.Files;
@@ -445,6 +445,15 @@ public sealed class AnalyzeHandler
             {
                 Console.Error.WriteLine($"sloc: {ex.Message}");
                 return ExitCode.Error;
+            }
+
+            // Baseline diffs are only rendered as a console Table or as JSON. Any other
+            // requested format (and any --output for a non-JSON diff) is not supported, so
+            // warn and fall back to the Table rather than silently ignoring the request.
+            if (options.Format is not (OutputFormat.Json or OutputFormat.Table))
+            {
+                Console.Error.WriteLine(
+                    $"sloc: --baseline diff output is only supported for Table and Json formats; ignoring -f {options.Format.ToString().ToLowerInvariant()} and rendering a table.");
             }
 
             if (options.Format == OutputFormat.Json && (options.OutputFile is null || options.OutputFile == StdoutToken))
