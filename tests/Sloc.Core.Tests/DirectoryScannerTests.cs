@@ -400,6 +400,43 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(["keep.cs"], names);
     }
 
+    /// <summary>
+    /// Verifies that a symlink looping back to a non-root ancestor (rather than the scan
+    /// root itself) is still detected as a direct loop and skipped, even with
+    /// <c>FollowSymlinks</c> set.
+    /// </summary>
+    [Fact]
+    public async Task Scan_FollowSymlinksLoopToNonRootAncestor_StillSkipsLoop()
+    {
+        Write("a/keep.cs", "// keep");
+
+        var linkPath = Path.Combine(_root, "a", "b", "loop");
+        Directory.CreateDirectory(Path.GetDirectoryName(linkPath)!);
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, Path.Combine(_root, "a"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        ScanResult result;
+        try
+        {
+            result = await Task.Run(() => _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }))
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Scan did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
+        Assert.Equal(["keep.cs"], names);
+    }
+
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));

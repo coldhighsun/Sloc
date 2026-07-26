@@ -214,14 +214,14 @@ rootCommand.SetAction(parseResult =>
     }
 
     var minCommentPct = parseResult.GetValue(minCommentPctOption);
-    if (minCommentPct is { } pct && (pct < 0 || pct > 100))
+    if (!CliArgumentValidation.IsValidMinCommentPct(minCommentPct))
     {
         Console.Error.WriteLine("sloc: --min-comment-pct must be between 0 and 100.");
         return ExitCode.Error;
     }
 
     var top = parseResult.GetValue(topOption);
-    if (top is { } topValue && topValue < 1)
+    if (!CliArgumentValidation.IsValidTop(top))
     {
         Console.Error.WriteLine("sloc: --top must be 1 or greater.");
         return ExitCode.Error;
