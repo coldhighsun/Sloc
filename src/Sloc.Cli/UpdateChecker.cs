@@ -17,7 +17,28 @@ public sealed class UpdateChecker
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/coldhighsun/Sloc/releases/latest";
 
-    private static readonly HttpClient HttpClient = CreateHttpClient();
+    private static readonly HttpClient SharedHttpClient = CreateHttpClient();
+
+    private readonly HttpClient _httpClient;
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="UpdateChecker"/> using a process-wide
+    /// shared <see cref="HttpClient"/>.
+    /// </summary>
+    public UpdateChecker()
+        : this(SharedHttpClient)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="UpdateChecker"/> with a specific
+    /// <see cref="HttpClient"/>. Intended for testing with a stubbed message handler.
+    /// </summary>
+    /// <param name="httpClient">The client used to query the GitHub API.</param>
+    internal UpdateChecker(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
 
     /// <summary>
     /// Checks whether a newer stable release than <paramref name="currentVersion"/> is available.
@@ -40,7 +61,7 @@ public sealed class UpdateChecker
             using var timeoutCts = new CancellationTokenSource(timeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-            var release = await HttpClient
+            var release = await _httpClient
                 .GetFromJsonAsync<GitHubRelease>(LatestReleaseUrl, linkedCts.Token)
                 .ConfigureAwait(false);
 
