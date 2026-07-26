@@ -10,6 +10,7 @@ public static class LanguageRegistry
 {
     private static readonly IReadOnlyList<LanguageDefinition> AllLanguages = CreateLanguages();
     private static readonly IReadOnlyDictionary<string, LanguageDefinition> ExtensionLookup = CreateLookup(AllLanguages);
+    private static readonly IReadOnlyDictionary<string, LanguageDefinition> FilenameLookup = CreateFilenameLookup(AllLanguages);
     private static readonly IReadOnlyDictionary<string, bool> HealthSupportByName =
         AllLanguages.ToDictionary(language => language.Name, language => language.SupportsHealth, StringComparer.OrdinalIgnoreCase);
 
@@ -48,6 +49,12 @@ public static class LanguageRegistry
     /// </returns>
     public static bool TryGetByPath(string path, [NotNullWhen(true)] out LanguageDefinition? language)
     {
+        var fileName = Path.GetFileName(path);
+        if (!string.IsNullOrEmpty(fileName) && FilenameLookup.TryGetValue(fileName, out language))
+        {
+            return true;
+        }
+
         var extension = Path.GetExtension(path);
         return TryGetByExtension(extension, out language);
     }
@@ -175,6 +182,7 @@ public static class LanguageRegistry
             {
                 Name = "Ruby",
                 Extensions = [".rb"],
+                Filenames = ["Rakefile", "Gemfile", "Guardfile", "Podfile"],
                 LineCommentTokens = ["#"],
                 BlockComments = [new BlockComment("=begin", "=end", RequireLineStart: true)],
                 StringLiterals = [doubleQuote, singleQuote]
@@ -354,6 +362,30 @@ public static class LanguageRegistry
                 LineCommentTokens = ["#", "//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Makefile",
+                Extensions = [".mk", ".mak"],
+                Filenames = ["Makefile", "makefile", "GNUmakefile"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Dockerfile",
+                Extensions = [".dockerfile"],
+                Filenames = ["Dockerfile", "Containerfile"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "CMake",
+                Extensions = [".cmake"],
+                Filenames = ["CMakeLists.txt"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote]
             }
         };
     }
@@ -366,6 +398,20 @@ public static class LanguageRegistry
             foreach (var extension in language.Extensions)
             {
                 lookup[extension] = language;
+            }
+        }
+
+        return lookup;
+    }
+
+    private static IReadOnlyDictionary<string, LanguageDefinition> CreateFilenameLookup(IReadOnlyList<LanguageDefinition> languages)
+    {
+        var lookup = new Dictionary<string, LanguageDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var language in languages)
+        {
+            foreach (var fileName in language.Filenames)
+            {
+                lookup[fileName] = language;
             }
         }
 

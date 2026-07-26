@@ -124,6 +124,28 @@ public class LanguageRegistryTests
     }
 
     /// <summary>
+    /// Verifies that extensionless files identified by name (e.g. Makefile, Dockerfile)
+    /// resolve to the correct language, case-insensitively and regardless of directory.
+    /// </summary>
+    /// <param name="path">A file path to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData("Makefile", "Makefile")]
+    [InlineData("src/GNUmakefile", "Makefile")]
+    [InlineData("Dockerfile", "Dockerfile")]
+    [InlineData("deploy/Containerfile", "Dockerfile")]
+    [InlineData("CMakeLists.txt", "CMake")]
+    [InlineData("Rakefile", "Ruby")]
+    [InlineData("Gemfile", "Ruby")]
+    public void TryGetByPath_KnownFilename_ResolvesLanguage(string path, string expectedName)
+    {
+        var found = LanguageRegistry.TryGetByPath(path, out var language);
+
+        Assert.True(found);
+        Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
     /// Verifies that languages with comment tokens and <c>ShowHealth</c> support health
     /// analysis, while data/markup languages and unknown names do not.
     /// </summary>

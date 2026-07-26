@@ -65,6 +65,13 @@ public sealed class LanguageDefinition
     } = [];
 
     /// <summary>
+    /// The exact file names (case-insensitive, no extension) that map to this language,
+    /// for files identified by name rather than extension (e.g. <c>Makefile</c>,
+    /// <c>Dockerfile</c>, <c>CMakeLists.txt</c>).
+    /// </summary>
+    public IReadOnlyList<string> Filenames { get; init; } = [];
+
+    /// <summary>
     /// The tokens that start a single-line comment (e.g. <c>//</c> or <c>#</c>).
     /// </summary>
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
