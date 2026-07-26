@@ -176,6 +176,24 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a non-recursive scan does not descend into subdirectories to search for
+    /// nested <c>.gitignore</c> files, matching the shallow file discovery it performs.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignoreNonRecursive_DoesNotDescendForNestedIgnoreFiles()
+    {
+        Write(".gitignore", "*.log\n");
+        Write("app/.gitignore", "generated.cs\n");
+        Write("keep.cs", "// keep");
+        Write("debug.log", "noise");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, Recursive = false });
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+
+        Assert.Equal(["keep.cs"], names);
+    }
+
+    /// <summary>
     /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
     /// </summary>
     [Fact]

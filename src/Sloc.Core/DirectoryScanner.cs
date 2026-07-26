@@ -142,7 +142,7 @@ public sealed class DirectoryScanner
         }
 
         var gitignore = options.RespectGitignore
-            ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames, onGitignoreScan)
+            ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames, options.Recursive, onGitignoreScan)
             : null;
         var fullRoot = Path.GetFullPath(root);
 
