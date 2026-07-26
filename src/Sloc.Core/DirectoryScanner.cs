@@ -50,7 +50,10 @@ public sealed class ScanOptions
     /// <summary>
     /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
     /// </summary>
-    public bool RespectGitignore { get; init; }
+    public bool RespectGitignore
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -59,8 +62,14 @@ public sealed class ScanOptions
 /// </summary>
 public sealed class DirectoryScanner
 {
+    private static readonly IReadOnlySet<string> DefaultExcludeDirectoryNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"
+        };
+
     private static readonly string[] DefaultExcludes =
-    [
+        [
         "**/bin/**",
         "**/obj/**",
         "**/artifacts/**",
@@ -70,12 +79,6 @@ public sealed class DirectoryScanner
         "**/.idea/**",
         "**/node_modules/**"
     ];
-
-    private static readonly IReadOnlySet<string> DefaultExcludeDirectoryNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"
-        };
 
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
@@ -93,6 +96,13 @@ public sealed class DirectoryScanner
     /// scan, receiving the running count and the file's full path. Used to report
     /// progress on long-running scans; has no effect on the result.
     /// </param>
+    /// <param name="onGitignoreScan">
+    /// An optional callback invoked while searching for <c>.gitignore</c> files (when
+    /// <see cref="ScanOptions.RespectGitignore"/> is set), before file discovery begins,
+    /// receiving the running count of directories visited and the current directory's
+    /// full path. Used to report progress on long-running scans; has no effect on the
+    /// result.
+    /// </param>
     /// <returns>
     /// A <see cref="ScanResult"/> containing the discovered files and any paths
     /// that could not be enumerated due to I/O or access errors.
@@ -100,7 +110,11 @@ public sealed class DirectoryScanner
     /// <exception cref="DirectoryNotFoundException">
     /// The path does not exist.
     /// </exception>
-    public ScanResult Scan(string root, ScanOptions options, Action<int, string>? onFileFound = null)
+    public ScanResult Scan(
+        string root,
+        ScanOptions options,
+        Action<int, string>? onFileFound = null,
+        Action<int, string>? onGitignoreScan = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -135,7 +149,7 @@ public sealed class DirectoryScanner
         }
 
         var gitignore = options.RespectGitignore
-            ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames)
+            ? GitIgnoreRules.Load(root, DefaultExcludeDirectoryNames, onGitignoreScan)
             : null;
         var fullRoot = Path.GetFullPath(root);
 

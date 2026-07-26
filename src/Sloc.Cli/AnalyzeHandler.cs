@@ -2,6 +2,7 @@ using Sloc.Cli.Output;
 using Sloc.Core;
 using Sloc.Core.Models;
 using Spectre.Console;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace Sloc.Cli;
@@ -28,10 +29,45 @@ public enum OutputFormat
 }
 
 /// <summary>
+/// Process exit codes returned by the CLI.
+/// </summary>
+public static class ExitCode
+{
+    /// <summary>
+    /// The requested path was not found or could not be read.
+    /// </summary>
+    public const int Error = 1;
+
+    /// <summary>
+    /// The run completed successfully.
+    /// </summary>
+    public const int Success = 0;
+
+    /// <summary>
+    /// A configured threshold (e.g. <c>--min-comment-pct</c>) was not met.
+    /// </summary>
+    public const int ThresholdNotMet = 2;
+
+    /// <summary>
+    /// An unexpected error occurred.
+    /// </summary>
+    public const int Unexpected = 3;
+}
+
+/// <summary>
 /// The parsed options for an analysis run.
 /// </summary>
 public sealed class AnalyzeOptions
 {
+    /// <summary>
+    /// When set, a previously saved JSON report to compare the current run against; the
+    /// output becomes a diff of line counts rather than the normal report.
+    /// </summary>
+    public string? BaselinePath
+    {
+        get; init;
+    }
+
     /// <summary>
     /// When <see langword="true"/>, a per-file breakdown is shown.
     /// </summary>
@@ -67,6 +103,25 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// The maximum number of files to analyze in parallel. When <see langword="null"/>
+    /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
+    /// fully sequential analysis.
+    /// </summary>
+    public int? Jobs
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// When set, the run fails (returns <see cref="ExitCode.ThresholdNotMet"/>) if the
+    /// overall comment percentage (comment lines / total lines) is below this value.
+    /// </summary>
+    public double? MinCommentPct
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When <see langword="true"/>, the Comment Health column and percentage
     /// breakdowns are hidden.
     /// </summary>
@@ -76,9 +131,26 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When <see langword="true"/>, suppresses the live table and progress bar while
+    /// still printing the banner and result.
+    /// </summary>
+    public bool NoProgress
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When <see langword="true"/>, subdirectories are not scanned.
     /// </summary>
     public bool NoRecursive
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// When <see langword="true"/>, skips the GitHub check for a newer release.
+    /// </summary>
+    public bool NoUpdateCheck
     {
         get; init;
     }
@@ -118,47 +190,10 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
-    /// When <see langword="true"/>, suppresses the live table and progress bar while
-    /// still printing the banner and result.
-    /// </summary>
-    public bool NoProgress
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When set, the run fails (returns <see cref="ExitCode.ThresholdNotMet"/>) if the
-    /// overall comment percentage (comment lines / total lines) is below this value.
-    /// </summary>
-    public double? MinCommentPct
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// The maximum number of files to analyze in parallel. When <see langword="null"/>
-    /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
-    /// fully sequential analysis.
-    /// </summary>
-    public int? Jobs
-    {
-        get; init;
-    }
-
-    /// <summary>
     /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
     /// Defaults to <see langword="true"/>.
     /// </summary>
     public bool RespectGitignore { get; init; } = true;
-
-    /// <summary>
-    /// When set, a previously saved JSON report to compare the current run against; the
-    /// output becomes a diff of line counts rather than the normal report.
-    /// </summary>
-    public string? BaselinePath
-    {
-        get; init;
-    }
 
     /// <summary>
     /// The key by which the per-language summary is ordered.
@@ -172,40 +207,6 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
-
-    /// <summary>
-    /// When <see langword="true"/>, skips the GitHub check for a newer release.
-    /// </summary>
-    public bool NoUpdateCheck
-    {
-        get; init;
-    }
-}
-
-/// <summary>
-/// Process exit codes returned by the CLI.
-/// </summary>
-public static class ExitCode
-{
-    /// <summary>
-    /// The run completed successfully.
-    /// </summary>
-    public const int Success = 0;
-
-    /// <summary>
-    /// The requested path was not found or could not be read.
-    /// </summary>
-    public const int Error = 1;
-
-    /// <summary>
-    /// A configured threshold (e.g. <c>--min-comment-pct</c>) was not met.
-    /// </summary>
-    public const int ThresholdNotMet = 2;
-
-    /// <summary>
-    /// An unexpected error occurred.
-    /// </summary>
-    public const int Unexpected = 3;
 }
 
 /// <summary>
@@ -214,6 +215,9 @@ public static class ExitCode
 /// </summary>
 public sealed class AnalyzeHandler
 {
+    private const string StdoutToken = "-";
+    private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(300);
+
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
 
@@ -265,22 +269,34 @@ public sealed class AnalyzeHandler
             if (showProgress)
             {
                 ScanResult? result = null;
-                var lastRefresh = DateTime.MinValue;
+                var refreshTimer = Stopwatch.StartNew();
                 AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
                     .Start("Scanning files...", ctx =>
                     {
-                        result = _scanner.Scan(options.Path, scanOptions, onFileFound: (count, path) =>
-                        {
-                            var now = DateTime.UtcNow;
-                            if (now - lastRefresh < TimeSpan.FromMilliseconds(300))
+                        result = _scanner.Scan(
+                            options.Path,
+                            scanOptions,
+                            onFileFound: (count, path) =>
                             {
-                                return;
-                            }
+                                if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
+                                {
+                                    return;
+                                }
 
-                            lastRefresh = now;
-                            ctx.Status($"Scanning... [green]{count:N0}[/] files ([grey]{Markup.Escape(Path.GetFileName(path))}[/])");
-                        });
+                                refreshTimer.Restart();
+                                ctx.Status($"Scanning... [green]{count:N0}[/] files ([grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                            },
+                            onGitignoreScan: (count, path) =>
+                            {
+                                if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
+                                {
+                                    return;
+                                }
+
+                                refreshTimer.Restart();
+                                ctx.Status($"Scanning... checking .gitignore ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                            });
                     });
                 scanResult = result ?? throw new InvalidOperationException("Scan did not complete.");
             }
@@ -489,8 +505,6 @@ public sealed class AnalyzeHandler
         }
     }
 
-    private const string StdoutToken = "-";
-
     private static int ThresholdResult(AnalyzeOptions options, AnalysisSummary summary)
     {
         if (options.MinCommentPct is { } min && summary.FileCount > 0 && summary.CommentPct < min)
@@ -523,8 +537,8 @@ public sealed class AnalyzeHandler
     /// </summary>
     private sealed class LiveAggregator
     {
-        private readonly object _gate = new();
         private readonly Dictionary<string, Counts> _byLanguage = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _gate = new();
         private int _files;
 
         public int FilesProcessed

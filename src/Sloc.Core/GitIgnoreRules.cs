@@ -30,29 +30,6 @@ public sealed class GitIgnoreRules
     public bool IsEmpty => _files.Count == 0;
 
     /// <summary>
-    /// Discovers and loads every <c>.gitignore</c> file under <paramref name="root"/>,
-    /// skipping the supplied excluded directory names.
-    /// </summary>
-    /// <param name="root">The scan root directory.</param>
-    /// <param name="excludedDirectoryNames">
-    /// Directory names not to descend into when searching for ignore files (e.g. <c>.git</c>).
-    /// </param>
-    /// <returns>The loaded rule set (possibly empty).</returns>
-    public static GitIgnoreRules Load(string root, IReadOnlySet<string> excludedDirectoryNames)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
-
-        var files = new List<GitIgnoreFile>();
-        var fullRoot = Path.GetFullPath(root);
-        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, files);
-
-        // Shallower ignore files first, so deeper ones take precedence (evaluated later).
-        files.Sort((left, right) => left.BaseDirectory.Length.CompareTo(right.BaseDirectory.Length));
-        return new GitIgnoreRules(files);
-    }
-
-    /// <summary>
     /// Parses the supplied ignore-file lines as a single <c>.gitignore</c> rooted at
     /// <paramref name="baseDirectory"/> (relative to the scan root, <c>/</c>-separated).
     /// Intended for tests.
@@ -69,6 +46,38 @@ public sealed class GitIgnoreRules
         return new GitIgnoreRules(patterns.Count == 0
             ? []
             : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns)]);
+    }
+
+    /// <summary>
+    /// Discovers and loads every <c>.gitignore</c> file under <paramref name="root"/>,
+    /// skipping the supplied excluded directory names.
+    /// </summary>
+    /// <param name="root">The scan root directory.</param>
+    /// <param name="excludedDirectoryNames">
+    /// Directory names not to descend into when searching for ignore files (e.g. <c>.git</c>).
+    /// </param>
+    /// <param name="onDirectoryVisited">
+    /// An optional callback invoked each time a directory is visited while searching for
+    /// <c>.gitignore</c> files, receiving the running count and the directory's full path.
+    /// Used to report progress on long-running scans; has no effect on the result.
+    /// </param>
+    /// <returns>The loaded rule set (possibly empty).</returns>
+    public static GitIgnoreRules Load(
+        string root,
+        IReadOnlySet<string> excludedDirectoryNames,
+        Action<int, string>? onDirectoryVisited = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
+
+        var files = new List<GitIgnoreFile>();
+        var fullRoot = Path.GetFullPath(root);
+        var visited = 0;
+        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, files, onDirectoryVisited, ref visited);
+
+        // Shallower ignore files first, so deeper ones take precedence (evaluated later).
+        files.Sort((left, right) => left.BaseDirectory.Length.CompareTo(right.BaseDirectory.Length));
+        return new GitIgnoreRules(files);
     }
 
     /// <summary>
@@ -112,39 +121,17 @@ public sealed class GitIgnoreRules
         return ignored;
     }
 
-    private bool? Evaluate(string path, bool isDirectory)
-    {
-        bool? result = null;
-        foreach (var file in _files)
-        {
-            if (!file.TryGetRelativePath(path, out var relativeToBase))
-            {
-                continue;
-            }
-
-            foreach (var pattern in file.Patterns)
-            {
-                if (pattern.DirectoryOnly && !isDirectory)
-                {
-                    continue;
-                }
-
-                if (pattern.Regex.IsMatch(relativeToBase))
-                {
-                    result = !pattern.IsNegation;
-                }
-            }
-        }
-
-        return result;
-    }
-
     private static void CollectGitIgnoreFiles(
         string directory,
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
-        List<GitIgnoreFile> files)
+        List<GitIgnoreFile> files,
+        Action<int, string>? onDirectoryVisited,
+        ref int visited)
     {
+        visited++;
+        onDirectoryVisited?.Invoke(visited, directory);
+
         string[] entries;
         try
         {
@@ -174,14 +161,8 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
-            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, files);
+            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, files, onDirectoryVisited, ref visited);
         }
-    }
-
-    private static string NormalizeBase(string baseDirectory)
-    {
-        var normalized = baseDirectory.Replace('\\', '/').Trim('/');
-        return normalized == "." ? string.Empty : normalized;
     }
 
     private static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
@@ -196,6 +177,39 @@ public sealed class GitIgnoreRules
         }
 
         return patterns;
+    }
+
+    private static string NormalizeBase(string baseDirectory)
+    {
+        var normalized = baseDirectory.Replace('\\', '/').Trim('/');
+        return normalized == "." ? string.Empty : normalized;
+    }
+
+    private bool? Evaluate(string path, bool isDirectory)
+    {
+        bool? result = null;
+        foreach (var file in _files)
+        {
+            if (!file.TryGetRelativePath(path, out var relativeToBase))
+            {
+                continue;
+            }
+
+            foreach (var pattern in file.Patterns)
+            {
+                if (pattern.DirectoryOnly && !isDirectory)
+                {
+                    continue;
+                }
+
+                if (pattern.Regex.IsMatch(relativeToBase))
+                {
+                    result = !pattern.IsNegation;
+                }
+            }
+        }
+
+        return result;
     }
 
     private sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
@@ -238,11 +252,20 @@ internal sealed class GitIgnorePattern
         DirectoryOnly = directoryOnly;
     }
 
-    public Regex Regex { get; }
+    public bool DirectoryOnly
+    {
+        get;
+    }
 
-    public bool IsNegation { get; }
+    public bool IsNegation
+    {
+        get;
+    }
 
-    public bool DirectoryOnly { get; }
+    public Regex Regex
+    {
+        get;
+    }
 
     public static bool TryCompile(string rawLine, out GitIgnorePattern pattern)
     {
