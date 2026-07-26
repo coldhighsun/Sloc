@@ -147,13 +147,22 @@ public sealed class FileAnalyzer
     /// </summary>
     private static Encoding DetectFallbackEncoding(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[BinarySniffLength];
-        var read = stream.Read(buffer);
-        var window = buffer[..read];
+        // Validates the entire file, not just a leading window: a file can be valid UTF-8
+        // for its first few KB and contain an invalid byte sequence further in, and
+        // StreamReader would otherwise silently corrupt that with U+FFFD replacement chars.
+        var decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetDecoder();
+        Span<byte> buffer = stackalloc byte[4096];
+        Span<char> chars = stackalloc char[4096];
 
         try
         {
-            _ = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(window);
+            int read;
+            while ((read = stream.Read(buffer)) > 0)
+            {
+                decoder.GetChars(buffer[..read], chars, flush: false);
+            }
+
+            decoder.GetChars([], chars, flush: true);
             return Encoding.UTF8;
         }
         catch (DecoderFallbackException)
