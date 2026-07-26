@@ -9,13 +9,13 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 49 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 58 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
 
 ## Features
 
 - Count code / comment / blank / total lines
 - Correctly handles single-line comments, block comments, and multi-line block comments
-- Built-in comment rules for 46 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
+- Built-in comment rules for 58 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
 - Five output formats: colored table (default), JSON, HTML, CSV, and Markdown
@@ -170,7 +170,7 @@ With `--by-file` (tree view per file):
 
 ## Supported Languages
 
-C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less, Dart, Scala, R, Lua, Perl, Elixir, Haskell, Objective-C, TOML, Markdown, Terraform, Makefile, Dockerfile, CMake, Groovy/Gradle, Julia, Clojure, Vue, Svelte, Protobuf, Batch, Assembly, INI, Jupyter Notebook, BASIC, Pascal.
+C#, C/C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, SQL, PowerShell, Shell, YAML, JSON, HTML, XML, CSS, SCSS/Less, Dart, Scala, R, Lua, Perl, Elixir, Haskell, Objective-C, TOML, Markdown, Terraform, Makefile, Dockerfile, CMake, Groovy, Julia, Clojure, Vue, Svelte, Protobuf, Batch, Assembly, INI, Jupyter Notebook, BASIC, Pascal, Zig, Nim, OCaml, Erlang, Elm, Solidity, GraphQL, Bazel/Starlark, Nix.
 
 Files without an extension (e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`, `Rakefile`, `Gemfile`) are recognized by name.
 
@@ -216,13 +216,13 @@ This project is released under the [MIT License](https://opensource.org/licenses
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 49 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 58 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
 
 ## 功能特性
 
 - 统计代码行 / 注释行 / 空行 / 总行数
 - 正确处理单行注释、块注释以及跨多行的块注释
-- 内置 46 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
+- 内置 58 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
 - 五种输出格式：彩色表格（默认）、JSON、HTML、CSV 与 Markdown
@@ -377,7 +377,7 @@ sloc . --format markdown --detailed -o -
 
 ## 支持的语言
 
-C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less、Dart、Scala、R、Lua、Perl、Elixir、Haskell、Objective-C、TOML、Markdown、Terraform、Makefile、Dockerfile、CMake、Groovy/Gradle、Julia、Clojure、Vue、Svelte、Protobuf、Batch、Assembly、INI、Jupyter Notebook、BASIC、Pascal。
+C#、C/C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、SQL、PowerShell、Shell、YAML、JSON、HTML、XML、CSS、SCSS/Less、Dart、Scala、R、Lua、Perl、Elixir、Haskell、Objective-C、TOML、Markdown、Terraform、Makefile、Dockerfile、CMake、Groovy、Julia、Clojure、Vue、Svelte、Protobuf、Batch、Assembly、INI、Jupyter Notebook、BASIC、Pascal、Zig、Nim、OCaml、Erlang、Elm、Solidity、GraphQL、Bazel/Starlark、Nix。
 
 无扩展名的文件（如 `Makefile`、`Dockerfile`、`CMakeLists.txt`、`Rakefile`、`Gemfile`）按文件名识别。
 
