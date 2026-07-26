@@ -51,7 +51,7 @@ var byFileOption = new Option<bool>("--by-file")
 
 var detailedOption = new Option<bool>("--detailed")
 {
-    Description = "In Json, Html, and Markdown output, include both the language summary and the per-file breakdown."
+    Description = "In Json, Html, and Markdown output, include both the language summary and the per-file breakdown. In Csv output, selects the language summary only."
 };
 
 var pagedOption = new Option<bool>("--paged", "-p")

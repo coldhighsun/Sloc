@@ -53,7 +53,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
-        rid: [win-x64, linux-x64, osx-x64]
+        rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
 
     steps:
       - name: Checkout
@@ -76,14 +76,20 @@ jobs:
       - name: Zip artifact
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          zip -j ./sloc-${VERSION}-${{ matrix.rid }}.zip ./publish/${{ matrix.rid }}/sloc*
-          echo "ZIP_NAME=sloc-${VERSION}-${{ matrix.rid }}.zip" >> $GITHUB_ENV
+          # Only the executable ships; drop any debug symbols that publish may emit.
+          rm -f ./publish/${{ matrix.rid }}/*.pdb
+          ZIP_NAME=sloc-${VERSION}-${{ matrix.rid }}.zip
+          zip -j ./${ZIP_NAME} ./publish/${{ matrix.rid }}/sloc*
+          sha256sum ./${ZIP_NAME} > ./${ZIP_NAME}.sha256
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sloc-${{ matrix.rid }}
-          path: ./${{ env.ZIP_NAME }}
+          path: |
+            ./${{ env.ZIP_NAME }}
+            ./${{ env.ZIP_NAME }}.sha256
 
   pack:
     name: Pack & Publish NuGet Tool
@@ -138,6 +144,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Sloc ${{ github.ref_name }}
-          files: ./artifacts/*.zip
+          files: |
+            ./artifacts/*.zip
+            ./artifacts/*.sha256
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
