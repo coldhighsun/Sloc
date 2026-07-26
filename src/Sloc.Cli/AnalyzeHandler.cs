@@ -235,7 +235,7 @@ public sealed class AnalyzeOptions
 public sealed class AnalyzeHandler
 {
     private const string StdoutToken = "-";
-    private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
@@ -343,7 +343,7 @@ public sealed class AnalyzeHandler
         // independent of the degree of parallelism.
         var analyses = new FileAnalysis?[files.Count];
         var fileSkips = new SkippedEntry?[files.Count];
-        var aggregator = new LiveAggregator();
+        var aggregator = new LiveAggregator(options.Sort, options.Top);
 
         void AnalyzeAt(int i)
         {
@@ -603,7 +603,7 @@ public sealed class AnalyzeHandler
     /// Thread-safe incremental aggregator of per-language counts, used to refresh the
     /// live table without re-aggregating every analyzed file on each tick.
     /// </summary>
-    private sealed class LiveAggregator
+    private sealed class LiveAggregator(LanguageSort sortBy, int? top)
     {
         private readonly Dictionary<string, Counts> _byLanguage = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _gate = new();
@@ -646,12 +646,15 @@ public sealed class AnalyzeHandler
                         Code = entry.Value.Code,
                         Comment = entry.Value.Comment,
                         Blank = entry.Value.Blank
-                    })
-                    .OrderByDescending(stats => stats.Total)
-                    .ThenBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                    });
 
-                return new AnalysisSummary(byLanguage, _files);
+                var ordered = AnalysisSummary.OrderAndLimit(
+                    byLanguage,
+                    sortBy,
+                    descending: sortBy != LanguageSort.Name,
+                    top);
+
+                return new AnalysisSummary(ordered, _files);
             }
         }
 
