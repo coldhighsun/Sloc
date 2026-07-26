@@ -56,6 +56,11 @@ public sealed class GitIgnoreRules
     /// <param name="excludedDirectoryNames">
     /// Directory names not to descend into when searching for ignore files (e.g. <c>.git</c>).
     /// </param>
+    /// <param name="recursive">
+    /// Whether to search subdirectories for nested <c>.gitignore</c> files. When
+    /// <see langword="false"/>, only the <paramref name="root"/> directory itself is checked,
+    /// matching the shallow file discovery performed by the scanner.
+    /// </param>
     /// <param name="onDirectoryVisited">
     /// An optional callback invoked each time a directory is visited while searching for
     /// <c>.gitignore</c> files, receiving the running count and the directory's full path.
@@ -65,6 +70,7 @@ public sealed class GitIgnoreRules
     public static GitIgnoreRules Load(
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
+        bool recursive = true,
         Action<int, string>? onDirectoryVisited = null)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -73,7 +79,7 @@ public sealed class GitIgnoreRules
         var files = new List<GitIgnoreFile>();
         var fullRoot = Path.GetFullPath(root);
         var visited = 0;
-        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, files, onDirectoryVisited, ref visited);
+        CollectGitIgnoreFiles(fullRoot, fullRoot, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
 
         // Shallower ignore files first, so deeper ones take precedence (evaluated later).
         files.Sort((left, right) => left.BaseDirectory.Length.CompareTo(right.BaseDirectory.Length));
@@ -125,6 +131,7 @@ public sealed class GitIgnoreRules
         string directory,
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
+        bool recursive,
         List<GitIgnoreFile> files,
         Action<int, string>? onDirectoryVisited,
         ref int visited)
@@ -146,7 +153,7 @@ public sealed class GitIgnoreRules
                 }
             }
 
-            entries = Directory.GetDirectories(directory);
+            entries = recursive ? Directory.GetDirectories(directory) : [];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -161,7 +168,7 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
-            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, files, onDirectoryVisited, ref visited);
+            CollectGitIgnoreFiles(subdirectory, root, excludedDirectoryNames, recursive, files, onDirectoryVisited, ref visited);
         }
     }
 
