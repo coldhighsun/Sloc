@@ -75,11 +75,13 @@ public sealed class ScanOptions
     public IReadOnlyList<string> IncludeLangs { get; init; } = [];
 
     /// <summary>
-    /// Whether to descend into symlinked/junctioned directories rather than skip them.
-    /// Defaults to <see langword="false"/>. A symlink whose resolved target would loop
-    /// back onto a directory already on the path from the scan root is always skipped
-    /// regardless of this setting, including cycles formed by two or more distinct
-    /// symlinks chained together.
+    /// Whether to include symlinked/junctioned directories and symlinked files rather than
+    /// skip them. Defaults to <see langword="false"/>. A directory symlink whose resolved
+    /// target would loop back onto a directory already on the path from the scan root is
+    /// always skipped regardless of this setting, including cycles formed by two or more
+    /// distinct symlinks chained together. Has no effect when the scan <c>root</c> passed
+    /// to <see cref="DirectoryScanner.Scan"/> is itself an explicit single file, which is
+    /// always analyzed regardless of whether it is a symlink.
     /// </summary>
     public bool FollowSymlinks { get; init; }
 }
@@ -236,6 +238,11 @@ public sealed class DirectoryScanner
                 }
 
                 if (gitattributes is { IsEmpty: false } && gitattributes.IsVendoredOrGenerated(relativePath))
+                {
+                    continue;
+                }
+
+                if (!options.FollowSymlinks && new FileInfo(fullPath).Attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
                     continue;
                 }
