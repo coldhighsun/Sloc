@@ -57,6 +57,27 @@ public class DiffRendererTests
         }
     }
 
+    /// <summary>
+    /// Verifies that loading a baseline file containing syntactically invalid JSON throws
+    /// with a message identifying it as an unparseable Sloc report, rather than propagating
+    /// the raw <see cref="System.Text.Json.JsonException"/>.
+    /// </summary>
+    [Fact]
+    public void Load_MalformedJson_ThrowsWithFormatMessage()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-malformed-baseline-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path, "{ this is not json");
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => DiffRenderer.Load(path));
+            Assert.Contains("is not a valid Sloc JSON report", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteBaseline(int code, int comment, int blank)
     {
         var path = Path.Combine(Path.GetTempPath(), "sloc-baseline-" + Guid.NewGuid().ToString("N") + ".json");
