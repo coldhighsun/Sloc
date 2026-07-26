@@ -613,8 +613,16 @@ internal sealed class GitIgnorePattern
             }
             else
             {
-                sb.Append(Regex.Escape(c.ToString()));
-                i++;
+                // Batch consecutive literal characters into a single Regex.Escape call
+                // instead of escaping (and allocating) one character at a time.
+                var start = i;
+                do
+                {
+                    i++;
+                }
+                while (i < pattern.Length && pattern[i] is not ('*' or '?' or '['));
+
+                sb.Append(Regex.Escape(pattern[start..i]));
             }
         }
 
