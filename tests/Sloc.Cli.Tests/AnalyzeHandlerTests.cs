@@ -110,6 +110,84 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--include-lang</c> restricts the analyzed files to the named
+    /// language, through the full handler pipeline rather than just the scanner.
+    /// </summary>
+    [Fact]
+    public void Execute_IncludeLangs_KeepsOnlyMatchingLanguage()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            IncludeLangs = ["C#"],
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Equal(new[] { "C#" }, languages);
+    }
+
+    /// <summary>
+    /// Verifies that <c>--exclude-lang</c> drops the named language, through the full
+    /// handler pipeline rather than just the scanner.
+    /// </summary>
+    [Fact]
+    public void Execute_ExcludeLangs_DropsMatchingLanguage()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            ExcludeLangs = ["C#"],
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Equal(new[] { "Python" }, languages);
+    }
+
+    /// <summary>
+    /// Verifies that <c>--all</c> includes files with unknown extensions, grouped as
+    /// <c>Other</c>, instead of silently dropping them.
+    /// </summary>
+    [Fact]
+    public void Execute_All_IncludesUnknownExtensionAsOther()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "notes.xyz"), "some text\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            IncludeUnknown = true,
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(2, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Contains("Other", languages);
+    }
+
+    /// <summary>
     /// Verifies that a missing path returns exit code 1 rather than throwing.
     /// </summary>
     [Fact]

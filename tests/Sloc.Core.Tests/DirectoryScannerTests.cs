@@ -279,6 +279,106 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(["keep.cs"], names);
     }
 
+    /// <summary>
+    /// Verifies that a self-referential directory symlink does not make the scan recurse
+    /// forever when <c>.gitignore</c> discovery is also walking the tree (the two share a
+    /// single traversal in this case).
+    /// </summary>
+    [Fact]
+    public async Task Scan_SymlinkedDirectoryLoopWithGitignore_DoesNotRecurseForever()
+    {
+        Write("real/keep.cs", "// keep");
+
+        var linkPath = Path.Combine(_root, "real", "loop");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, _root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Directory symlinks require a privilege this environment may not grant; the
+            // behavior under test cannot be exercised without one.
+            return;
+        }
+
+        ScanResult result;
+        try
+        {
+            result = await Task.Run(() => _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }))
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Scan did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
+        Assert.Equal(["keep.cs"], names);
+    }
+
+    /// <summary>
+    /// Verifies that <c>FollowSymlinks</c> descends into a symlinked directory that does
+    /// not loop back on itself, picking up files behind the link.
+    /// </summary>
+    [Fact]
+    public void Scan_FollowSymlinksNonLooping_DescendsIntoLink()
+    {
+        Write("real/keep.cs", "// keep");
+        var targetDir = Path.Combine(_root, "target");
+        Write("target/linked.cs", "// linked");
+
+        var linkPath = Path.Combine(_root, "real", "link");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetDir);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Contains("linked.cs", names);
+    }
+
+    /// <summary>
+    /// Verifies that even with <c>FollowSymlinks</c> set, a symlink that loops back to one
+    /// of its own ancestors is still skipped rather than followed forever.
+    /// </summary>
+    [Fact]
+    public async Task Scan_FollowSymlinksDirectLoop_StillSkipsLoop()
+    {
+        Write("real/keep.cs", "// keep");
+
+        var linkPath = Path.Combine(_root, "real", "loop");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, _root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        ScanResult result;
+        try
+        {
+            result = await Task.Run(() => _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }))
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Scan did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
+        Assert.Equal(["keep.cs"], names);
+    }
+
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
