@@ -267,6 +267,32 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>.gitignore</c> exclusion, <c>.gitattributes</c> vendored exclusion,
+    /// and a user-supplied <c>--exclude</c> glob all apply correctly together in a single
+    /// scan, covering the combined discovery/exclusion pass.
+    /// </summary>
+    [Fact]
+    public void Scan_GitignoreAndGitAttributesAndCustomExclude_AllApplyTogether()
+    {
+        Write(".gitignore", "*.log\n");
+        Write(".gitattributes", "vendor/** linguist-vendored\n");
+        Write("app.cs", "// kept");
+        Write("debug.log", "noise");
+        Write("vendor/lib.cs", "// vendored");
+        Write("generated/skip.cs", "// custom excluded");
+
+        var result = _scanner.Scan(_root, new ScanOptions
+        {
+            RespectGitignore = true,
+            RespectGitAttributes = true,
+            Excludes = ["**/generated/**"]
+        });
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["app.cs"], names);
+    }
+
+    /// <summary>
     /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
     /// </summary>
     [Fact]
