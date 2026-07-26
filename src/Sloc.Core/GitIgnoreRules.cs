@@ -352,12 +352,17 @@ public sealed class GitIgnoreRules
             // A directory symlink/junction. Resolve its target and check whether following
             // it would loop back onto a directory already on the current path from the
             // scan root (directly, or transitively through an earlier symlink) — not just
-            // the scan root itself, so chains of two or more symlinks are caught too.
+            // the scan root itself, so chains of two or more symlinks are caught too. A
+            // target at or under the scan root is also excluded: the normal tree walk
+            // already covers those files, so following the link would double-count them.
             var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
-            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks)
+            var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks
+                || SymlinkGuard.IsAncestorOrSelf(normalizedRoot, resolution.Target!))
             {
-                // Not followed: resolution failed, it would loop, or the caller opted out
-                // of following symlinked directories entirely. Either way, exclude it.
+                // Not followed: resolution failed, it would loop, the target is inside the
+                // scan root, or the caller opted out of following symlinked directories
+                // entirely. Either way, exclude it.
                 symlinkedDirectories.Add(subdirectory);
                 continue;
             }
