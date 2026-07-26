@@ -131,6 +131,55 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--unique</c> only removes byte-identical files: two files with
+    /// distinct content must both remain counted rather than being collapsed.
+    /// </summary>
+    [Fact]
+    public void Execute_Unique_DistinctContentBothCounted()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.cs"), "int y = 2;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            Unique = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(2, root.GetProperty("fileCount").GetInt32());
+        Assert.Equal(0, root.GetProperty("skipped").GetArrayLength());
+    }
+
+    /// <summary>
+    /// Verifies that <c>--unique</c> keeps the first duplicate encountered in scan order
+    /// and reports the later one as skipped, rather than an arbitrary one of the two.
+    /// </summary>
+    [Fact]
+    public void Execute_Unique_SkipsLaterDuplicateInScanOrder()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.cs"), "int y = 2;\n");
+        File.WriteAllText(Path.Combine(_root, "c.cs"), "int x = 1;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            Unique = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(2, root.GetProperty("fileCount").GetInt32());
+        var skipped = root.GetProperty("skipped");
+        Assert.Equal(1, skipped.GetArrayLength());
+        Assert.EndsWith("c.cs", skipped[0].GetProperty("path").GetString());
+    }
+
+    /// <summary>
     /// Verifies that <c>--include-lang</c> restricts the analyzed files to the named
     /// language, through the full handler pipeline rather than just the scanner.
     /// </summary>
@@ -462,6 +511,70 @@ public sealed class AnalyzeHandlerTests : IDisposable
         }));
 
         Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a baseline file containing syntactically invalid JSON returns the
+    /// error exit code instead of throwing, mirroring how a missing baseline is handled.
+    /// </summary>
+    [Fact]
+    public void Execute_MalformedBaselineJson_ReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        File.WriteAllText(baselinePath, "{ this is not json");
+
+        int exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a directory symlink looping back on itself does not hang the full
+    /// scan-analyze-render pipeline when <c>--follow-symlinks</c> is set, and that the
+    /// real file reachable through the loop is counted exactly once.
+    /// </summary>
+    [Fact]
+    public async Task Execute_FollowSymlinksDirectLoop_DoesNotHangAndCountsRealFilesOnce()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var linkPath = Path.Combine(_root, "loop");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, _root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        string stdout;
+        try
+        {
+            stdout = await Task.Run(() => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+            {
+                Path = _root,
+                Format = OutputFormat.Json,
+                Quiet = true,
+                FollowSymlinks = true
+            }))).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Execute did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
     }
 
     private static string CaptureStdout(Action action)
