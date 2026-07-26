@@ -235,6 +235,13 @@ public sealed class AnalyzeOptions
     public bool RespectGitignore { get; init; } = true;
 
     /// <summary>
+    /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
+    /// in <c>.gitattributes</c> files discovered under the scan root. Defaults to
+    /// <see langword="true"/>.
+    /// </summary>
+    public bool RespectGitAttributes { get; init; } = true;
+
+    /// <summary>
     /// Whether to descend into symlinked/junctioned directories rather than skip them.
     /// Defaults to <see langword="false"/>.
     /// </summary>
@@ -323,6 +330,7 @@ public sealed class AnalyzeHandler
             Recursive = !options.NoRecursive,
             IncludeUnknown = options.IncludeUnknown,
             RespectGitignore = options.RespectGitignore,
+            RespectGitAttributes = options.RespectGitAttributes,
             FollowSymlinks = options.FollowSymlinks
         };
 

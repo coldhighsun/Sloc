@@ -124,6 +124,12 @@ var noGitignoreOption = new Option<bool>("--no-gitignore")
     Description = "Do not honor .gitignore files (they are respected by default)."
 };
 
+var noGitAttributesOption = new Option<bool>("--no-gitattributes")
+{
+    Description = "Do not exclude files marked linguist-vendored or linguist-generated in "
+        + ".gitattributes (excluded by default)."
+};
+
 var followSymlinksOption = new Option<bool>("--follow-symlinks")
 {
     Description = "Descend into symlinked/junctioned directories instead of skipping them. "
@@ -177,6 +183,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     minCommentPctOption,
     jobsOption,
     noGitignoreOption,
+    noGitAttributesOption,
     followSymlinksOption,
     baselineOption,
     sortOption,
@@ -244,6 +251,7 @@ rootCommand.SetAction(parseResult =>
         MinCommentPct = minCommentPct,
         Jobs = parseResult.GetValue(jobsOption),
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
+        RespectGitAttributes = !parseResult.GetValue(noGitAttributesOption),
         FollowSymlinks = parseResult.GetValue(followSymlinksOption),
         BaselinePath = parseResult.GetValue(baselineOption),
         Sort = parseResult.GetValue(sortOption),
