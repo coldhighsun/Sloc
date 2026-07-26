@@ -388,13 +388,32 @@ public sealed class TableRenderer : IResultRenderer
     private bool ShouldPaginate(int fileCount, out int pageSize)
     {
         const int overhead = 6;
-        if (Console.IsOutputRedirected || Console.WindowHeight <= 0)
+        if (Console.IsOutputRedirected)
         {
             pageSize = 0;
             return false;
         }
 
-        pageSize = Math.Max(1, Console.WindowHeight - overhead);
+        int windowHeight;
+        try
+        {
+            windowHeight = Console.WindowHeight;
+        }
+        catch (Exception)
+        {
+            // Some terminals/hosts (no attached console, certain Windows shells) throw when
+            // querying the window size; treat that the same as "can't paginate".
+            pageSize = 0;
+            return false;
+        }
+
+        if (windowHeight <= 0)
+        {
+            pageSize = 0;
+            return false;
+        }
+
+        pageSize = Math.Max(1, windowHeight - overhead);
         return fileCount > pageSize;
     }
 
