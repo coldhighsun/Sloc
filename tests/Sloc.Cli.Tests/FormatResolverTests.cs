@@ -1,5 +1,3 @@
-using Sloc.Cli;
-
 namespace Sloc.Cli.Tests;
 
 /// <summary>
@@ -7,6 +5,31 @@ namespace Sloc.Cli.Tests;
 /// </summary>
 public class FormatResolverTests
 {
+    /// <summary>
+    /// Verifies that the stdout token, a null path, and non-Table formats are not flagged.
+    /// </summary>
+    [Theory]
+    [InlineData(OutputFormat.Table, "-")]
+    [InlineData(OutputFormat.Table, null)]
+    [InlineData(OutputFormat.Json, "report.json")]
+    public void OutputIgnoredForTable_NotApplicable_ReturnsFalse(OutputFormat format, string? outputFile)
+    {
+        var ignored = FormatResolver.OutputIgnoredForTable(format, outputFile);
+
+        Assert.False(ignored);
+    }
+
+    /// <summary>
+    /// Verifies that a real output path with a Table format is flagged as ignored.
+    /// </summary>
+    [Fact]
+    public void OutputIgnoredForTable_TableWithRealPath_ReturnsTrue()
+    {
+        var ignored = FormatResolver.OutputIgnoredForTable(OutputFormat.Table, "report.txt");
+
+        Assert.True(ignored);
+    }
+
     /// <summary>
     /// Verifies that an explicit format always wins over any inference from the output path.
     /// </summary>
@@ -48,30 +71,5 @@ public class FormatResolverTests
         var format = FormatResolver.Resolve(null, outputFile);
 
         Assert.Equal(OutputFormat.Table, format);
-    }
-
-    /// <summary>
-    /// Verifies that a real output path with a Table format is flagged as ignored.
-    /// </summary>
-    [Fact]
-    public void OutputIgnoredForTable_TableWithRealPath_ReturnsTrue()
-    {
-        var ignored = FormatResolver.OutputIgnoredForTable(OutputFormat.Table, "report.txt");
-
-        Assert.True(ignored);
-    }
-
-    /// <summary>
-    /// Verifies that the stdout token, a null path, and non-Table formats are not flagged.
-    /// </summary>
-    [Theory]
-    [InlineData(OutputFormat.Table, "-")]
-    [InlineData(OutputFormat.Table, null)]
-    [InlineData(OutputFormat.Json, "report.json")]
-    public void OutputIgnoredForTable_NotApplicable_ReturnsFalse(OutputFormat format, string? outputFile)
-    {
-        var ignored = FormatResolver.OutputIgnoredForTable(format, outputFile);
-
-        Assert.False(ignored);
     }
 }

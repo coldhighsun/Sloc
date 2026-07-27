@@ -152,6 +152,16 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When set, a commit/tree-ish to analyze the repository tree of as it existed at
+    /// that commit, without checking it out. <see cref="Path"/> is used as the repo root
+    /// to query. Mutually exclusive with <see cref="ListFile"/>.
+    /// </summary>
+    public string? GitHash
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When set, a file listing paths (one per line) to analyze directly instead of
     /// scanning <see cref="Path"/>. <c>-</c> reads the list from stdin.
     /// </summary>
@@ -337,10 +347,32 @@ public sealed class AnalyzeHandler
             FollowSymlinks = options.FollowSymlinks
         };
 
+        GitSnapshot? gitSnapshot = null;
+        if (options.GitHash is { } gitHash)
+        {
+            try
+            {
+                gitSnapshot = new GitSnapshotExtractor().Extract(options.Path, gitHash);
+            }
+            catch (Exception ex) when (ex is GitSnapshotException or IOException or UnauthorizedAccessException)
+            {
+                // GitSnapshotExtractor.Extract cleans up its own temp directory on any
+                // failure, including these, before rethrowing.
+                Console.Error.WriteLine($"sloc: {ex.Message}");
+                return ExitCode.Error;
+            }
+        }
+
+        try
+        {
         ScanResult scanResult;
         try
         {
-            if (options.ListFile is { } listFile)
+            if (gitSnapshot is not null)
+            {
+                scanResult = _scanner.ScanFiles(gitSnapshot.Files.Select(f => f.TempPath), scanOptions);
+            }
+            else if (options.ListFile is { } listFile)
             {
                 scanResult = _scanner.ScanFiles(ReadListFile(listFile), scanOptions);
             }
@@ -491,6 +523,14 @@ public sealed class AnalyzeHandler
             results = DeduplicateByHash(results, skipped);
         }
 
+        if (gitSnapshot is not null)
+        {
+            var gitPathByTempPath = gitSnapshot.Files.ToDictionary(f => f.TempPath, f => f.GitPath);
+            results = RemapGitPaths(results, gitPathByTempPath);
+            skipped = RemapGitPaths(skipped, gitPathByTempPath);
+            skipped.AddRange(gitSnapshot.Skipped);
+        }
+
         var summary = new AnalysisSummary(
             results,
             skipped,
@@ -628,6 +668,54 @@ public sealed class AnalyzeHandler
 
         ReportUpdate(updateCheck, version);
         return ThresholdResult(options, summary);
+        }
+        finally
+        {
+            gitSnapshot?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Replaces each analysis's temporary extraction path with its original git-relative
+    /// path, so downstream rendering and <c>--baseline</c> diffing never see a temp path.
+    /// </summary>
+    private static List<FileAnalysis> RemapGitPaths(List<FileAnalysis> analyses, Dictionary<string, string> gitPathByTempPath)
+    {
+        for (var i = 0; i < analyses.Count; i++)
+        {
+            if (gitPathByTempPath.TryGetValue(analyses[i].Path, out var gitPath))
+            {
+                var analysis = analyses[i];
+                analyses[i] = new FileAnalysis
+                {
+                    Path = gitPath,
+                    Language = analysis.Language,
+                    Code = analysis.Code,
+                    Comment = analysis.Comment,
+                    Blank = analysis.Blank,
+                    Hash = analysis.Hash
+                };
+            }
+        }
+
+        return analyses;
+    }
+
+    /// <summary>
+    /// Replaces each skipped entry's temporary extraction path with its original
+    /// git-relative path.
+    /// </summary>
+    private static List<SkippedEntry> RemapGitPaths(List<SkippedEntry> skipped, Dictionary<string, string> gitPathByTempPath)
+    {
+        for (var i = 0; i < skipped.Count; i++)
+        {
+            if (gitPathByTempPath.TryGetValue(skipped[i].Path, out var gitPath))
+            {
+                skipped[i] = skipped[i] with { Path = gitPath };
+            }
+        }
+
+        return skipped;
     }
 
     /// <summary>

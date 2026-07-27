@@ -1,5 +1,3 @@
-using Sloc.Cli;
-
 namespace Sloc.Cli.Tests;
 
 /// <summary>

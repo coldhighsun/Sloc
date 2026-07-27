@@ -52,20 +52,97 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
-    /// Verifies that a UTF-16 file (whose ASCII characters contain NUL bytes) is not
-    /// misdetected as binary when it carries a byte-order mark, and its lines are counted.
+    /// Verifies that <c>Hash</c> is left <see langword="null"/> by default, is populated
+    /// when requested, and is identical for byte-identical files.
     /// </summary>
     [Fact]
-    public void Analyze_Utf16FileWithBom_IsCountedAsText()
+    public void Analyze_ComputeHash_PopulatesHashForIdenticalContentOnly()
     {
-        var path = Path.Combine(Path.GetTempPath(), "sloc-utf16-" + Guid.NewGuid().ToString("N") + ".cs");
-        File.WriteAllText(path, "// a comment\nvar x = 1;\n", new System.Text.UnicodeEncoding(bigEndian: false, byteOrderMark: true));
+        var pathA = Path.Combine(Path.GetTempPath(), "sloc-hash-a-" + Guid.NewGuid().ToString("N") + ".cs");
+        var pathB = Path.Combine(Path.GetTempPath(), "sloc-hash-b-" + Guid.NewGuid().ToString("N") + ".cs");
+        var pathC = Path.Combine(Path.GetTempPath(), "sloc-hash-c-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(pathA, "int x = 1;\n");
+        File.WriteAllText(pathB, "int x = 1;\n");
+        File.WriteAllText(pathC, "int y = 2;\n");
+        try
+        {
+            var analyzer = new FileAnalyzer();
+
+            var withoutHash = analyzer.Analyze(pathA, CSharp);
+            Assert.Null(withoutHash.Hash);
+
+            var a = analyzer.Analyze(pathA, CSharp, computeHash: true);
+            var b = analyzer.Analyze(pathB, CSharp, computeHash: true);
+            var c = analyzer.Analyze(pathC, CSharp, computeHash: true);
+
+            Assert.NotNull(a.Hash);
+            Assert.Equal(a.Hash, b.Hash);
+            Assert.NotEqual(a.Hash, c.Hash);
+        }
+        finally
+        {
+            File.Delete(pathA);
+            File.Delete(pathB);
+            File.Delete(pathC);
+        }
+    }
+
+    /// <summary>
+    /// Same as <see cref="Analyze_NonUtf8FileWithoutBom_DoesNotProduceReplacementCharacters"/>,
+    /// but the invalid byte appears well past the first 8000 bytes of the file, to guard
+    /// against a fallback-encoding detector that only sniffs a leading window.
+    /// </summary>
+    [Fact]
+    public void Analyze_NonUtf8ByteAfterLeadingWindow_DoesNotProduceReplacementCharacters()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-latin1-late-" + Guid.NewGuid().ToString("N") + ".cs");
+        using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
+        using (var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+        {
+            for (var i = 0; i < 1000; i++)
+            {
+                writer.WriteLine("// padding line to push past the sniff window");
+            }
+        }
+
+        using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write))
+        {
+            // 0xE9 is 'é' in Latin-1/Windows-1252, but is an invalid standalone UTF-8 byte.
+            stream.Write([(byte)'/', (byte)'/', (byte)' ', 0xE9, (byte)'\n', (byte)'x', (byte)';', (byte)'\n']);
+        }
+
         try
         {
             var result = new FileAnalyzer().Analyze(path, CSharp);
 
+            Assert.Equal(1001, result.Comment);
             Assert.Equal(1, result.Code);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a file with no BOM encoded in a non-UTF-8 codepage (Windows-1252, via
+    /// high bytes that are not valid UTF-8 sequences) is decoded with a Latin-1 fallback
+    /// rather than corrupting the content with U+FFFD replacement characters, which would
+    /// otherwise risk misclassifying lines.
+    /// </summary>
+    [Fact]
+    public void Analyze_NonUtf8FileWithoutBom_DoesNotProduceReplacementCharacters()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-latin1-" + Guid.NewGuid().ToString("N") + ".cs");
+        // 0xE9 is 'é' in Latin-1/Windows-1252, but is an invalid standalone UTF-8 byte.
+        var bytes = new byte[] { (byte)'/', (byte)'/', (byte)' ', 0xE9, (byte)'\n', (byte)'x', (byte)';', (byte)'\n' };
+        File.WriteAllBytes(path, bytes);
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
             Assert.Equal(1, result.Comment);
+            Assert.Equal(1, result.Code);
         }
         finally
         {
@@ -88,6 +165,28 @@ public class FileAnalyzerTests
             Assert.Equal(1, result.Code);
             Assert.Equal(1, result.Comment);
             Assert.Equal(1, result.Blank);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a UTF-16 file (whose ASCII characters contain NUL bytes) is not
+    /// misdetected as binary when it carries a byte-order mark, and its lines are counted.
+    /// </summary>
+    [Fact]
+    public void Analyze_Utf16FileWithBom_IsCountedAsText()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-utf16-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(path, "// a comment\nvar x = 1;\n", new UnicodeEncoding(bigEndian: false, byteOrderMark: true));
+        try
+        {
+            var result = new FileAnalyzer().Analyze(path, CSharp);
+
+            Assert.Equal(1, result.Code);
+            Assert.Equal(1, result.Comment);
         }
         finally
         {
@@ -169,105 +268,6 @@ public class FileAnalyzerTests
         var result = new FileAnalyzer().AnalyzeText(content, CSharp);
 
         Assert.Equal(result.Code + result.Comment + result.Blank, result.Total);
-    }
-
-    /// <summary>
-    /// Verifies that <c>Hash</c> is left <see langword="null"/> by default, is populated
-    /// when requested, and is identical for byte-identical files.
-    /// </summary>
-    [Fact]
-    public void Analyze_ComputeHash_PopulatesHashForIdenticalContentOnly()
-    {
-        var pathA = Path.Combine(Path.GetTempPath(), "sloc-hash-a-" + Guid.NewGuid().ToString("N") + ".cs");
-        var pathB = Path.Combine(Path.GetTempPath(), "sloc-hash-b-" + Guid.NewGuid().ToString("N") + ".cs");
-        var pathC = Path.Combine(Path.GetTempPath(), "sloc-hash-c-" + Guid.NewGuid().ToString("N") + ".cs");
-        File.WriteAllText(pathA, "int x = 1;\n");
-        File.WriteAllText(pathB, "int x = 1;\n");
-        File.WriteAllText(pathC, "int y = 2;\n");
-        try
-        {
-            var analyzer = new FileAnalyzer();
-
-            var withoutHash = analyzer.Analyze(pathA, CSharp);
-            Assert.Null(withoutHash.Hash);
-
-            var a = analyzer.Analyze(pathA, CSharp, computeHash: true);
-            var b = analyzer.Analyze(pathB, CSharp, computeHash: true);
-            var c = analyzer.Analyze(pathC, CSharp, computeHash: true);
-
-            Assert.NotNull(a.Hash);
-            Assert.Equal(a.Hash, b.Hash);
-            Assert.NotEqual(a.Hash, c.Hash);
-        }
-        finally
-        {
-            File.Delete(pathA);
-            File.Delete(pathB);
-            File.Delete(pathC);
-        }
-    }
-
-    /// <summary>
-    /// Verifies that a file with no BOM encoded in a non-UTF-8 codepage (Windows-1252, via
-    /// high bytes that are not valid UTF-8 sequences) is decoded with a Latin-1 fallback
-    /// rather than corrupting the content with U+FFFD replacement characters, which would
-    /// otherwise risk misclassifying lines.
-    /// </summary>
-    [Fact]
-    public void Analyze_NonUtf8FileWithoutBom_DoesNotProduceReplacementCharacters()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "sloc-latin1-" + Guid.NewGuid().ToString("N") + ".cs");
-        // 0xE9 is 'é' in Latin-1/Windows-1252, but is an invalid standalone UTF-8 byte.
-        var bytes = new byte[] { (byte)'/', (byte)'/', (byte)' ', 0xE9, (byte)'\n', (byte)'x', (byte)';', (byte)'\n' };
-        File.WriteAllBytes(path, bytes);
-        try
-        {
-            var result = new FileAnalyzer().Analyze(path, CSharp);
-
-            Assert.Equal(1, result.Comment);
-            Assert.Equal(1, result.Code);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    /// <summary>
-    /// Same as <see cref="Analyze_NonUtf8FileWithoutBom_DoesNotProduceReplacementCharacters"/>,
-    /// but the invalid byte appears well past the first 8000 bytes of the file, to guard
-    /// against a fallback-encoding detector that only sniffs a leading window.
-    /// </summary>
-    [Fact]
-    public void Analyze_NonUtf8ByteAfterLeadingWindow_DoesNotProduceReplacementCharacters()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "sloc-latin1-late-" + Guid.NewGuid().ToString("N") + ".cs");
-        using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write))
-        using (var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
-        {
-            for (var i = 0; i < 1000; i++)
-            {
-                writer.WriteLine("// padding line to push past the sniff window");
-            }
-        }
-
-        using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write))
-        {
-            // 0xE9 is 'é' in Latin-1/Windows-1252, but is an invalid standalone UTF-8 byte.
-            stream.Write([(byte)'/', (byte)'/', (byte)' ', 0xE9, (byte)'\n', (byte)'x', (byte)';', (byte)'\n']);
-        }
-
-        try
-        {
-            var result = new FileAnalyzer().Analyze(path, CSharp);
-
-            Assert.Equal(1001, result.Comment);
-            Assert.Equal(1, result.Code);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
     }
 
     /// <summary>
