@@ -113,8 +113,16 @@ public static class LanguageRegistry
             },
             new()
             {
-                Name = "C/C++",
-                Extensions = [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".ipp"],
+                Name = "C",
+                Extensions = [".c", ".h"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "C++",
+                Extensions = [".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".ipp"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote]
@@ -564,6 +572,36 @@ public static class LanguageRegistry
                 // Nix's indented strings ('' … '') are not modeled; only double-quoted
                 // strings are tracked here.
                 StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Astro",
+                Extensions = [".astro"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock, htmlBlock],
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "MDX",
+                Extensions = [".mdx"],
+                BlockComments = [htmlBlock],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "D",
+                Extensions = [".d"],
+                LineCommentTokens = ["//"],
+                BlockComments = [nestedCStyleBlock, new BlockComment("/+", "+/", AllowNested: true)],
+                StringLiterals = [backtickRaw, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Crystal",
+                Extensions = [".cr"],
+                LineCommentTokens = ["#"],
+                StringLiterals = [doubleQuote, singleQuote]
             }
         };
     }
