@@ -380,6 +380,14 @@ public sealed class AnalyzeHandler
             {
                 ScanResult? result = null;
                 var refreshTimer = Stopwatch.StartNew();
+                var gitignoreScanLabel = (scanOptions.RespectGitignore, scanOptions.RespectGitAttributes) switch
+                {
+                    (true, true) => "checking .gitignore/.gitattributes",
+                    (true, false) => "checking .gitignore",
+                    (false, true) => "checking .gitattributes",
+                    (false, false) => "walking directories",
+                };
+
                 AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
                     .Start("Scanning files...", ctx =>
@@ -405,7 +413,7 @@ public sealed class AnalyzeHandler
                                 }
 
                                 refreshTimer.Restart();
-                                ctx.Status($"Scanning... checking .gitignore/.gitattributes ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                                ctx.Status($"Scanning... {gitignoreScanLabel} ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
                             });
                     });
                 scanResult = result ?? throw new InvalidOperationException("Scan did not complete.");
