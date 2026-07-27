@@ -78,6 +78,7 @@ public sealed class GitIgnoreRules
     /// the tree for <c>.gitignore</c> files, so callers do not need a second full-tree walk
     /// to find the same directories for their own loop protection.
     /// </param>
+    /// <param name="followSymlinks">Whether to follow symbolic links when walking the directory tree.</param>
     /// <returns>The loaded rule set (possibly empty).</returns>
     public static GitIgnoreRules Load(
         string root,

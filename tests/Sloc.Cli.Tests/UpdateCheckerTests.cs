@@ -1,4 +1,3 @@
-using Sloc.Cli;
 using System.Net;
 
 namespace Sloc.Cli.Tests;
@@ -9,6 +8,19 @@ namespace Sloc.Cli.Tests;
 /// </summary>
 public class UpdateCheckerTests
 {
+    /// <summary>
+    /// Verifies that an HTTP failure is swallowed and reported as no update.
+    /// </summary>
+    [Fact]
+    public async Task CheckForUpdateAsync_HttpFailure_ReturnsNull()
+    {
+        var checker = new UpdateChecker(new HttpClient(new ThrowingHandler()));
+
+        var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
     /// <summary>
     /// Verifies that a newer release than the current version is reported.
     /// </summary>
@@ -21,7 +33,7 @@ public class UpdateCheckerTests
         var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.Equal("2.0.0", result!.LatestVersion);
+        Assert.Equal("2.0.0", result.LatestVersion);
         Assert.Equal("https://example.com/releases/2.0.0", result.ReleaseUrl);
     }
 
@@ -33,19 +45,6 @@ public class UpdateCheckerTests
     {
         var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
             """{"tag_name":"v1.0.0","html_url":"https://example.com/releases/1.0.0"}"""));
-
-        var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
-
-        Assert.Null(result);
-    }
-
-    /// <summary>
-    /// Verifies that an HTTP failure is swallowed and reported as no update.
-    /// </summary>
-    [Fact]
-    public async Task CheckForUpdateAsync_HttpFailure_ReturnsNull()
-    {
-        var checker = new UpdateChecker(new HttpClient(new ThrowingHandler()));
 
         var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 

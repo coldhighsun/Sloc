@@ -67,7 +67,7 @@ public static class LanguageRegistry
     /// <returns>
     /// <see langword="true"/> if the language supports health analysis; otherwise <see langword="false"/>.
     /// </returns>
-    public static bool SupportsHealth(string name) =>
+    public static bool SupportsHealth(string? name) =>
         name is not null && HealthSupportByName.TryGetValue(name, out var supports) && supports;
 
     private static IReadOnlyList<LanguageDefinition> CreateLanguages()

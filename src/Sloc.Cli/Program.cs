@@ -1,10 +1,9 @@
-﻿using System.CommandLine;
-using System.CommandLine.Help;
-using System.Globalization;
-using System.Linq;
-using Sloc.Cli;
+﻿using Sloc.Cli;
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using System.CommandLine;
+using System.CommandLine.Help;
+using System.Globalization;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -22,6 +21,12 @@ var pathArgument = new Argument<string>("path")
 var listFileOption = new Option<string>("--list-file")
 {
     Description = "Analyze exactly the files listed (one path per line) in this file instead of scanning a directory. Use '-' to read the list from stdin. Ignores 'path'."
+};
+
+var gitHashOption = new Option<string>("--git-hash")
+{
+    Description = "Analyze the repository tree as of this commit/tree-ish, without checking it out. "
+        + "'path' is used as the repo root to query. Requires git on PATH. Mutually exclusive with --list-file."
 };
 
 var includeOption = new Option<string[]>("--include", "-i")
@@ -165,6 +170,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
 {
     pathArgument,
     listFileOption,
+    gitHashOption,
     includeOption,
     excludeOption,
     excludeDirOption,
@@ -227,10 +233,19 @@ rootCommand.SetAction(parseResult =>
         return ExitCode.Error;
     }
 
+    var listFile = parseResult.GetValue(listFileOption);
+    var gitHash = parseResult.GetValue(gitHashOption);
+    if (listFile is not null && gitHash is not null)
+    {
+        Console.Error.WriteLine("sloc: --git-hash and --list-file cannot be used together.");
+        return ExitCode.Error;
+    }
+
     var options = new AnalyzeOptions
     {
         Path = parseResult.GetValue(pathArgument) ?? ".",
-        ListFile = parseResult.GetValue(listFileOption),
+        ListFile = listFile,
+        GitHash = gitHash,
         Includes = parseResult.GetValue(includeOption) ?? [],
         Excludes = [
             .. parseResult.GetValue(excludeOption) ?? [],

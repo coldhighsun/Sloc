@@ -1,4 +1,3 @@
-using Sloc.Cli;
 using System.Text.Json;
 
 namespace Sloc.Cli.Tests;
@@ -33,6 +32,298 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--all</c> includes files with unknown extensions, grouped as
+    /// <c>Other</c>, instead of silently dropping them.
+    /// </summary>
+    [Fact]
+    public void Execute_All_IncludesUnknownExtensionAsOther()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "notes.xyz"), "some text\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            IncludeUnknown = true,
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(2, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Contains("Other", languages);
+    }
+
+    /// <summary>
+    /// Verifies that combining <c>--baseline</c> with a diff-unsupported format and an
+    /// explicit <c>-o</c> file returns the error exit code and does not write the file,
+    /// rather than silently falling back to a console table while still exiting 0.
+    /// </summary>
+    [Fact]
+    public void Execute_BaselineWithUnsupportedFormatAndOutputFile_ReturnsErrorAndDoesNotWriteFile()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        var reportPath = Path.Combine(_root, "report.html");
+
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Html,
+            OutputFile = reportPath,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.False(File.Exists(reportPath));
+    }
+
+    /// <summary>
+    /// Verifies that the comment-percentage threshold gate returns the threshold exit
+    /// code when the comment percentage is below the requested minimum.
+    /// </summary>
+    [Fact]
+    public void Execute_BelowCommentThreshold_ReturnsThresholdCode()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            MinCommentPct = 50
+        }));
+
+        Assert.Equal(ExitCode.ThresholdNotMet, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a baseline saved with <c>--by-file</c> (no by-language section) still
+    /// yields correct per-language deltas, rather than treating every language as newly added.
+    /// </summary>
+    [Fact]
+    public void Execute_ByFileBaselineDiff_ReportsIncrementalDeltas()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            ByFile = true,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        // Add another code line, then diff against the by-file baseline.
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(diff);
+        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
+        // The delta must be +1 line, not the full +2 that a missing baseline breakdown would produce.
+        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that <c>--exclude-lang</c> drops the named language, through the full
+    /// handler pipeline rather than just the scanner.
+    /// </summary>
+    [Fact]
+    public void Execute_ExcludeLangs_DropsMatchingLanguage()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            ExcludeLangs = ["C#"],
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Equal(new[] { "Python" }, languages);
+    }
+
+    /// <summary>
+    /// Verifies that a directory symlink looping back on itself does not hang the full
+    /// scan-analyze-render pipeline when <c>--follow-symlinks</c> is set, and that the
+    /// real file reachable through the loop is counted exactly once.
+    /// </summary>
+    [Fact]
+    public async Task Execute_FollowSymlinksDirectLoop_DoesNotHangAndCountsRealFilesOnce()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var linkPath = Path.Combine(_root, "loop");
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, _root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        string stdout;
+        try
+        {
+            stdout = await Task.Run(() => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+            {
+                Path = _root,
+                Format = OutputFormat.Json,
+                Quiet = true,
+                FollowSymlinks = true
+            }))).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail("Execute did not complete; likely stuck in a symlink loop.");
+            return;
+        }
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that Html is written to stdout when no output file is given, matching
+    /// the default stdout behavior of the other non-table formats.
+    /// </summary>
+    [Fact]
+    public void Execute_HtmlWithoutOutputFile_WritesToStdout()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Html,
+            Quiet = true
+        }));
+
+        Assert.Contains("<html", stdout);
+    }
+
+    /// <summary>
+    /// Verifies that <c>--include-lang</c> restricts the analyzed files to the named
+    /// language, through the full handler pipeline rather than just the scanner.
+    /// </summary>
+    [Fact]
+    public void Execute_IncludeLangs_KeepsOnlyMatchingLanguage()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
+
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            IncludeLangs = ["C#"],
+            Format = OutputFormat.Json,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Equal(new[] { "C#" }, languages);
+    }
+
+    /// <summary>
+    /// Verifies that a JSON baseline diff reports the per-language and total line-count
+    /// deltas between a saved report and the current run.
+    /// </summary>
+    [Fact]
+    public void Execute_JsonBaselineDiff_ReportsDeltas()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        // Add another code line, then diff against the baseline.
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
+
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.cs"],
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(diff);
+        Assert.Equal(1, root.GetProperty("total").GetProperty("code").GetInt32());
+        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
+        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that a report write failure (e.g. an output directory that doesn't exist)
+    /// is reported as <c>ExitCode.Error</c> rather than propagating an unhandled exception.
+    /// </summary>
+    [Fact]
+    public void Execute_JsonFormat_UnwritableOutputPathReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var outputFile = Path.Combine(_root, "missing-dir", "report.json");
+
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            OutputFile = outputFile
+        });
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.False(File.Exists(outputFile));
+    }
+
+    /// <summary>
     /// Verifies that a JSON run writes a report file, returns exit code 0, and the
     /// report contains the expected aggregated totals.
     /// </summary>
@@ -60,24 +351,24 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies that a report write failure (e.g. an output directory that doesn't exist)
-    /// is reported as <c>ExitCode.Error</c> rather than propagating an unhandled exception.
+    /// Verifies that JSON is written to stdout (without a BOM) when no output file is
+    /// given, so it can be piped.
     /// </summary>
     [Fact]
-    public void Execute_JsonFormat_UnwritableOutputPathReturnsError()
+    public void Execute_JsonWithoutOutputFile_WritesToStdout()
     {
         File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        var outputFile = Path.Combine(_root, "missing-dir", "report.json");
 
-        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
         {
             Path = _root,
             Format = OutputFormat.Json,
-            OutputFile = outputFile
-        });
+            Quiet = true
+        }));
 
-        Assert.Equal(ExitCode.Error, exitCode);
-        Assert.False(File.Exists(outputFile));
+        Assert.False(stdout.StartsWith('﻿'), "stdout should not begin with a BOM");
+        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
+        Assert.Equal(1, root.GetProperty("code").GetInt32());
     }
 
     /// <summary>
@@ -104,6 +395,112 @@ public sealed class AnalyzeHandlerTests : IDisposable
         var root = JsonSerializer.Deserialize<JsonElement>(stdout);
         Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
         Assert.Equal(1, root.GetProperty("skipped").GetArrayLength());
+    }
+
+    /// <summary>
+    /// Verifies that a baseline file containing syntactically invalid JSON returns the
+    /// error exit code instead of throwing, mirroring how a missing baseline is handled.
+    /// </summary>
+    [Fact]
+    public void Execute_MalformedBaselineJson_ReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        File.WriteAllText(baselinePath, "{ this is not json");
+
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a satisfied comment-percentage threshold returns success.
+    /// </summary>
+    [Fact]
+    public void Execute_MeetsCommentThreshold_ReturnsSuccess()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "// comment\n// comment\nint x = 1;\n");
+
+        var exitCode = 1;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            MinCommentPct = 50
+        }));
+
+        Assert.Equal(ExitCode.Success, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a missing baseline file returns the error exit code instead of throwing.
+    /// </summary>
+    [Fact]
+    public void Execute_MissingBaseline_ReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = Path.Combine(_root, "no-such-baseline.json"),
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that a missing path returns exit code 1 rather than throwing.
+    /// </summary>
+    [Fact]
+    public void Execute_MissingPath_ReturnsOne()
+    {
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "does-not-exist"),
+            Format = OutputFormat.Json,
+            OutputFile = Path.Combine(_root, "report.json")
+        });
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that sequential (<c>--jobs 1</c>) and parallel analysis produce
+    /// byte-identical JSON output, confirming the merge order is deterministic.
+    /// </summary>
+    [Fact]
+    public void Execute_ParallelAndSequential_ProduceIdenticalOutput()
+    {
+        for (var i = 0; i < 50; i++)
+        {
+            File.WriteAllText(Path.Combine(_root, $"file{i:D3}.cs"), $"// file {i}\nint x = {i};\n\n");
+        }
+
+        string Run(int jobs) => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            ByFile = true,
+            Quiet = true,
+            Jobs = jobs
+        }));
+
+        var sequential = Run(1);
+        var parallel = Run(8);
+
+        Assert.Equal(sequential, parallel);
     }
 
     /// <summary>
@@ -177,404 +574,6 @@ public sealed class AnalyzeHandlerTests : IDisposable
         var skipped = root.GetProperty("skipped");
         Assert.Equal(1, skipped.GetArrayLength());
         Assert.EndsWith("c.cs", skipped[0].GetProperty("path").GetString());
-    }
-
-    /// <summary>
-    /// Verifies that <c>--include-lang</c> restricts the analyzed files to the named
-    /// language, through the full handler pipeline rather than just the scanner.
-    /// </summary>
-    [Fact]
-    public void Execute_IncludeLangs_KeepsOnlyMatchingLanguage()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
-
-        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            IncludeLangs = ["C#"],
-            Format = OutputFormat.Json,
-            Quiet = true
-        }));
-
-        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
-        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
-        var languages = root.GetProperty("byLanguage").EnumerateArray()
-            .Select(l => l.GetProperty("language").GetString())
-            .ToArray();
-        Assert.Equal(new[] { "C#" }, languages);
-    }
-
-    /// <summary>
-    /// Verifies that <c>--exclude-lang</c> drops the named language, through the full
-    /// handler pipeline rather than just the scanner.
-    /// </summary>
-    [Fact]
-    public void Execute_ExcludeLangs_DropsMatchingLanguage()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
-
-        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            ExcludeLangs = ["C#"],
-            Format = OutputFormat.Json,
-            Quiet = true
-        }));
-
-        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
-        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
-        var languages = root.GetProperty("byLanguage").EnumerateArray()
-            .Select(l => l.GetProperty("language").GetString())
-            .ToArray();
-        Assert.Equal(new[] { "Python" }, languages);
-    }
-
-    /// <summary>
-    /// Verifies that <c>--all</c> includes files with unknown extensions, grouped as
-    /// <c>Other</c>, instead of silently dropping them.
-    /// </summary>
-    [Fact]
-    public void Execute_All_IncludesUnknownExtensionAsOther()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        File.WriteAllText(Path.Combine(_root, "notes.xyz"), "some text\n");
-
-        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            IncludeUnknown = true,
-            Format = OutputFormat.Json,
-            Quiet = true
-        }));
-
-        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
-        Assert.Equal(2, root.GetProperty("fileCount").GetInt32());
-        var languages = root.GetProperty("byLanguage").EnumerateArray()
-            .Select(l => l.GetProperty("language").GetString())
-            .ToArray();
-        Assert.Contains("Other", languages);
-    }
-
-    /// <summary>
-    /// Verifies that a missing path returns exit code 1 rather than throwing.
-    /// </summary>
-    [Fact]
-    public void Execute_MissingPath_ReturnsOne()
-    {
-        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = Path.Combine(_root, "does-not-exist"),
-            Format = OutputFormat.Json,
-            OutputFile = Path.Combine(_root, "report.json")
-        });
-
-        Assert.Equal(ExitCode.Error, exitCode);
-    }
-
-    /// <summary>
-    /// Verifies that JSON is written to stdout (without a BOM) when no output file is
-    /// given, so it can be piped.
-    /// </summary>
-    [Fact]
-    public void Execute_JsonWithoutOutputFile_WritesToStdout()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-
-        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            Quiet = true
-        }));
-
-        Assert.False(stdout.StartsWith('﻿'), "stdout should not begin with a BOM");
-        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
-        Assert.Equal(1, root.GetProperty("code").GetInt32());
-    }
-
-    /// <summary>
-    /// Verifies that Html is written to stdout when no output file is given, matching
-    /// the default stdout behavior of the other non-table formats.
-    /// </summary>
-    [Fact]
-    public void Execute_HtmlWithoutOutputFile_WritesToStdout()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-
-        var stdout = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Html,
-            Quiet = true
-        }));
-
-        Assert.Contains("<html", stdout);
-    }
-
-    /// <summary>
-    /// Verifies that the comment-percentage threshold gate returns the threshold exit
-    /// code when the comment percentage is below the requested minimum.
-    /// </summary>
-    [Fact]
-    public void Execute_BelowCommentThreshold_ReturnsThresholdCode()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
-
-        int exitCode = 0;
-        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            Quiet = true,
-            MinCommentPct = 50
-        }));
-
-        Assert.Equal(ExitCode.ThresholdNotMet, exitCode);
-    }
-
-    /// <summary>
-    /// Verifies that a satisfied comment-percentage threshold returns success.
-    /// </summary>
-    [Fact]
-    public void Execute_MeetsCommentThreshold_ReturnsSuccess()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "// comment\n// comment\nint x = 1;\n");
-
-        int exitCode = 1;
-        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            Quiet = true,
-            MinCommentPct = 50
-        }));
-
-        Assert.Equal(ExitCode.Success, exitCode);
-    }
-
-    /// <summary>
-    /// Verifies that sequential (<c>--jobs 1</c>) and parallel analysis produce
-    /// byte-identical JSON output, confirming the merge order is deterministic.
-    /// </summary>
-    [Fact]
-    public void Execute_ParallelAndSequential_ProduceIdenticalOutput()
-    {
-        for (var i = 0; i < 50; i++)
-        {
-            File.WriteAllText(Path.Combine(_root, $"file{i:D3}.cs"), $"// file {i}\nint x = {i};\n\n");
-        }
-
-        string Run(int jobs) => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            ByFile = true,
-            Quiet = true,
-            Jobs = jobs
-        }));
-
-        var sequential = Run(1);
-        var parallel = Run(8);
-
-        Assert.Equal(sequential, parallel);
-    }
-
-    /// <summary>
-    /// Verifies that a JSON baseline diff reports the per-language and total line-count
-    /// deltas between a saved report and the current run.
-    /// </summary>
-    [Fact]
-    public void Execute_JsonBaselineDiff_ReportsDeltas()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        var baselinePath = Path.Combine(_root, "baseline.json");
-        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Json,
-            OutputFile = baselinePath,
-            Quiet = true
-        });
-        Assert.Equal(ExitCode.Success, firstExit);
-
-        // Add another code line, then diff against the baseline.
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
-
-        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Json,
-            BaselinePath = baselinePath,
-            Quiet = true
-        }));
-
-        var root = JsonSerializer.Deserialize<JsonElement>(diff);
-        Assert.Equal(1, root.GetProperty("total").GetProperty("code").GetInt32());
-        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
-        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
-    }
-
-    /// <summary>
-    /// Verifies that a baseline saved with <c>--by-file</c> (no by-language section) still
-    /// yields correct per-language deltas, rather than treating every language as newly added.
-    /// </summary>
-    [Fact]
-    public void Execute_ByFileBaselineDiff_ReportsIncrementalDeltas()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        var baselinePath = Path.Combine(_root, "baseline.json");
-        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Json,
-            OutputFile = baselinePath,
-            ByFile = true,
-            Quiet = true
-        });
-        Assert.Equal(ExitCode.Success, firstExit);
-
-        // Add another code line, then diff against the by-file baseline.
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\n");
-
-        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Json,
-            BaselinePath = baselinePath,
-            Quiet = true
-        }));
-
-        var root = JsonSerializer.Deserialize<JsonElement>(diff);
-        var csharp = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "C#");
-        // The delta must be +1 line, not the full +2 that a missing baseline breakdown would produce.
-        Assert.Equal(1, csharp.GetProperty("code").GetInt32());
-    }
-
-    /// <summary>
-    /// Verifies that combining <c>--baseline</c> with a diff-unsupported format and an
-    /// explicit <c>-o</c> file returns the error exit code and does not write the file,
-    /// rather than silently falling back to a console table while still exiting 0.
-    /// </summary>
-    [Fact]
-    public void Execute_BaselineWithUnsupportedFormatAndOutputFile_ReturnsErrorAndDoesNotWriteFile()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        var baselinePath = Path.Combine(_root, "baseline.json");
-        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Json,
-            OutputFile = baselinePath,
-            Quiet = true
-        });
-        Assert.Equal(ExitCode.Success, firstExit);
-
-        var reportPath = Path.Combine(_root, "report.html");
-
-        int exitCode = 0;
-        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Includes = ["**/*.cs"],
-            Format = OutputFormat.Html,
-            OutputFile = reportPath,
-            BaselinePath = baselinePath,
-            Quiet = true
-        }));
-
-        Assert.Equal(ExitCode.Error, exitCode);
-        Assert.False(File.Exists(reportPath));
-    }
-
-    /// <summary>
-    /// Verifies that a missing baseline file returns the error exit code instead of throwing.
-    /// </summary>
-    [Fact]
-    public void Execute_MissingBaseline_ReturnsError()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-
-        int exitCode = 0;
-        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            BaselinePath = Path.Combine(_root, "no-such-baseline.json"),
-            Quiet = true
-        }));
-
-        Assert.Equal(ExitCode.Error, exitCode);
-    }
-
-    /// <summary>
-    /// Verifies that a baseline file containing syntactically invalid JSON returns the
-    /// error exit code instead of throwing, mirroring how a missing baseline is handled.
-    /// </summary>
-    [Fact]
-    public void Execute_MalformedBaselineJson_ReturnsError()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-        var baselinePath = Path.Combine(_root, "baseline.json");
-        File.WriteAllText(baselinePath, "{ this is not json");
-
-        int exitCode = 0;
-        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
-        {
-            Path = _root,
-            Format = OutputFormat.Json,
-            BaselinePath = baselinePath,
-            Quiet = true
-        }));
-
-        Assert.Equal(ExitCode.Error, exitCode);
-    }
-
-    /// <summary>
-    /// Verifies that a directory symlink looping back on itself does not hang the full
-    /// scan-analyze-render pipeline when <c>--follow-symlinks</c> is set, and that the
-    /// real file reachable through the loop is counted exactly once.
-    /// </summary>
-    [Fact]
-    public async Task Execute_FollowSymlinksDirectLoop_DoesNotHangAndCountsRealFilesOnce()
-    {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
-
-        var linkPath = Path.Combine(_root, "loop");
-        try
-        {
-            Directory.CreateSymbolicLink(linkPath, _root);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return;
-        }
-
-        string stdout;
-        try
-        {
-            stdout = await Task.Run(() => CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
-            {
-                Path = _root,
-                Format = OutputFormat.Json,
-                Quiet = true,
-                FollowSymlinks = true
-            }))).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        }
-        catch (TimeoutException)
-        {
-            Assert.Fail("Execute did not complete; likely stuck in a symlink loop.");
-            return;
-        }
-
-        var root = JsonSerializer.Deserialize<JsonElement>(stdout);
-        Assert.Equal(1, root.GetProperty("fileCount").GetInt32());
     }
 
     private static string CaptureStdout(Action action)
