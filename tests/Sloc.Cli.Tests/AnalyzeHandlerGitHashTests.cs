@@ -50,7 +50,10 @@ public sealed class AnalyzeHandlerGitHashTests : IDisposable
     [Fact]
     public void Execute_GitHash_ReportsGitRelativePathsAndMatchesNormalScan()
     {
-        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n// comment\n\n");
+        // A name unique to this test run, so the leftover-temp-dir check below cannot
+        // collide with another test class's concurrently running instance.
+        var markerFileName = "a-" + Guid.NewGuid().ToString("N") + ".cs";
+        File.WriteAllText(Path.Combine(_root, markerFileName), "int x = 1;\n// comment\n\n");
         Directory.CreateDirectory(Path.Combine(_root, "sub"));
         File.WriteAllText(Path.Combine(_root, "sub", "b.py"), "x = 1\n");
         RunGit("add", "-A");
@@ -91,7 +94,7 @@ public sealed class AnalyzeHandlerGitHashTests : IDisposable
         // The extraction temp directory must be cleaned up once Execute returns.
         Assert.DoesNotContain(
             Directory.EnumerateDirectories(Path.GetTempPath(), "sloc-git-*"),
-            dir => File.Exists(Path.Combine(dir, "a.cs")));
+            dir => File.Exists(Path.Combine(dir, markerFileName)));
 
         File.Delete(outputFile);
         File.Delete(normalScanOutput);
