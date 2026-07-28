@@ -72,13 +72,15 @@ public sealed class UpdateChecker
 
             var latestVersionText = release.TagName.StartsWith('v') ? release.TagName[1..] : release.TagName;
 
-            if (!Version.TryParse(StripPrereleaseSuffix(latestVersionText), out var latest) ||
-                !Version.TryParse(StripPrereleaseSuffix(currentVersion), out var current))
+            if (!SemVersion.TryParse(latestVersionText, out var latest) ||
+                !SemVersion.TryParse(currentVersion, out var current))
             {
                 return null;
             }
 
-            return latest > current ? new UpdateCheckResult(latestVersionText, release.HtmlUrl) : null;
+            return SemVersion.ComparePrecedence(latest, current) > 0
+                ? new UpdateCheckResult(latestVersionText, release.HtmlUrl)
+                : null;
         }
         catch
         {
@@ -87,13 +89,119 @@ public sealed class UpdateChecker
     }
 
     /// <summary>
-    /// Strips a semver prerelease/build-metadata suffix (e.g. "-beta.1" or "+abc123") so the
-    /// remaining "major.minor.patch" prefix can be parsed by <see cref="Version"/>.
+    /// A minimal SemVer version: the "major.minor.patch" core plus an optional prerelease label.
+    /// Build metadata ("+...") is discarded because it does not affect precedence (SemVer §10).
     /// </summary>
-    private static string StripPrereleaseSuffix(string version)
+    /// <param name="Core">The parsed "major.minor.patch" core.</param>
+    /// <param name="Prerelease">The prerelease label (e.g. "alpha.1"), or <see langword="null"/> for a stable release.</param>
+    private sealed record SemVersion(Version Core, string? Prerelease)
     {
-        var suffixIndex = version.IndexOfAny(['-', '+']);
-        return suffixIndex < 0 ? version : version[..suffixIndex];
+        /// <summary>
+        /// Parses a version string into its core and prerelease parts.
+        /// </summary>
+        /// <param name="text">The version text (without a leading "v").</param>
+        /// <param name="version">The parsed version, when successful.</param>
+        /// <returns><see langword="true"/> if the core "major.minor.patch" parsed; otherwise <see langword="false"/>.</returns>
+        public static bool TryParse(string text, out SemVersion version)
+        {
+            version = null!;
+
+            // Drop build metadata first; it never affects precedence.
+            var buildIndex = text.IndexOf('+');
+            if (buildIndex >= 0)
+            {
+                text = text[..buildIndex];
+            }
+
+            var dashIndex = text.IndexOf('-');
+            var coreText = dashIndex < 0 ? text : text[..dashIndex];
+            var prerelease = dashIndex < 0 ? null : text[(dashIndex + 1)..];
+
+            if (!Version.TryParse(coreText, out var core))
+            {
+                return false;
+            }
+
+            version = new SemVersion(core, string.IsNullOrEmpty(prerelease) ? null : prerelease);
+            return true;
+        }
+
+        /// <summary>
+        /// Compares two versions by SemVer precedence (SemVer §11).
+        /// </summary>
+        /// <param name="left">The left-hand version.</param>
+        /// <param name="right">The right-hand version.</param>
+        /// <returns>A negative value if <paramref name="left"/> is lower, zero if equal, positive if higher.</returns>
+        public static int ComparePrecedence(SemVersion left, SemVersion right)
+        {
+            var coreComparison = left.Core.CompareTo(right.Core);
+            if (coreComparison != 0)
+            {
+                return coreComparison;
+            }
+
+            // Equal cores: a version with a prerelease label has lower precedence than one without.
+            if (left.Prerelease is null && right.Prerelease is null)
+            {
+                return 0;
+            }
+
+            if (left.Prerelease is null)
+            {
+                return 1;
+            }
+
+            if (right.Prerelease is null)
+            {
+                return -1;
+            }
+
+            return ComparePrerelease(left.Prerelease, right.Prerelease);
+        }
+
+        /// <summary>
+        /// Compares two prerelease labels by dot-separated identifiers (SemVer §11).
+        /// </summary>
+        /// <param name="left">The left-hand prerelease label.</param>
+        /// <param name="right">The right-hand prerelease label.</param>
+        /// <returns>A negative value if <paramref name="left"/> is lower, zero if equal, positive if higher.</returns>
+        private static int ComparePrerelease(string left, string right)
+        {
+            var leftParts = left.Split('.');
+            var rightParts = right.Split('.');
+            var shared = Math.Min(leftParts.Length, rightParts.Length);
+
+            for (var i = 0; i < shared; i++)
+            {
+                var leftIsNumeric = int.TryParse(leftParts[i], out var leftNumber);
+                var rightIsNumeric = int.TryParse(rightParts[i], out var rightNumber);
+
+                if (leftIsNumeric && rightIsNumeric)
+                {
+                    var numberComparison = leftNumber.CompareTo(rightNumber);
+                    if (numberComparison != 0)
+                    {
+                        return numberComparison;
+                    }
+                }
+                else if (leftIsNumeric != rightIsNumeric)
+                {
+                    // Numeric identifiers always have lower precedence than alphanumeric ones.
+                    return leftIsNumeric ? -1 : 1;
+                }
+                else
+                {
+                    var textComparison = string.CompareOrdinal(leftParts[i], rightParts[i]);
+                    if (textComparison != 0)
+                    {
+                        return textComparison;
+                    }
+                }
+            }
+
+            // All shared identifiers equal: the label with more identifiers has higher precedence.
+            return leftParts.Length.CompareTo(rightParts.Length);
+        }
     }
 
     private static HttpClient CreateHttpClient()
