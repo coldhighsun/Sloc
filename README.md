@@ -9,13 +9,13 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 63 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 66 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
 
 ## Features
 
 - Count code / comment / blank / total lines
 - Correctly handles single-line comments, block comments, and multi-line block comments
-- Built-in comment rules for 63 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
+- Built-in comment rules for 66 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
 - Five output formats: colored table (default), JSON, HTML, CSV, and Markdown
@@ -149,7 +149,7 @@ sloc . --format markdown --detailed -o -
 
 Supported language display names (for `--include-lang`/`--exclude-lang`):
 
-`Assembly`, `Astro`, `BASIC`, `Batch`, `Bazel/Starlark`, `C`, `C#`, `C++`, `Clojure`, `CMake`, `Crystal`, `CSS`, `D`, `Dart`, `Dockerfile`, `Elixir`, `Elm`, `Erlang`, `F#`, `Go`, `GraphQL`, `Groovy`, `Haskell`, `HTML`, `INI`, `Java`, `JavaScript`, `JSON`, `Julia`, `Jupyter Notebook`, `Kotlin`, `Lua`, `Makefile`, `Markdown`, `MDX`, `Nim`, `Nix`, `Objective-C`, `OCaml`, `Pascal`, `Perl`, `PHP`, `PowerShell`, `Protobuf`, `Python`, `R`, `Ruby`, `Rust`, `Scala`, `SCSS/Less`, `Shell`, `Solidity`, `SQL`, `Svelte`, `Swift`, `Terraform`, `TOML`, `TypeScript`, `Visual Basic`, `Vue`, `XML`, `YAML`, `Zig`
+`Assembly`, `Astro`, `BASIC`, `Batch`, `Bazel/Starlark`, `C`, `C#`, `C# Designer`, `C++`, `Clojure`, `CMake`, `Crystal`, `CSS`, `D`, `Dart`, `Dockerfile`, `Elixir`, `Elm`, `Erlang`, `F#`, `Go`, `GraphQL`, `Groovy`, `Haskell`, `HTML`, `INI`, `Java`, `JavaScript`, `JSON`, `Julia`, `Jupyter Notebook`, `Kotlin`, `Lua`, `Makefile`, `Markdown`, `MDX`, `MSBuild script`, `Nim`, `Nix`, `Objective-C`, `OCaml`, `Pascal`, `Perl`, `PHP`, `PowerShell`, `Protobuf`, `Python`, `R`, `Ruby`, `Rust`, `Scala`, `SCSS/Less`, `Shell`, `Solidity`, `SQL`, `Svelte`, `Swift`, `Terraform`, `Text`, `TOML`, `TypeScript`, `Visual Basic`, `Vue`, `XML`, `YAML`, `Zig`
 
 All non-table formats (`Json`, `Html`, `Csv`, `Markdown`) are written to stdout by default (so they can be piped, e.g. `sloc . -f json | jq`); pass `--output <path>` to write a file instead.
 
@@ -174,11 +174,11 @@ With `--by-file` (tree view per file):
 
 ## Supported Languages
 
-- **Programming languages**: C#, C, C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, Scala, Dart, R, Lua, Perl, Elixir, Haskell, Objective-C, Groovy, Julia, Clojure, BASIC, Pascal, Zig, Nim, OCaml, Erlang, Elm, D, Crystal, Solidity
+- **Programming languages**: C#, C# Designer, C, C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, Scala, Dart, R, Lua, Perl, Elixir, Haskell, Objective-C, Groovy, Julia, Clojure, BASIC, Pascal, Zig, Nim, OCaml, Erlang, Elm, D, Crystal, Solidity
 - **Web & templates**: HTML, CSS, SCSS/Less, Vue, Svelte, Astro, MDX
 - **Data & config formats**: JSON, YAML, XML, TOML, INI, Markdown, Protobuf, GraphQL
-- **Shell, build & infra**: Shell, PowerShell, Batch, SQL, Makefile, Dockerfile, CMake, Terraform, Bazel/Starlark, Nix
-- **Other**: Assembly, Jupyter Notebook
+- **Shell, build & infra**: Shell, PowerShell, Batch, SQL, Makefile, Dockerfile, CMake, Terraform, Bazel/Starlark, Nix, MSBuild script
+- **Other**: Assembly, Jupyter Notebook, Text
 
 Files without an extension (e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`, `Rakefile`, `Gemfile`) are recognized by name.
 
@@ -224,13 +224,13 @@ This project is released under the [MIT License](https://opensource.org/licenses
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 63 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 66 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
 
 ## 功能特性
 
 - 统计代码行 / 注释行 / 空行 / 总行数
 - 正确处理单行注释、块注释以及跨多行的块注释
-- 内置 63 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
+- 内置 66 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
 - 五种输出格式：彩色表格（默认）、JSON、HTML、CSV 与 Markdown
@@ -364,7 +364,7 @@ sloc . --format markdown --detailed -o -
 
 支持的语言显示名称（用于 `--include-lang`/`--exclude-lang`）：
 
-`Assembly`, `Astro`, `BASIC`, `Batch`, `Bazel/Starlark`, `C`, `C#`, `C++`, `Clojure`, `CMake`, `Crystal`, `CSS`, `D`, `Dart`, `Dockerfile`, `Elixir`, `Elm`, `Erlang`, `F#`, `Go`, `GraphQL`, `Groovy`, `Haskell`, `HTML`, `INI`, `Java`, `JavaScript`, `JSON`, `Julia`, `Jupyter Notebook`, `Kotlin`, `Lua`, `Makefile`, `Markdown`, `MDX`, `Nim`, `Nix`, `Objective-C`, `OCaml`, `Pascal`, `Perl`, `PHP`, `PowerShell`, `Protobuf`, `Python`, `R`, `Ruby`, `Rust`, `Scala`, `SCSS/Less`, `Shell`, `Solidity`, `SQL`, `Svelte`, `Swift`, `Terraform`, `TOML`, `TypeScript`, `Visual Basic`, `Vue`, `XML`, `YAML`, `Zig`
+`Assembly`, `Astro`, `BASIC`, `Batch`, `Bazel/Starlark`, `C`, `C#`, `C# Designer`, `C++`, `Clojure`, `CMake`, `Crystal`, `CSS`, `D`, `Dart`, `Dockerfile`, `Elixir`, `Elm`, `Erlang`, `F#`, `Go`, `GraphQL`, `Groovy`, `Haskell`, `HTML`, `INI`, `Java`, `JavaScript`, `JSON`, `Julia`, `Jupyter Notebook`, `Kotlin`, `Lua`, `Makefile`, `Markdown`, `MDX`, `MSBuild script`, `Nim`, `Nix`, `Objective-C`, `OCaml`, `Pascal`, `Perl`, `PHP`, `PowerShell`, `Protobuf`, `Python`, `R`, `Ruby`, `Rust`, `Scala`, `SCSS/Less`, `Shell`, `Solidity`, `SQL`, `Svelte`, `Swift`, `Terraform`, `Text`, `TOML`, `TypeScript`, `Visual Basic`, `Vue`, `XML`, `YAML`, `Zig`
 
 所有非表格格式(`Json`、`Html`、`Csv`、`Markdown`)默认都会输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output <路径>` 则写入文件。
 
@@ -389,11 +389,11 @@ sloc . --format markdown --detailed -o -
 
 ## 支持的语言
 
-- **编程语言**：C#、C、C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、Scala、Dart、R、Lua、Perl、Elixir、Haskell、Objective-C、Groovy、Julia、Clojure、BASIC、Pascal、Zig、Nim、OCaml、Erlang、Elm、D、Crystal、Solidity
+- **编程语言**：C#、C# Designer、C、C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、Scala、Dart、R、Lua、Perl、Elixir、Haskell、Objective-C、Groovy、Julia、Clojure、BASIC、Pascal、Zig、Nim、OCaml、Erlang、Elm、D、Crystal、Solidity
 - **前端与模板**：HTML、CSS、SCSS/Less、Vue、Svelte、Astro、MDX
 - **数据与配置格式**：JSON、YAML、XML、TOML、INI、Markdown、Protobuf、GraphQL
-- **脚本、构建与基础设施**：Shell、PowerShell、Batch、SQL、Makefile、Dockerfile、CMake、Terraform、Bazel/Starlark、Nix
-- **其他**：Assembly、Jupyter Notebook
+- **脚本、构建与基础设施**：Shell、PowerShell、Batch、SQL、Makefile、Dockerfile、CMake、Terraform、Bazel/Starlark、Nix、MSBuild script
+- **其他**：Assembly、Jupyter Notebook、Text
 
 无扩展名的文件（如 `Makefile`、`Dockerfile`、`CMakeLists.txt`、`Rakefile`、`Gemfile`）按文件名识别。
 

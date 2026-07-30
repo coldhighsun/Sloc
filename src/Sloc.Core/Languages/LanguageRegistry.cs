@@ -11,6 +11,7 @@ public static class LanguageRegistry
     private static readonly IReadOnlyList<LanguageDefinition> AllLanguages = CreateLanguages();
     private static readonly IReadOnlyDictionary<string, LanguageDefinition> ExtensionLookup = CreateLookup(AllLanguages);
     private static readonly IReadOnlyDictionary<string, LanguageDefinition> FilenameLookup = CreateFilenameLookup(AllLanguages);
+    private static readonly IReadOnlyList<(string Suffix, LanguageDefinition Language)> SuffixLookup = CreateSuffixLookup(AllLanguages);
     private static readonly IReadOnlyDictionary<string, bool> HealthSupportByName =
         AllLanguages.ToDictionary(language => language.Name, language => language.SupportsHealth, StringComparer.OrdinalIgnoreCase);
 
@@ -50,9 +51,21 @@ public static class LanguageRegistry
     public static bool TryGetByPath(string path, [NotNullWhen(true)] out LanguageDefinition? language)
     {
         var fileName = Path.GetFileName(path);
-        if (!string.IsNullOrEmpty(fileName) && FilenameLookup.TryGetValue(fileName, out language))
+        if (!string.IsNullOrEmpty(fileName))
         {
-            return true;
+            if (FilenameLookup.TryGetValue(fileName, out language))
+            {
+                return true;
+            }
+
+            foreach (var (suffix, suffixLanguage) in SuffixLookup)
+            {
+                if (fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    language = suffixLanguage;
+                    return true;
+                }
+            }
         }
 
         var extension = Path.GetExtension(path);
@@ -278,7 +291,7 @@ public static class LanguageRegistry
             new()
             {
                 Name = "XML",
-                Extensions = [".xml", ".xaml", ".csproj", ".vbproj", ".props", ".targets", ".config", ".resx"],
+                Extensions = [".xml", ".xaml", ".vbproj", ".props", ".targets", ".config", ".resx"],
                 BlockComments = [htmlBlock],
                 ShowHealth = false
             },
@@ -602,6 +615,27 @@ public static class LanguageRegistry
                 Extensions = [".cr"],
                 LineCommentTokens = ["#"],
                 StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "MSBuild script",
+                Extensions = [".csproj", ".wdproj", ".vcproj", ".wixproj", ".btproj", ".msbuild"],
+                BlockComments = [htmlBlock],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "C# Designer",
+                FilenameSuffixes = [".designer.cs"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [csVerbatimString, doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Text",
+                Extensions = [".txt", ".text"],
+                ShowHealth = false
             }
         };
     }
@@ -632,5 +666,21 @@ public static class LanguageRegistry
         }
 
         return lookup;
+    }
+
+    private static IReadOnlyList<(string Suffix, LanguageDefinition Language)> CreateSuffixLookup(IReadOnlyList<LanguageDefinition> languages)
+    {
+        var entries = new List<(string Suffix, LanguageDefinition Language)>();
+        foreach (var language in languages)
+        {
+            foreach (var suffix in language.FilenameSuffixes)
+            {
+                entries.Add((suffix, language));
+            }
+        }
+
+        // Longest suffix first, so the most specific match wins when suffixes overlap.
+        entries.Sort((a, b) => b.Suffix.Length.CompareTo(a.Suffix.Length));
+        return entries;
     }
 }

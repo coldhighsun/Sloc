@@ -211,6 +211,44 @@ public class LanguageRegistryTests
     }
 
     /// <summary>
+    /// Verifies that the MSBuild script and Text extensions resolve to the correct language.
+    /// </summary>
+    /// <param name="extension">An extension to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData(".csproj", "MSBuild script")]
+    [InlineData(".wixproj", "MSBuild script")]
+    [InlineData(".msbuild", "MSBuild script")]
+    [InlineData(".txt", "Text")]
+    [InlineData(".text", "Text")]
+    public void TryGetByExtension_MsBuildAndText_Resolve(string extension, string expectedName)
+    {
+        var found = LanguageRegistry.TryGetByExtension(extension, out var language);
+
+        Assert.True(found);
+        Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
+    /// Verifies that <c>*.Designer.cs</c> files resolve to "C# Designer" by filename
+    /// suffix, case-insensitively, while other <c>.cs</c> files still resolve to "C#".
+    /// </summary>
+    /// <param name="path">A file path to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData("Form1.Designer.cs", "C# Designer")]
+    [InlineData("Form1.DESIGNER.cs", "C# Designer")]
+    [InlineData("src/Form1.designer.cs", "C# Designer")]
+    [InlineData("Form1.cs", "C#")]
+    public void TryGetByPath_DesignerSuffix_ResolvesCSharpDesigner(string path, string expectedName)
+    {
+        var found = LanguageRegistry.TryGetByPath(path, out var language);
+
+        Assert.True(found);
+        Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
     /// Verifies that languages with comment tokens and <c>ShowHealth</c> support health
     /// analysis, while data/markup languages and unknown names do not.
     /// </summary>
