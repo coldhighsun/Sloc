@@ -62,7 +62,7 @@ sloc <path> [options]
 
 ```bash
 # Count current directory (recursive)
-sloc
+sloc .
 
 # Count a specific directory
 sloc ./src
@@ -118,7 +118,7 @@ sloc . --format markdown --detailed -o -
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `path` (argument) | | File or directory to analyze, defaults to current directory `.` |
+| `path` (argument) | | File or directory to analyze, defaults to current directory `.`. Running `sloc` with no arguments at all shows help instead. |
 | `--list-file` | | Analyze exactly the files listed one-per-line in this file instead of scanning `path`; use `-` to read the list from stdin |
 | `--include` | `-i` | File glob pattern to include, can be specified multiple times |
 | `--exclude` | `-e` | File glob pattern to exclude, can be specified multiple times |
@@ -277,7 +277,7 @@ sloc <path> [options]
 
 ```bash
 # 统计当前目录（递归）
-sloc
+sloc .
 
 # 统计指定目录
 sloc ./src
@@ -333,7 +333,7 @@ sloc . --format markdown --detailed -o -
 
 | 选项 | 简写 | 说明 |
 | --- | --- | --- |
-| `path`（参数） | | 要分析的文件或目录，默认为当前目录 `.` |
+| `path`（参数） | | 要分析的文件或目录，默认为当前目录 `.`。不带任何参数运行 `sloc` 时会显示帮助信息。 |
 | `--list-file` | | 分析该文件中逐行列出的文件列表,而不是扫描 `path`;用 `-` 表示从标准输入读取列表 |
 | `--include` | `-i` | 要包含的文件 glob 模式，可多次指定 |
 | `--exclude` | `-e` | 要排除的文件 glob 模式，可多次指定 |

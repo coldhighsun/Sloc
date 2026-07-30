@@ -14,7 +14,7 @@ CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 
 var pathArgument = new Argument<string>("path")
 {
-    Description = "The file or directory to analyze.",
+    Description = "The file or directory to analyze. Defaults to the current directory. Running sloc with no arguments at all shows this help instead.",
     DefaultValueFactory = _ => "."
 };
 
@@ -280,6 +280,11 @@ rootCommand.SetAction(parseResult =>
 
 try
 {
+    if (args.Length == 0)
+    {
+        return rootCommand.Parse(["--help"]).Invoke();
+    }
+
     return rootCommand.Parse(args).Invoke();
 }
 catch (Exception ex)
