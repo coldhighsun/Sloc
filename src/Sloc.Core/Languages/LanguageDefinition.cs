@@ -92,6 +92,15 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> Filenames { get; init; } = [];
 
     /// <summary>
+    /// The file name suffixes (case-insensitive, with leading dot, e.g. <c>.designer.cs</c>)
+    /// that map to this language, for files identified by a compound suffix that is more
+    /// specific than their plain extension (e.g. <c>Form1.Designer.cs</c>, which would
+    /// otherwise resolve to C# via its <c>.cs</c> extension). Checked before
+    /// <see cref="Extensions"/> when resolving a file path.
+    /// </summary>
+    public IReadOnlyList<string> FilenameSuffixes { get; init; } = [];
+
+    /// <summary>
     /// The tokens that start a single-line comment (e.g. <c>//</c> or <c>#</c>).
     /// A token consisting entirely of letters/digits (e.g. <c>REM</c>) is only recognized
     /// as a whole word: it must be followed by whitespace or the end of the line, so it
