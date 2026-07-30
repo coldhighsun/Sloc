@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Sloc.Cli.Tests;
 
@@ -500,8 +501,11 @@ public sealed class AnalyzeHandlerTests : IDisposable
         var sequential = Run(1);
         var parallel = Run(8);
 
-        Assert.Equal(sequential, parallel);
+        Assert.Equal(NormalizeGeneratedAt(sequential), NormalizeGeneratedAt(parallel));
     }
+
+    private static string NormalizeGeneratedAt(string json) =>
+        Regex.Replace(json, "\"generatedAt\": \"[^\"]*\"", "\"generatedAt\": \"\"");
 
     /// <summary>
     /// Verifies that <c>--unique</c> counts byte-identical files only once and reports
