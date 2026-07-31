@@ -491,7 +491,8 @@ public static class LanguageRegistry
                 Name = "INI",
                 Extensions = [".ini", ".editorconfig"],
                 LineCommentTokens = [";", "#"],
-                StringLiterals = [doubleQuote]
+                StringLiterals = [doubleQuote],
+                ShowHealth = false
             },
             new()
             {
@@ -629,7 +630,8 @@ public static class LanguageRegistry
                 FilenameSuffixes = [".designer.cs"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [csVerbatimString, doubleQuote, singleQuote]
+                StringLiterals = [csVerbatimString, doubleQuote, singleQuote],
+                ShowHealth = false
             },
             new()
             {
