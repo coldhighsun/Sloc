@@ -30,7 +30,7 @@ public sealed class MarkdownRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -40,7 +40,8 @@ public sealed class MarkdownRenderer : IResultRenderer
         sb.AppendLine();
 
         var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        sb.AppendLine($"**Generated:** {generated} | **Files:** {summary.FileCount:N0} | **Total Lines:** {summary.Total:N0}");
+        var sourceMeta = string.IsNullOrEmpty(sourcePath) ? string.Empty : $" | **Source:** {sourcePath}";
+        sb.AppendLine($"**Generated:** {generated} | **Files:** {summary.FileCount:N0} | **Total Lines:** {summary.Total:N0}{sourceMeta}");
         sb.AppendLine();
 
         if (detailed || !byFile)
@@ -72,21 +73,6 @@ public sealed class MarkdownRenderer : IResultRenderer
         }
 
         _writer.Write(sb.ToString());
-    }
-
-    private static void AppendSkippedSection(StringBuilder sb, AnalysisSummary summary)
-    {
-        sb.AppendLine();
-        sb.AppendLine("## Skipped");
-        sb.AppendLine();
-
-        foreach (var entry in summary.Skipped)
-        {
-            sb.Append("- ");
-            sb.Append(Escape(entry.Path));
-            sb.Append(" — ");
-            sb.AppendLine(Escape(entry.Reason));
-        }
     }
 
     private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
@@ -193,6 +179,21 @@ public sealed class MarkdownRenderer : IResultRenderer
         sb.Append("| ");
         sb.AppendJoin(" | ", cells);
         sb.AppendLine(" |");
+    }
+
+    private static void AppendSkippedSection(StringBuilder sb, AnalysisSummary summary)
+    {
+        sb.AppendLine();
+        sb.AppendLine("## Skipped");
+        sb.AppendLine();
+
+        foreach (var entry in summary.Skipped)
+        {
+            sb.Append("- ");
+            sb.Append(Escape(entry.Path));
+            sb.Append(" — ");
+            sb.AppendLine(Escape(entry.Reason));
+        }
     }
 
     private static string Escape(string cell) =>

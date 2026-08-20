@@ -18,9 +18,11 @@ public sealed class TableRenderer : IResultRenderer
     /// <see cref="RenderByFile"/> and <see cref="BuildLanguageTable"/> directly for those.
     /// <paramref name="detailed"/> has no Table equivalent (a table shows either the
     /// by-language or by-file view, never both) and is ignored, matching how the other
-    /// renderers treat it as meaningless for this format.
+    /// renderers treat it as meaningless for this format. <paramref name="sourcePath"/> is
+    /// also ignored here; <see cref="AnalyzeHandler"/> prints the analyzed path as a
+    /// separate banner line above the table instead.
     /// </remarks>
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
 

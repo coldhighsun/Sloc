@@ -198,8 +198,9 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
-    /// Verifies the precedence order documented on <see cref="GitIgnoreRules.Load"/>: the
-    /// repo-local <c>.git/info/exclude</c> is lowest precedence among the tiers testable
+    /// Verifies the precedence order documented on
+    /// <see cref="GitIgnoreRules.Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string}, bool)"/>: the
+    /// repo-local <c>.git/info/exclude</c> is the lowest precedence among the tiers testable
     /// without touching the real user profile, so a later, more specific <c>.gitignore</c>
     /// pattern (negation) can override it. The global <c>core.excludesFile</c> tier sits
     /// below this and is covered separately by <see cref="TryParseExcludesFile_ExtractsCoreSectionSetting"/>

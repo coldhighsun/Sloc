@@ -10,6 +10,22 @@ namespace Sloc.Cli.Tests;
 public class JsonRendererTests
 {
     /// <summary>
+    /// Verifies that the by-file payload emits the per-file array and omits by-language.
+    /// </summary>
+    [Fact]
+    public void Render_ByFile_EmitsFilesAndOmitsByLanguage()
+    {
+        var summary = BuildSummary();
+
+        var root = Render(summary, byFile: true, noHealth: false);
+
+        Assert.False(root.TryGetProperty("byLanguage", out _));
+        var files = root.GetProperty("files");
+        Assert.Equal(1, files.GetArrayLength());
+        Assert.Equal("a.cs", files[0].GetProperty("path").GetString());
+    }
+
+    /// <summary>
     /// Verifies that the by-language payload includes totals, percentages, and health,
     /// and omits the per-file array.
     /// </summary>
@@ -30,40 +46,6 @@ public class JsonRendererTests
         Assert.Equal("C#", language.GetProperty("language").GetString());
         Assert.True(language.TryGetProperty("health", out _));
         Assert.False(root.TryGetProperty("files", out _));
-    }
-
-    /// <summary>
-    /// Verifies that <c>noHealth</c> suppresses only the health field, while percentages
-    /// remain in the payload.
-    /// </summary>
-    [Fact]
-    public void Render_NoHealth_KeepsPercentagesButOmitsHealth()
-    {
-        var summary = BuildSummary();
-
-        var root = Render(summary, byFile: false, noHealth: true);
-
-        Assert.True(root.TryGetProperty("codePct", out _));
-        Assert.True(root.TryGetProperty("commentPct", out _));
-        var language = root.GetProperty("byLanguage")[0];
-        Assert.True(language.TryGetProperty("codePct", out _));
-        Assert.False(language.TryGetProperty("health", out _));
-    }
-
-    /// <summary>
-    /// Verifies that the by-file payload emits the per-file array and omits by-language.
-    /// </summary>
-    [Fact]
-    public void Render_ByFile_EmitsFilesAndOmitsByLanguage()
-    {
-        var summary = BuildSummary();
-
-        var root = Render(summary, byFile: true, noHealth: false);
-
-        Assert.False(root.TryGetProperty("byLanguage", out _));
-        var files = root.GetProperty("files");
-        Assert.Equal(1, files.GetArrayLength());
-        Assert.Equal("a.cs", files[0].GetProperty("path").GetString());
     }
 
     /// <summary>
@@ -100,11 +82,41 @@ public class JsonRendererTests
         Assert.Equal("2026-07-26T10:30:00Z", root.GetProperty("generatedAt").GetString());
     }
 
-    private static JsonElement Render(AnalysisSummary summary, bool byFile, bool noHealth)
+    /// <summary>
+    /// Verifies that <c>noHealth</c> suppresses only the health field, while percentages
+    /// remain in the payload.
+    /// </summary>
+    [Fact]
+    public void Render_NoHealth_KeepsPercentagesButOmitsHealth()
     {
-        using var writer = new StringWriter();
-        new JsonRenderer(writer).Render(summary, byFile, noHealth);
-        return JsonSerializer.Deserialize<JsonElement>(writer.ToString());
+        var summary = BuildSummary();
+
+        var root = Render(summary, byFile: false, noHealth: true);
+
+        Assert.True(root.TryGetProperty("codePct", out _));
+        Assert.True(root.TryGetProperty("commentPct", out _));
+        var language = root.GetProperty("byLanguage")[0];
+        Assert.True(language.TryGetProperty("codePct", out _));
+        Assert.False(language.TryGetProperty("health", out _));
+    }
+
+    /// <summary>
+    /// Verifies that <c>sourcePath</c> is emitted when supplied and omitted when not.
+    /// </summary>
+    [Fact]
+    public void Render_SourcePath_EmittedOnlyWhenSupplied()
+    {
+        var summary = BuildSummary();
+
+        using var withSource = new StringWriter();
+        new JsonRenderer(withSource).Render(summary, byFile: false, noHealth: false, sourcePath: "src");
+        var rootWithSource = JsonSerializer.Deserialize<JsonElement>(withSource.ToString());
+        Assert.Equal("src", rootWithSource.GetProperty("sourcePath").GetString());
+
+        using var withoutSource = new StringWriter();
+        new JsonRenderer(withoutSource).Render(summary, byFile: false, noHealth: false);
+        var rootWithoutSource = JsonSerializer.Deserialize<JsonElement>(withoutSource.ToString());
+        Assert.False(rootWithoutSource.TryGetProperty("sourcePath", out _));
     }
 
     private static AnalysisSummary BuildSummary()
@@ -118,5 +130,12 @@ public class JsonRendererTests
             Blank = 1
         };
         return new AnalysisSummary([file]);
+    }
+
+    private static JsonElement Render(AnalysisSummary summary, bool byFile, bool noHealth)
+    {
+        using var writer = new StringWriter();
+        new JsonRenderer(writer).Render(summary, byFile, noHealth);
+        return JsonSerializer.Deserialize<JsonElement>(writer.ToString());
     }
 }

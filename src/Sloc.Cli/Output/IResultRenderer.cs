@@ -17,5 +17,10 @@ public interface IResultRenderer
     /// When <see langword="true"/>, emit both the by-language summary and the per-file
     /// breakdown together instead of one or the other.
     /// </param>
-    void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false);
+    /// <param name="sourcePath">
+    /// The path, list file, or git commit/tree-ish that was analyzed, included in report
+    /// metadata (where supported) so a saved or shared report can be traced back to its
+    /// source. <see langword="null"/> omits it.
+    /// </param>
+    void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null);
 }
