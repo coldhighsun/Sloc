@@ -245,8 +245,7 @@ public static class LanguageRegistry
                 Extensions = [".sql"],
                 LineCommentTokens = ["--"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [singleQuote, doubleQuote],
-                ShowHealth = false
+                StringLiterals = [singleQuote, doubleQuote]
             },
             new()
             {
@@ -254,8 +253,7 @@ public static class LanguageRegistry
                 Extensions = [".ps1", ".psm1", ".psd1"],
                 LineCommentTokens = ["#"],
                 BlockComments = [new BlockComment("<#", "#>")],
-                StringLiterals = [doubleQuote, singleQuote],
-                ShowHealth = false
+                StringLiterals = [doubleQuote, singleQuote]
             },
             new()
             {

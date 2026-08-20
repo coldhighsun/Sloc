@@ -206,53 +206,13 @@ public sealed class HtmlRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
         var sb = new StringBuilder();
-        BuildDocument(sb, summary, byFile, noHealth, detailed);
+        BuildDocument(sb, summary, byFile, noHealth, detailed, sourcePath);
         _writer.Write(sb);
-    }
-
-    private void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed)
-    {
-        sb.AppendLine("<!DOCTYPE html>");
-        sb.AppendLine("<html lang=\"en\">");
-        sb.AppendLine("<head>");
-        sb.AppendLine("  <meta charset=\"UTF-8\">");
-        sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"  <title>{Encode("Sloc Report")}</title>");
-        sb.AppendLine("  <style>");
-        sb.AppendLine(Css);
-        sb.AppendLine("  </style>");
-        sb.AppendLine("</head>");
-        sb.AppendLine("<body>");
-        sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
-        var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(generated)} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}</p>");
-
-        if (detailed || !byFile)
-        {
-            BuildLanguageSection(sb, summary, noHealth);
-        }
-
-        if (detailed || byFile)
-        {
-            BuildFileSection(sb, summary, noHealth);
-        }
-
-        if (summary.Skipped.Count > 0)
-        {
-            BuildSkippedSection(sb, summary);
-        }
-
-        sb.AppendLine("<script>");
-        sb.AppendLine(Script);
-        sb.AppendLine("</script>");
-
-        sb.AppendLine("</body>");
-        sb.AppendLine("</html>");
     }
 
     private static void BuildFileSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)
@@ -596,6 +556,47 @@ public sealed class HtmlRenderer : IResultRenderer
         {
             return path;
         }
+    }
+
+    private void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed, string? sourcePath)
+    {
+        sb.AppendLine("<!DOCTYPE html>");
+        sb.AppendLine("<html lang=\"en\">");
+        sb.AppendLine("<head>");
+        sb.AppendLine("  <meta charset=\"UTF-8\">");
+        sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+        sb.AppendLine($"  <title>{Encode("Sloc Report")}</title>");
+        sb.AppendLine("  <style>");
+        sb.AppendLine(Css);
+        sb.AppendLine("  </style>");
+        sb.AppendLine("</head>");
+        sb.AppendLine("<body>");
+        sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
+        var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var sourceMeta = string.IsNullOrEmpty(sourcePath) ? string.Empty : $" &nbsp;|&nbsp; {"Source:"} {Encode(sourcePath)}";
+        sb.AppendLine($"<p class=\"meta\">{"Generated:"} {Encode(generated)} &nbsp;|&nbsp; {summary.FileCount:N0} {"files"} &nbsp;|&nbsp; {summary.Total:N0} {"total lines"}{sourceMeta}</p>");
+
+        if (detailed || !byFile)
+        {
+            BuildLanguageSection(sb, summary, noHealth);
+        }
+
+        if (detailed || byFile)
+        {
+            BuildFileSection(sb, summary, noHealth);
+        }
+
+        if (summary.Skipped.Count > 0)
+        {
+            BuildSkippedSection(sb, summary);
+        }
+
+        sb.AppendLine("<script>");
+        sb.AppendLine(Script);
+        sb.AppendLine("</script>");
+
+        sb.AppendLine("</body>");
+        sb.AppendLine("</html>");
     }
 
     private sealed class FileEntry

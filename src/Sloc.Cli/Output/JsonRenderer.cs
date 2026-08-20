@@ -9,8 +9,8 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class JsonRenderer : IResultRenderer
 {
-    private readonly TextWriter _writer;
     private readonly DateTimeOffset _generatedAt;
+    private readonly TextWriter _writer;
 
     /// <summary>
     /// Initializes a new instance of <see cref="JsonRenderer"/>.
@@ -30,7 +30,7 @@ public sealed class JsonRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -40,6 +40,7 @@ public sealed class JsonRenderer : IResultRenderer
         var report = new JsonReport
         {
             GeneratedAt = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+            SourcePath = sourcePath,
             FileCount = summary.FileCount,
             Code = summary.Code,
             CodePct = Pct(summary.Code, summary.Total),
@@ -86,67 +87,11 @@ public sealed class JsonRenderer : IResultRenderer
         _writer.WriteLine(JsonSerializer.Serialize(report, SlocJsonContext.Default.JsonReport));
     }
 
-    private static double Pct(int count, int total) =>
-        total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
-
     private static string? Health(CommentHealthLevel health, bool noHealth) =>
         noHealth || health == CommentHealthLevel.NotApplicable ? null : health.ToString();
-}
 
-/// <summary>
-/// The top-level JSON report payload.
-/// </summary>
-internal sealed class JsonReport
-{
-    public required string GeneratedAt { get; init; }
-
-    public int FileCount { get; init; }
-
-    public int Code { get; init; }
-
-    public double? CodePct { get; init; }
-
-    public int Comment { get; init; }
-
-    public double? CommentPct { get; init; }
-
-    public int Blank { get; init; }
-
-    public double? BlankPct { get; init; }
-
-    public int Total { get; init; }
-
-    public IReadOnlyList<JsonLanguage>? ByLanguage { get; init; }
-
-    public IReadOnlyList<JsonFile>? Files { get; init; }
-
-    public IReadOnlyList<JsonSkipped> Skipped { get; init; } = [];
-}
-
-/// <summary>
-/// Per-language statistics in the JSON report.
-/// </summary>
-internal sealed class JsonLanguage
-{
-    public required string Language { get; init; }
-
-    public int Files { get; init; }
-
-    public int Code { get; init; }
-
-    public double? CodePct { get; init; }
-
-    public int Comment { get; init; }
-
-    public double? CommentPct { get; init; }
-
-    public int Blank { get; init; }
-
-    public double? BlankPct { get; init; }
-
-    public int Total { get; init; }
-
-    public string? Health { get; init; }
+    private static double Pct(int count, int total) =>
+            total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
 }
 
 /// <summary>
@@ -154,25 +99,183 @@ internal sealed class JsonLanguage
 /// </summary>
 internal sealed class JsonFile
 {
-    public required string Path { get; init; }
+    public int Blank
+    {
+        get; init;
+    }
 
-    public required string Language { get; init; }
+    public double? BlankPct
+    {
+        get; init;
+    }
 
-    public int Code { get; init; }
+    public int Code
+    {
+        get; init;
+    }
 
-    public double? CodePct { get; init; }
+    public double? CodePct
+    {
+        get; init;
+    }
 
-    public int Comment { get; init; }
+    public int Comment
+    {
+        get; init;
+    }
 
-    public double? CommentPct { get; init; }
+    public double? CommentPct
+    {
+        get; init;
+    }
 
-    public int Blank { get; init; }
+    public string? Health
+    {
+        get; init;
+    }
 
-    public double? BlankPct { get; init; }
+    public required string Language
+    {
+        get; init;
+    }
 
-    public int Total { get; init; }
+    public required string Path
+    {
+        get; init;
+    }
 
-    public string? Health { get; init; }
+    public int Total
+    {
+        get; init;
+    }
+}
+
+/// <summary>
+/// Per-language statistics in the JSON report.
+/// </summary>
+internal sealed class JsonLanguage
+{
+    public int Blank
+    {
+        get; init;
+    }
+
+    public double? BlankPct
+    {
+        get; init;
+    }
+
+    public int Code
+    {
+        get; init;
+    }
+
+    public double? CodePct
+    {
+        get; init;
+    }
+
+    public int Comment
+    {
+        get; init;
+    }
+
+    public double? CommentPct
+    {
+        get; init;
+    }
+
+    public int Files
+    {
+        get; init;
+    }
+
+    public string? Health
+    {
+        get; init;
+    }
+
+    public required string Language
+    {
+        get; init;
+    }
+
+    public int Total
+    {
+        get; init;
+    }
+}
+
+/// <summary>
+/// The top-level JSON report payload.
+/// </summary>
+internal sealed class JsonReport
+{
+    public int Blank
+    {
+        get; init;
+    }
+
+    public double? BlankPct
+    {
+        get; init;
+    }
+
+    public IReadOnlyList<JsonLanguage>? ByLanguage
+    {
+        get; init;
+    }
+
+    public int Code
+    {
+        get; init;
+    }
+
+    public double? CodePct
+    {
+        get; init;
+    }
+
+    public int Comment
+    {
+        get; init;
+    }
+
+    public double? CommentPct
+    {
+        get; init;
+    }
+
+    public int FileCount
+    {
+        get; init;
+    }
+
+    public IReadOnlyList<JsonFile>? Files
+    {
+        get; init;
+    }
+
+    public required string GeneratedAt
+    {
+        get; init;
+    }
+
+    public IReadOnlyList<JsonSkipped> Skipped { get; init; } = [];
+
+    /// <summary>
+    /// The path, list file, or git commit/tree-ish that was analyzed. Omitted when not
+    /// supplied to the renderer.
+    /// </summary>
+    public string? SourcePath
+    {
+        get; init;
+    }
+
+    public int Total
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -180,9 +283,15 @@ internal sealed class JsonFile
 /// </summary>
 internal sealed class JsonSkipped
 {
-    public required string Path { get; init; }
+    public required string Path
+    {
+        get; init;
+    }
 
-    public required string Reason { get; init; }
+    public required string Reason
+    {
+        get; init;
+    }
 }
 
 /// <summary>

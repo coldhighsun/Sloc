@@ -31,7 +31,12 @@ public sealed class CsvRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false)
+    /// <remarks>
+    /// <paramref name="sourcePath"/> is accepted only to satisfy <see cref="IResultRenderer"/>
+    /// and is intentionally ignored, for the same reason this renderer has no
+    /// report-generation-time field (see the class remarks).
+    /// </remarks>
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -52,15 +57,49 @@ public sealed class CsvRenderer : IResultRenderer
         }
     }
 
-    private void RenderSkipped(AnalysisSummary summary)
+    private static string Escape(string field)
     {
-        _writer.Write("\r\n");
-        WriteRow(["Path", "Reason"]);
-
-        foreach (var entry in summary.Skipped)
+        if (field.IndexOfAny([',', '"', '\r', '\n']) < 0)
         {
-            WriteRow([entry.Path, entry.Reason]);
+            return field;
         }
+
+        return "\"" + field.Replace("\"", "\"\"") + "\"";
+    }
+
+    private static string HealthCell(CommentHealthLevel health) =>
+        health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
+
+    private void RenderByFile(AnalysisSummary summary, bool noHealth)
+    {
+        var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
+        if (!noHealth)
+        {
+            header.Add("Health");
+        }
+
+        WriteRow(header);
+
+        foreach (var file in summary.Files)
+        {
+            var row = new List<string>
+            {
+                file.Path,
+                file.Language,
+                file.Code.ToString(),
+                file.Comment.ToString(),
+                file.Blank.ToString(),
+                file.Total.ToString()
+            };
+            if (!noHealth)
+            {
+                row.Add(HealthCell(file.Health));
+            }
+
+            WriteRow(row);
+        }
+
+        WriteTotalRow(summary, noHealth, string.Empty);
     }
 
     private void RenderByLanguage(AnalysisSummary summary, bool noHealth)
@@ -95,36 +134,33 @@ public sealed class CsvRenderer : IResultRenderer
         WriteTotalRow(summary, noHealth, summary.FileCount.ToString());
     }
 
-    private void RenderByFile(AnalysisSummary summary, bool noHealth)
+    private void RenderSkipped(AnalysisSummary summary)
     {
-        var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
-        if (!noHealth)
+        _writer.Write("\r\n");
+        WriteRow(["Path", "Reason"]);
+
+        foreach (var entry in summary.Skipped)
         {
-            header.Add("Health");
+            WriteRow([entry.Path, entry.Reason]);
         }
+    }
 
-        WriteRow(header);
-
-        foreach (var file in summary.Files)
+    private void WriteRow(IReadOnlyList<string> fields)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < fields.Count; i++)
         {
-            var row = new List<string>
+            if (i > 0)
             {
-                file.Path,
-                file.Language,
-                file.Code.ToString(),
-                file.Comment.ToString(),
-                file.Blank.ToString(),
-                file.Total.ToString()
-            };
-            if (!noHealth)
-            {
-                row.Add(HealthCell(file.Health));
+                sb.Append(',');
             }
 
-            WriteRow(row);
+            sb.Append(Escape(fields[i]));
         }
 
-        WriteTotalRow(summary, noHealth, string.Empty);
+        // RFC 4180 uses CRLF as the record separator.
+        _writer.Write(sb.ToString());
+        _writer.Write("\r\n");
     }
 
     // The second column is the file/language count for the by-language table and blank for
@@ -146,36 +182,5 @@ public sealed class CsvRenderer : IResultRenderer
         }
 
         WriteRow(row);
-    }
-
-    private static string HealthCell(CommentHealthLevel health) =>
-        health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
-
-    private void WriteRow(IReadOnlyList<string> fields)
-    {
-        var sb = new StringBuilder();
-        for (var i = 0; i < fields.Count; i++)
-        {
-            if (i > 0)
-            {
-                sb.Append(',');
-            }
-
-            sb.Append(Escape(fields[i]));
-        }
-
-        // RFC 4180 uses CRLF as the record separator.
-        _writer.Write(sb.ToString());
-        _writer.Write("\r\n");
-    }
-
-    private static string Escape(string field)
-    {
-        if (field.IndexOfAny([',', '"', '\r', '\n']) < 0)
-        {
-            return field;
-        }
-
-        return "\"" + field.Replace("\"", "\"\"") + "\"";
     }
 }

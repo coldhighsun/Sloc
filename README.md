@@ -1,15 +1,21 @@
 ﻿<a id="english"></a>
 # Sloc
 
-[English](#english) | [中文](#中文)
-
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc?label=nuget%20downloads)](https://www.nuget.org/packages/Sloc)
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
+[![GitHub release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
+![Winget](https://img.shields.io/winget/v/coldhighsun.sloc)
+![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
 
-Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code. It analyzes files individually, distinguishing **code lines**, **comment lines**, and **blank lines**, then aggregates results by programming language. It supports 66 auto-detected languages, five output formats (table, JSON, HTML, CSV, Markdown), per-file detail view, and comment health indicators.
+---
+
+[English](#english) | [中文](#中文)
+
+Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code.
 
 ## Features
 
@@ -218,13 +224,7 @@ This project is released under the [MIT License](https://opensource.org/licenses
 
 [English](#english) | [中文](#中文)
 
-[![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
-[![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc)](https://www.nuget.org/packages/Sloc)
-[![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。它会逐文件分析代码，区分**代码行**、**注释行**和**空行**，并按编程语言进行聚合汇总，支持 66 种语言自动识别、五种输出格式（表格、JSON、HTML、CSV、Markdown）、逐文件明细视图以及注释健康度指标。
+Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。
 
 ## 功能特性
 
