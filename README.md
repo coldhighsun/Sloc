@@ -2,14 +2,17 @@
 # Sloc
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
+![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
+![NuGet Pre Release](https://img.shields.io/nuget/vpre/Sloc)
+![Winget](https://img.shields.io/winget/v/coldhighsun.sloc)
+
+[![GitHub release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
+[![GitHub release (pre)](https://img.shields.io/github/v/release/coldhighsun/Sloc?include_prereleases&label=pre-release)](https://github.com/coldhighsun/Sloc/releases)
+![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc?label=nuget%20downloads)](https://www.nuget.org/packages/Sloc)
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
-[![GitHub release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
-![Winget](https://img.shields.io/winget/v/coldhighsun.sloc)
-![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
 
 ---
 
