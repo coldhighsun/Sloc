@@ -71,10 +71,25 @@ public sealed record StringLiteral(
 /// </summary>
 public sealed class LanguageDefinition
 {
+    private Dictionary<char, BlockComment[]>? _blockCommentsByFirstChar;
+
+    private Dictionary<char, string[]>? _lineCommentsByFirstChar;
+
+    private Dictionary<char, StringLiteral[]>? _stringLiteralsByFirstChar;
+
     /// <summary>
     /// The delimiter pairs that start and end block comments (e.g. <c>/*</c> … <c>*/</c>).
     /// </summary>
     public IReadOnlyList<BlockComment> BlockComments { get; init; } = [];
+
+    /// <summary>
+    /// Whether <see cref="LineCommentTokens"/> are matched case-insensitively, as with
+    /// Batch's <c>REM</c>.
+    /// </summary>
+    public bool CaseInsensitiveLineComments
+    {
+        get; init;
+    }
 
     /// <summary>
     /// The file extensions (including the leading dot, lower-case) that map to this language.
@@ -109,19 +124,6 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
 
     /// <summary>
-    /// Whether <see cref="LineCommentTokens"/> are matched case-insensitively, as with
-    /// Batch's <c>REM</c>.
-    /// </summary>
-    public bool CaseInsensitiveLineComments { get; init; }
-
-    /// <summary>
-    /// The string-literal delimiters recognized so that comment tokens inside strings
-    /// are not misclassified. When several delimiters share a prefix, list the longer
-    /// ones first (e.g. <c>"""</c> before <c>"</c>).
-    /// </summary>
-    public IReadOnlyList<StringLiteral> StringLiterals { get; init; } = [];
-
-    /// <summary>
     /// The human-readable name of the language (e.g. "C#").
     /// </summary>
     public required string Name
@@ -137,10 +139,71 @@ public sealed class LanguageDefinition
     public bool ShowHealth { get; init; } = true;
 
     /// <summary>
+    /// The string-literal delimiters recognized so that comment tokens inside strings
+    /// are not misclassified. When several delimiters share a prefix, list the longer
+    /// ones first (e.g. <c>"""</c> before <c>"</c>).
+    /// </summary>
+    public IReadOnlyList<StringLiteral> StringLiterals { get; init; } = [];
+
+    /// <summary>
     /// Gets a value indicating whether comment-health analysis is meaningful for this
     /// language: the language opts in via <see cref="ShowHealth"/> and actually defines
     /// at least one comment token.
     /// </summary>
     public bool SupportsHealth =>
         ShowHealth && (LineCommentTokens.Count > 0 || BlockComments.Count > 0);
+
+    /// <summary>
+    /// <see cref="BlockComments"/> grouped by the first character of <see cref="BlockComment.Open"/>,
+    /// so <see cref="LineClassifier"/> can skip straight to the candidates that could possibly
+    /// match at a given position instead of scanning every block-comment pair. Built lazily on
+    /// first use and cached for the lifetime of this (shared, immutable) definition.
+    /// </summary>
+    internal Dictionary<char, BlockComment[]> BlockCommentsByFirstChar =>
+        _blockCommentsByFirstChar ??= GroupByFirstChar(BlockComments, b => b.Open, c => c);
+
+    /// <summary>
+    /// <see cref="LineCommentTokens"/> grouped by their first character (case-folded when
+    /// <see cref="CaseInsensitiveLineComments"/> is set), for the same reason as
+    /// <see cref="BlockCommentsByFirstChar"/>.
+    /// </summary>
+    internal Dictionary<char, string[]> LineCommentsByFirstChar =>
+        _lineCommentsByFirstChar ??= GroupByFirstChar(
+            LineCommentTokens,
+            token => token,
+            c => CaseInsensitiveLineComments ? char.ToUpperInvariant(c) : c);
+
+    /// <summary>
+    /// <see cref="StringLiterals"/> grouped by the first character of <see cref="StringLiteral.Delimiter"/>,
+    /// for the same reason as <see cref="BlockCommentsByFirstChar"/>.
+    /// </summary>
+    internal Dictionary<char, StringLiteral[]> StringLiteralsByFirstChar =>
+        _stringLiteralsByFirstChar ??= GroupByFirstChar(StringLiterals, s => s.Delimiter, c => c);
+
+    private static Dictionary<char, T[]> GroupByFirstChar<T>(
+        IReadOnlyList<T> items,
+        Func<T, string> tokenSelector,
+        Func<char, char> keySelector)
+    {
+        var groups = new Dictionary<char, List<T>>();
+        foreach (var item in items)
+        {
+            var token = tokenSelector(item);
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            var key = keySelector(token[0]);
+            if (!groups.TryGetValue(key, out var list))
+            {
+                list = [];
+                groups[key] = list;
+            }
+
+            list.Add(item);
+        }
+
+        return groups.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray());
+    }
 }
