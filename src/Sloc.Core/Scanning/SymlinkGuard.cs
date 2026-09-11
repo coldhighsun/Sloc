@@ -1,4 +1,4 @@
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// Shared directory-symlink/junction loop detection, used by both

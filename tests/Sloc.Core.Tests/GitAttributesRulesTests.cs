@@ -1,3 +1,5 @@
+using Sloc.Core.Scanning;
+
 namespace Sloc.Core.Tests;
 
 /// <summary>

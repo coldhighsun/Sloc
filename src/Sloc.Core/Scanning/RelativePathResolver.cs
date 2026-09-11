@@ -1,4 +1,4 @@
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// Shared "make a scan-root-relative path relative to a rule file's own base directory"

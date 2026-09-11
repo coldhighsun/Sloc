@@ -1,4 +1,5 @@
-﻿using Sloc.Cli;
+﻿using Sloc.Cli.Analysis;
+using Sloc.Cli.Parsing;
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
 using System.CommandLine;
@@ -77,6 +78,11 @@ var noRecursiveOption = new Option<bool>("--no-recursive")
 var noHealthOption = new Option<bool>("--no-health")
 {
     Description = "Hide the Comment Health column and percentage breakdowns."
+};
+
+var noComplexityOption = new Option<bool>("--no-complexity")
+{
+    Description = "Hide the Complexity column/field."
 };
 
 var byFileOption = new Option<bool>("--by-file")
@@ -184,6 +190,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     allOption,
     outputOption,
     noHealthOption,
+    noComplexityOption,
     quietOption,
     noProgressOption,
     minCommentPctOption,
@@ -261,6 +268,7 @@ rootCommand.SetAction(parseResult =>
         IncludeUnknown = parseResult.GetValue(allOption),
         OutputFile = outputFile,
         NoHealth = parseResult.GetValue(noHealthOption),
+        NoComplexity = parseResult.GetValue(noComplexityOption),
         Quiet = parseResult.GetValue(quietOption),
         NoProgress = parseResult.GetValue(noProgressOption),
         MinCommentPct = minCommentPct,

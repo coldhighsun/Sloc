@@ -14,15 +14,15 @@ public sealed class TableRenderer : IResultRenderer
     /// <remarks>
     /// Table-specific capabilities that the shared <see cref="IResultRenderer"/> signature
     /// cannot express — pagination and the live-refreshing progress table — are not
-    /// available through this method; <see cref="AnalyzeHandler"/> calls
+    /// available through this method; <see cref="Analysis.AnalyzeHandler"/> calls
     /// <see cref="RenderByFile"/> and <see cref="BuildLanguageTable"/> directly for those.
     /// <paramref name="detailed"/> has no Table equivalent (a table shows either the
     /// by-language or by-file view, never both) and is ignored, matching how the other
     /// renderers treat it as meaningless for this format. <paramref name="sourcePath"/> is
-    /// also ignored here; <see cref="AnalyzeHandler"/> prints the analyzed path as a
+    /// also ignored here; <see cref="Analysis.AnalyzeHandler"/> prints the analyzed path as a
     /// separate banner line above the table instead.
     /// </remarks>
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -32,17 +32,17 @@ public sealed class TableRenderer : IResultRenderer
         }
         else if (byFile)
         {
-            RenderByFile(summary, noHealth);
+            RenderByFile(summary, noHealth, noComplexity: noComplexity);
         }
         else
         {
-            AnsiConsole.Write(BuildLanguageTable(summary, noHealth: noHealth));
+            AnsiConsole.Write(BuildLanguageTable(summary, noHealth: noHealth, noComplexity: noComplexity));
         }
 
         RenderSkipped(summary);
     }
 
-    internal Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false)
+    internal Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false, bool noComplexity = false)
     {
         var table = new Table().Border(TableBorder.Rounded);
 
@@ -61,87 +61,87 @@ public sealed class TableRenderer : IResultRenderer
         {
             table.AddColumn("Comment Health");
         }
+        if (!noComplexity)
+        {
+            table.AddColumn(new TableColumn("Complexity").RightAligned());
+        }
 
         foreach (var language in summary.ByLanguage)
         {
             var codeCell = noHealth ? language.Code.ToString("N0") : WithPercent(language.Code, language.Total);
             var commentCell = noHealth ? language.Comment.ToString("N0") : WithPercent(language.Comment, language.Total);
             var blankCell = noHealth ? language.Blank.ToString("N0") : WithPercent(language.Blank, language.Total);
-            if (noHealth)
+            var row = new List<string>
             {
-                table.AddRow(
-                    Markup.Escape(language.Language),
-                    language.Files.ToString("N0"),
-                    codeCell,
-                    commentCell,
-                    blankCell,
-                    language.Total.ToString("N0"));
-            }
-            else
+                Markup.Escape(language.Language),
+                language.Files.ToString("N0"),
+                codeCell,
+                commentCell,
+                blankCell,
+                language.Total.ToString("N0")
+            };
+            if (!noHealth)
             {
-                table.AddRow(
-                    Markup.Escape(language.Language),
-                    language.Files.ToString("N0"),
-                    codeCell,
-                    commentCell,
-                    blankCell,
-                    language.Total.ToString("N0"),
-                    BuildHealthCell(language.Health));
+                row.Add(BuildHealthCell(language.Health));
             }
+            if (!noComplexity)
+            {
+                row.Add(BuildComplexityCell(language.ComplexityTotal));
+            }
+
+            table.AddRow(row.ToArray());
         }
 
         table.AddEmptyRow();
         var totalCodeCell = noHealth ? $"[bold]{summary.Code:N0}[/]" : WithPercent(summary.Code, summary.Total, bold: true);
         var totalCommentCell = noHealth ? $"[bold]{summary.Comment:N0}[/]" : WithPercent(summary.Comment, summary.Total, bold: true);
         var totalBlankCell = noHealth ? $"[bold]{summary.Blank:N0}[/]" : WithPercent(summary.Blank, summary.Total, bold: true);
-        if (noHealth)
+        var totalRow = new List<string>
         {
-            table.AddRow(
-                $"[bold]{"Total"}[/]",
-                $"[bold]{summary.FileCount:N0}[/]",
-                totalCodeCell,
-                totalCommentCell,
-                totalBlankCell,
-                $"[bold]{summary.Total:N0}[/]");
-        }
-        else
+            $"[bold]{"Total"}[/]",
+            $"[bold]{summary.FileCount:N0}[/]",
+            totalCodeCell,
+            totalCommentCell,
+            totalBlankCell,
+            $"[bold]{summary.Total:N0}[/]"
+        };
+        if (!noHealth)
         {
-            table.AddRow(
-                $"[bold]{"Total"}[/]",
-                $"[bold]{summary.FileCount:N0}[/]",
-                totalCodeCell,
-                totalCommentCell,
-                totalBlankCell,
-                $"[bold]{summary.Total:N0}[/]",
-                "[grey]—[/]");
+            totalRow.Add("[grey]—[/]");
         }
+        if (!noComplexity)
+        {
+            totalRow.Add(BuildComplexityCell(summary.ComplexityTotal, bold: true));
+        }
+
+        table.AddRow(totalRow.ToArray());
 
         return table;
     }
 
-    internal void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false)
+    internal void RenderByFile(AnalysisSummary summary, bool noHealth, bool paged = false, bool noComplexity = false)
     {
         var files = summary.Files;
         var grouped = BuildGroupedItems(files);
         if (paged && ShouldPaginate(files.Count, out var pageSize))
         {
-            RenderByFilePaged(summary, grouped, pageSize, noHealth);
+            RenderByFilePaged(summary, grouped, pageSize, noHealth, noComplexity);
         }
         else
         {
-            var table = CreateFileTable(noHealth);
+            var table = CreateFileTable(noHealth, noComplexity);
             foreach (var item in grouped)
             {
                 if (item.IsFolder)
                 {
-                    AddFolderHeaderRow(table, item.FolderPath, noHealth, item.TreePrefix);
+                    AddFolderHeaderRow(table, item.FolderPath, noHealth, noComplexity, item.TreePrefix);
                 }
                 else
                 {
-                    AddFileRow(table, item.File!, noHealth, indented: true, item.TreePrefix);
+                    AddFileRow(table, item.File!, noHealth, noComplexity, indented: true, item.TreePrefix);
                 }
             }
-            AddFileTotalRow(table, summary, noHealth);
+            AddFileTotalRow(table, summary, noHealth, noComplexity);
             AnsiConsole.Write(table);
         }
     }
@@ -166,7 +166,7 @@ public sealed class TableRenderer : IResultRenderer
         AnsiConsole.Write(table);
     }
 
-    private void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool indented = false, string treePrefix = "")
+    private void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool noComplexity, bool indented = false, string treePrefix = "")
     {
         var codeCell = noHealth ? file.Code.ToString("N0") : WithPercent(file.Code, file.Total);
         var commentCell = noHealth ? file.Comment.ToString("N0") : WithPercent(file.Comment, file.Total);
@@ -174,71 +174,78 @@ public sealed class TableRenderer : IResultRenderer
         var fileCell = indented
             ? $"{treePrefix}{Markup.Escape(Path.GetFileName(file.Path))}"
             : Markup.Escape(ToRelative(file.Path));
-        if (noHealth)
+        var row = new List<string>
         {
-            table.AddRow(
-                fileCell,
-                Markup.Escape(file.Language),
-                codeCell,
-                commentCell,
-                blankCell,
-                file.Total.ToString("N0"));
-        }
-        else
+            fileCell,
+            Markup.Escape(file.Language),
+            codeCell,
+            commentCell,
+            blankCell,
+            file.Total.ToString("N0")
+        };
+        if (!noHealth)
         {
-            table.AddRow(
-                fileCell,
-                Markup.Escape(file.Language),
-                codeCell,
-                commentCell,
-                blankCell,
-                file.Total.ToString("N0"),
-                BuildHealthCell(file.Health));
+            row.Add(BuildHealthCell(file.Health));
         }
+        if (!noComplexity)
+        {
+            row.Add(BuildComplexityCell(file.Complexity));
+        }
+
+        table.AddRow(row.ToArray());
     }
 
-    private void AddFileTotalRow(Table table, AnalysisSummary summary, bool noHealth)
+    private void AddFileTotalRow(Table table, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         table.AddEmptyRow();
         var totalCodeCell = noHealth ? $"[bold]{summary.Code:N0}[/]" : WithPercent(summary.Code, summary.Total, bold: true);
         var totalCommentCell = noHealth ? $"[bold]{summary.Comment:N0}[/]" : WithPercent(summary.Comment, summary.Total, bold: true);
         var totalBlankCell = noHealth ? $"[bold]{summary.Blank:N0}[/]" : WithPercent(summary.Blank, summary.Total, bold: true);
-        if (noHealth)
+        var row = new List<string>
         {
-            table.AddRow(
-                $"[bold]{"Total"}[/]",
-                $"[bold]{summary.FileCount:N0}[/]",
-                totalCodeCell,
-                totalCommentCell,
-                totalBlankCell,
-                $"[bold]{summary.Total:N0}[/]");
-        }
-        else
+            $"[bold]{"Total"}[/]",
+            $"[bold]{summary.FileCount:N0}[/]",
+            totalCodeCell,
+            totalCommentCell,
+            totalBlankCell,
+            $"[bold]{summary.Total:N0}[/]"
+        };
+        if (!noHealth)
         {
-            table.AddRow(
-                $"[bold]{"Total"}[/]",
-                $"[bold]{summary.FileCount:N0}[/]",
-                totalCodeCell,
-                totalCommentCell,
-                totalBlankCell,
-                $"[bold]{summary.Total:N0}[/]",
-                "[grey]—[/]");
+            row.Add("[grey]—[/]");
         }
+        if (!noComplexity)
+        {
+            row.Add(BuildComplexityCell(summary.ComplexityTotal, bold: true));
+        }
+
+        table.AddRow(row.ToArray());
     }
 
-    private void AddFolderHeaderRow(Table table, string folder, bool noHealth, string treePrefix = "")
+    private void AddFolderHeaderRow(Table table, string folder, bool noHealth, bool noComplexity, string treePrefix = "")
     {
         var label = string.IsNullOrEmpty(folder)
             ? $"{treePrefix}[grey].[/]"
             : $"{treePrefix}[bold]📁 {Markup.Escape(Path.GetFileName(folder))}[/]";
-        if (noHealth)
+        var columnCount = 5 + (noHealth ? 0 : 1) + (noComplexity ? 0 : 1);
+        var row = new string[columnCount + 1];
+        row[0] = label;
+        for (var i = 1; i < row.Length; i++)
         {
-            table.AddRow(label, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+            row[i] = string.Empty;
         }
-        else
+
+        table.AddRow(row);
+    }
+
+    private string BuildComplexityCell(int? complexity, bool bold = false)
+    {
+        if (complexity is not { } value)
         {
-            table.AddRow(label, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+            return "[grey]—[/]";
         }
+
+        return bold ? $"[bold]{value:N0}[/]" : value.ToString("N0");
     }
 
     private List<DisplayItem> BuildGroupedItems(IReadOnlyList<FileAnalysis> files)
@@ -307,7 +314,7 @@ public sealed class TableRenderer : IResultRenderer
         return root;
     }
 
-    private Table CreateFileTable(bool noHealth)
+    private Table CreateFileTable(bool noHealth, bool noComplexity = false)
     {
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("File");
@@ -319,6 +326,10 @@ public sealed class TableRenderer : IResultRenderer
         if (!noHealth)
         {
             table.AddColumn("Comment Health");
+        }
+        if (!noComplexity)
+        {
+            table.AddColumn(new TableColumn("Complexity").RightAligned());
         }
         return table;
     }
@@ -340,32 +351,32 @@ public sealed class TableRenderer : IResultRenderer
         }
     }
 
-    private void RenderByFilePaged(AnalysisSummary summary, List<DisplayItem> grouped, int pageSize, bool noHealth)
+    private void RenderByFilePaged(AnalysisSummary summary, List<DisplayItem> grouped, int pageSize, bool noHealth, bool noComplexity)
     {
         var total = summary.Files.Count;
         var filesShown = 0;
         var itemIndex = 0;
         while (itemIndex < grouped.Count)
         {
-            var table = CreateFileTable(noHealth);
+            var table = CreateFileTable(noHealth, noComplexity);
             var filesInPage = 0;
             while (itemIndex < grouped.Count && filesInPage < pageSize)
             {
                 var item = grouped[itemIndex++];
                 if (item.IsFolder)
                 {
-                    AddFolderHeaderRow(table, item.FolderPath, noHealth, item.TreePrefix);
+                    AddFolderHeaderRow(table, item.FolderPath, noHealth, noComplexity, item.TreePrefix);
                 }
                 else
                 {
-                    AddFileRow(table, item.File!, noHealth, indented: true, item.TreePrefix);
+                    AddFileRow(table, item.File!, noHealth, noComplexity, indented: true, item.TreePrefix);
                     filesInPage++;
                 }
             }
             filesShown += filesInPage;
             if (itemIndex >= grouped.Count)
             {
-                AddFileTotalRow(table, summary, noHealth);
+                AddFileTotalRow(table, summary, noHealth, noComplexity);
             }
             AnsiConsole.Write(table);
 

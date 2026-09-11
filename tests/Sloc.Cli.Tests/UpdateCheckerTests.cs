@@ -1,3 +1,4 @@
+using Sloc.Cli.Updates;
 using System.Net;
 
 namespace Sloc.Cli.Tests;

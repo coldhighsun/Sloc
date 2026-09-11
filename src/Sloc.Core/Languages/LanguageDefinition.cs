@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Sloc.Core.Languages;
 
 /// <summary>
@@ -77,6 +79,8 @@ public sealed class LanguageDefinition
 
     private Dictionary<char, StringLiteral[]>? _stringLiteralsByFirstChar;
 
+    private Regex? _complexityRegex;
+
     /// <summary>
     /// The delimiter pairs that start and end block comments (e.g. <c>/*</c> … <c>*/</c>).
     /// </summary>
@@ -114,6 +118,15 @@ public sealed class LanguageDefinition
     /// <see cref="Extensions"/> when resolving a file path.
     /// </summary>
     public IReadOnlyList<string> FilenameSuffixes { get; init; } = [];
+
+    /// <summary>
+    /// The tokens that count as a branch point for the simplified cyclomatic-complexity
+    /// metric (e.g. <c>if</c>, <c>for</c>, <c>&amp;&amp;</c>, <c>?:</c>). Tokens consisting
+    /// entirely of letters are matched as whole words; other tokens are matched literally.
+    /// Empty for languages where this metric is not meaningful (see
+    /// <see cref="SupportsComplexity"/>).
+    /// </summary>
+    public IReadOnlyList<string> ComplexityKeywords { get; init; } = [];
 
     /// <summary>
     /// The tokens that start a single-line comment (e.g. <c>//</c> or <c>#</c>).
@@ -154,6 +167,21 @@ public sealed class LanguageDefinition
         ShowHealth && (LineCommentTokens.Count > 0 || BlockComments.Count > 0);
 
     /// <summary>
+    /// Gets a value indicating whether the simplified cyclomatic-complexity metric is
+    /// meaningful for this language: it defines at least one <see cref="ComplexityKeywords"/>
+    /// token.
+    /// </summary>
+    public bool SupportsComplexity => ComplexityKeywords.Count > 0;
+
+    /// <summary>
+    /// A compiled regex matching any <see cref="ComplexityKeywords"/> token, used to count
+    /// branch points in a code line. Alphabetic tokens are matched as whole words; other
+    /// tokens (e.g. <c>&amp;&amp;</c>, <c>?:</c>) are matched literally. Built lazily and
+    /// cached for the lifetime of this (shared, immutable) definition.
+    /// </summary>
+    internal Regex ComplexityRegex => _complexityRegex ??= BuildComplexityRegex(ComplexityKeywords);
+
+    /// <summary>
     /// <see cref="BlockComments"/> grouped by the first character of <see cref="BlockComment.Open"/>,
     /// so <see cref="LineClassifier"/> can skip straight to the candidates that could possibly
     /// match at a given position instead of scanning every block-comment pair. Built lazily on
@@ -179,6 +207,22 @@ public sealed class LanguageDefinition
     /// </summary>
     internal Dictionary<char, StringLiteral[]> StringLiteralsByFirstChar =>
         _stringLiteralsByFirstChar ??= GroupByFirstChar(StringLiterals, s => s.Delimiter, c => c);
+
+    private static Regex BuildComplexityRegex(IReadOnlyList<string> keywords)
+    {
+        if (keywords.Count == 0)
+        {
+            // Never matched; kept simple rather than special-cased since SupportsComplexity
+            // guards every call site that would otherwise use this regex.
+            return new Regex("(?!)", RegexOptions.Compiled);
+        }
+
+        var alternatives = keywords
+            .OrderByDescending(keyword => keyword.Length)
+            .Select(keyword => keyword.All(char.IsLetter) ? $@"\b{Regex.Escape(keyword)}\b" : Regex.Escape(keyword));
+
+        return new Regex(string.Join('|', alternatives), RegexOptions.Compiled);
+    }
 
     private static Dictionary<char, T[]> GroupByFirstChar<T>(
         IReadOnlyList<T> items,

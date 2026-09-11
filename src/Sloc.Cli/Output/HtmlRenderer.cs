@@ -206,16 +206,16 @@ public sealed class HtmlRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
         var sb = new StringBuilder();
-        BuildDocument(sb, summary, byFile, noHealth, detailed, sourcePath);
+        BuildDocument(sb, summary, byFile, noHealth, detailed, sourcePath, noComplexity);
         _writer.Write(sb);
     }
 
-    private static void BuildFileSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)
+    private static void BuildFileSection(StringBuilder sb, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         sb.AppendLine($"<h2>{Encode("By File")}</h2>");
         sb.AppendLine("<div class=\"file-controls\">");
@@ -224,7 +224,8 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine("</div>");
         sb.AppendLine("<table id=\"by-file-table\">");
         var healthTh = noHealth ? string.Empty : $"<th>{Encode("Comment Health")}</th>";
-        sb.AppendLine($"  <thead><tr><th>{Encode("File")}</th><th>{Encode("Language")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}</tr></thead>");
+        var complexityTh = noComplexity ? string.Empty : $"<th class=\"r\">{Encode("Complexity")}</th>";
+        sb.AppendLine($"  <thead><tr><th>{Encode("File")}</th><th>{Encode("Language")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}{complexityTh}</tr></thead>");
         sb.AppendLine("  <tbody>");
 
         var root = BuildFolderTree(summary.Files);
@@ -235,30 +236,30 @@ public sealed class HtmlRenderer : IResultRenderer
 
         if (root.Name.Length > 0)
         {
-            RenderFolderRecursive(sb, root, null, 0, ref folderIndex, noHealth);
+            RenderFolderRecursive(sb, root, null, 0, ref folderIndex, noHealth, noComplexity);
         }
         else if (root.Files.Count > 0)
         {
             var rootId = $"folder-{folderIndex}";
             folderIndex++;
 
-            RenderFolderRow(sb, rootId, null, "(root)", root, 0, noHealth);
+            RenderFolderRow(sb, rootId, null, "(root)", root, 0, noHealth, noComplexity);
 
             foreach (var file in root.Files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
             {
-                RenderFileRow(sb, rootId, file, 1, noHealth);
+                RenderFileRow(sb, rootId, file, 1, noHealth, noComplexity);
             }
 
             foreach (var child in root.Children.Values.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
-                RenderFolderRecursive(sb, child, rootId, 1, ref folderIndex, noHealth);
+                RenderFolderRecursive(sb, child, rootId, 1, ref folderIndex, noHealth, noComplexity);
             }
         }
         else
         {
             foreach (var child in root.Children.Values.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
-                RenderFolderRecursive(sb, child, null, 0, ref folderIndex, noHealth);
+                RenderFolderRecursive(sb, child, null, 0, ref folderIndex, noHealth, noComplexity);
             }
         }
 
@@ -270,14 +271,15 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
-        if (noHealth)
+        if (!noHealth)
         {
-            sb.AppendLine("</tr></tfoot>");
+            sb.Append("<td></td>");
         }
-        else
+        if (!noComplexity)
         {
-            sb.AppendLine("<td></td></tr></tfoot>");
+            sb.Append($"<td class=\"r\">{ComplexityCell(summary.ComplexityTotal)}</td>");
         }
+        sb.AppendLine("</tr></tfoot>");
         sb.AppendLine("</table>");
     }
 
@@ -318,12 +320,13 @@ public sealed class HtmlRenderer : IResultRenderer
         return root;
     }
 
-    private static void BuildLanguageSection(StringBuilder sb, AnalysisSummary summary, bool noHealth)
+    private static void BuildLanguageSection(StringBuilder sb, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         sb.AppendLine($"<h2>{Encode("By Language")}</h2>");
         sb.AppendLine("<table>");
         var healthTh = noHealth ? string.Empty : $"<th>{Encode("Comment Health")}</th>";
-        sb.AppendLine($"  <thead><tr><th>{Encode("Language")}</th><th class=\"r\">{Encode("Files")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}</tr></thead>");
+        var complexityTh = noComplexity ? string.Empty : $"<th class=\"r\">{Encode("Complexity")}</th>";
+        sb.AppendLine($"  <thead><tr><th>{Encode("Language")}</th><th class=\"r\">{Encode("Files")}</th><th class=\"r\">{Encode("Code")}</th><th class=\"r\">{Encode("Comment")}</th><th class=\"r\">{Encode("Blank")}</th><th class=\"r\">{Encode("Total")}</th>{healthTh}{complexityTh}</tr></thead>");
         sb.AppendLine("  <tbody>");
 
         foreach (var lang in summary.ByLanguage)
@@ -339,6 +342,10 @@ public sealed class HtmlRenderer : IResultRenderer
             {
                 sb.Append($"<td>{HealthCell(lang.Health)}</td>");
             }
+            if (!noComplexity)
+            {
+                sb.Append($"<td class=\"r\">{ComplexityCell(lang.ComplexityTotal)}</td>");
+            }
             sb.AppendLine("</tr>");
         }
 
@@ -350,14 +357,15 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
-        if (noHealth)
+        if (!noHealth)
         {
-            sb.AppendLine("</tr></tfoot>");
+            sb.Append("<td></td>");
         }
-        else
+        if (!noComplexity)
         {
-            sb.AppendLine("<td></td></tr></tfoot>");
+            sb.Append($"<td class=\"r\">{ComplexityCell(summary.ComplexityTotal)}</td>");
         }
+        sb.AppendLine("</tr></tfoot>");
         sb.AppendLine("</table>");
     }
 
@@ -378,6 +386,9 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine("</table>");
     }
 
+    private static string ComplexityCell(int? complexity) =>
+        complexity is { } value ? value.ToString("N0") : "<span class=\"h-na\">—</span>";
+
     private static void ComputeTotals(FolderNode node)
     {
         var code = 0;
@@ -388,6 +399,9 @@ public sealed class HtmlRenderer : IResultRenderer
         var healthCode = 0;
         var healthComment = 0;
         var hasHealthSupport = false;
+
+        var complexityTotal = 0;
+        var hasComplexitySupport = false;
 
         foreach (var file in node.Files)
         {
@@ -401,6 +415,12 @@ public sealed class HtmlRenderer : IResultRenderer
                 healthCode += file.File.Code;
                 healthComment += file.File.Comment;
                 hasHealthSupport = true;
+            }
+
+            if (file.File.Complexity is { } fileComplexity)
+            {
+                complexityTotal += fileComplexity;
+                hasComplexitySupport = true;
             }
         }
 
@@ -416,6 +436,9 @@ public sealed class HtmlRenderer : IResultRenderer
             healthCode += child.HealthCode;
             healthComment += child.HealthComment;
             hasHealthSupport = hasHealthSupport || child.HasHealthSupport;
+
+            complexityTotal += child.ComplexityTotal ?? 0;
+            hasComplexitySupport = hasComplexitySupport || child.HasComplexitySupport;
         }
 
         node.Code = code;
@@ -425,6 +448,8 @@ public sealed class HtmlRenderer : IResultRenderer
         node.HealthCode = healthCode;
         node.HealthComment = healthComment;
         node.HasHealthSupport = hasHealthSupport;
+        node.HasComplexitySupport = hasComplexitySupport;
+        node.ComplexityTotal = hasComplexitySupport ? complexityTotal : null;
     }
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
@@ -465,7 +490,7 @@ public sealed class HtmlRenderer : IResultRenderer
         return $"{count:N0}<span class=\"pct\">({pct:F0}%)</span>";
     }
 
-    private static void RenderFileRow(StringBuilder sb, string parentId, FileEntry entry, int depth, bool noHealth)
+    private static void RenderFileRow(StringBuilder sb, string parentId, FileEntry entry, int depth, bool noHealth, bool noComplexity)
     {
         var indent = 36 + depth * 18;
 
@@ -480,28 +505,32 @@ public sealed class HtmlRenderer : IResultRenderer
         {
             sb.Append($"<td>{HealthCell(entry.File.Health)}</td>");
         }
+        if (!noComplexity)
+        {
+            sb.Append($"<td class=\"r\">{ComplexityCell(entry.File.Complexity)}</td>");
+        }
         sb.AppendLine("</tr>");
     }
 
-    private static void RenderFolderRecursive(StringBuilder sb, FolderNode node, string? parentId, int depth, ref int folderIndex, bool noHealth)
+    private static void RenderFolderRecursive(StringBuilder sb, FolderNode node, string? parentId, int depth, ref int folderIndex, bool noHealth, bool noComplexity)
     {
         var nodeId = $"folder-{folderIndex}";
         folderIndex++;
 
-        RenderFolderRow(sb, nodeId, parentId, node.Name, node, depth, noHealth);
+        RenderFolderRow(sb, nodeId, parentId, node.Name, node, depth, noHealth, noComplexity);
 
         foreach (var file in node.Files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
         {
-            RenderFileRow(sb, nodeId, file, depth + 1, noHealth);
+            RenderFileRow(sb, nodeId, file, depth + 1, noHealth, noComplexity);
         }
 
         foreach (var child in node.Children.Values.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
         {
-            RenderFolderRecursive(sb, child, nodeId, depth + 1, ref folderIndex, noHealth);
+            RenderFolderRecursive(sb, child, nodeId, depth + 1, ref folderIndex, noHealth, noComplexity);
         }
     }
 
-    private static void RenderFolderRow(StringBuilder sb, string nodeId, string? parentId, string label, FolderNode node, int depth, bool noHealth)
+    private static void RenderFolderRow(StringBuilder sb, string nodeId, string? parentId, string label, FolderNode node, int depth, bool noHealth, bool noComplexity)
     {
         var indent = 8 + depth * 18;
         var parentAttr = parentId is null ? string.Empty : $" data-parent-id=\"{parentId}\"";
@@ -523,6 +552,10 @@ public sealed class HtmlRenderer : IResultRenderer
         if (!noHealth)
         {
             sb.Append($"<td>{HealthCell(CommentHealth.Classify(node.HasHealthSupport, node.HealthCode, node.HealthComment))}</td>");
+        }
+        if (!noComplexity)
+        {
+            sb.Append($"<td class=\"r\">{ComplexityCell(node.ComplexityTotal)}</td>");
         }
         sb.AppendLine("</tr>");
     }
@@ -558,7 +591,7 @@ public sealed class HtmlRenderer : IResultRenderer
         }
     }
 
-    private void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed, string? sourcePath)
+    private void BuildDocument(StringBuilder sb, AnalysisSummary summary, bool byFile, bool noHealth, bool detailed, string? sourcePath, bool noComplexity)
     {
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html lang=\"en\">");
@@ -578,12 +611,12 @@ public sealed class HtmlRenderer : IResultRenderer
 
         if (detailed || !byFile)
         {
-            BuildLanguageSection(sb, summary, noHealth);
+            BuildLanguageSection(sb, summary, noHealth, noComplexity);
         }
 
         if (detailed || byFile)
         {
-            BuildFileSection(sb, summary, noHealth);
+            BuildFileSection(sb, summary, noHealth, noComplexity);
         }
 
         if (summary.Skipped.Count > 0)
@@ -639,6 +672,12 @@ public sealed class HtmlRenderer : IResultRenderer
             set;
         }
 
+        public int? ComplexityTotal
+        {
+            get;
+            set;
+        }
+
         public int FileCount
         {
             get;
@@ -649,6 +688,12 @@ public sealed class HtmlRenderer : IResultRenderer
         {
             get;
         } = [];
+
+        public bool HasComplexitySupport
+        {
+            get;
+            set;
+        }
 
         public bool HasHealthSupport
         {

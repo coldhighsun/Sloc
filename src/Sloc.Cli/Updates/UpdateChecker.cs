@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 
-namespace Sloc.Cli;
+namespace Sloc.Cli.Updates;
 
 /// <summary>
 /// The result of a successful update check: a newer release is available.

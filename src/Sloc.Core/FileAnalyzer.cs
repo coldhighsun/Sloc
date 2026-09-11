@@ -62,53 +62,70 @@ public sealed class FileAnalyzer
             Code = analysis.Code,
             Comment = analysis.Comment,
             Blank = analysis.Blank,
+            Complexity = analysis.Complexity,
             Hash = hash
         };
     }
 
     /// <summary>
-    /// A read-only stream wrapper that feeds every byte read from the inner stream into an
-    /// <see cref="IncrementalHash"/>, so a caller can compute a content hash while reading
-    /// without a second pass over the file.
+    /// Analyzes in-memory <paramref name="content"/> using the supplied language.
+    /// Primarily intended for testing.
     /// </summary>
-    private sealed class HashingStream(Stream inner, IncrementalHash hash) : Stream
+    /// <param name="content">The source text to analyze.</param>
+    /// <param name="language">The language whose comment rules drive classification.</param>
+    /// <param name="path">An optional display path to record on the result.</param>
+    /// <returns>
+    /// The line statistics for the content.
+    /// </returns>
+    public FileAnalysis AnalyzeText(string content, LanguageDefinition language, string path = "(memory)")
     {
-        public override bool CanRead => true;
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(language);
 
-        public override bool CanSeek => false;
+        using var reader = new StringReader(content);
+        return Count(path, language, reader);
+    }
 
-        public override bool CanWrite => false;
+    private static FileAnalysis Count(string path, LanguageDefinition language, TextReader reader)
+    {
+        var classifier = new LineClassifier(language);
+        var code = 0;
+        var comment = 0;
+        var blank = 0;
+        var supportsComplexity = language.SupportsComplexity;
+        var complexity = supportsComplexity ? 1 : 0;
 
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
+        while (reader.ReadLine() is { } line)
         {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
-
-        public override int Read(Span<byte> buffer)
-        {
-            var read = inner.Read(buffer);
-            if (read > 0)
+            switch (classifier.Classify(line))
             {
-                hash.AppendData(buffer[..read]);
+                case LineKind.Code:
+                    code++;
+                    if (supportsComplexity)
+                    {
+                        complexity += language.ComplexityRegex.Count(line);
+                    }
+                    break;
+
+                case LineKind.Comment:
+                    comment++;
+                    break;
+
+                default:
+                    blank++;
+                    break;
             }
-
-            return read;
         }
 
-        public override void Flush()
+        return new FileAnalysis
         {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            Path = path,
+            Language = language.Name,
+            Code = code,
+            Comment = comment,
+            Blank = blank,
+            Complexity = supportsComplexity ? complexity : null
+        };
     }
 
     /// <summary>
@@ -212,56 +229,47 @@ public sealed class FileAnalyzer
     }
 
     /// <summary>
-    /// Analyzes in-memory <paramref name="content"/> using the supplied language.
-    /// Primarily intended for testing.
+    /// A read-only stream wrapper that feeds every byte read from the inner stream into an
+    /// <see cref="IncrementalHash"/>, so a caller can compute a content hash while reading
+    /// without a second pass over the file.
     /// </summary>
-    /// <param name="content">The source text to analyze.</param>
-    /// <param name="language">The language whose comment rules drive classification.</param>
-    /// <param name="path">An optional display path to record on the result.</param>
-    /// <returns>
-    /// The line statistics for the content.
-    /// </returns>
-    public FileAnalysis AnalyzeText(string content, LanguageDefinition language, string path = "(memory)")
+    private sealed class HashingStream(Stream inner, IncrementalHash hash) : Stream
     {
-        ArgumentNullException.ThrowIfNull(content);
-        ArgumentNullException.ThrowIfNull(language);
+        public override bool CanRead => true;
 
-        using var reader = new StringReader(content);
-        return Count(path, language, reader);
-    }
+        public override bool CanSeek => false;
 
-    private static FileAnalysis Count(string path, LanguageDefinition language, TextReader reader)
-    {
-        var classifier = new LineClassifier(language);
-        var code = 0;
-        var comment = 0;
-        var blank = 0;
+        public override bool CanWrite => false;
 
-        while (reader.ReadLine() is { } line)
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
         {
-            switch (classifier.Classify(line))
-            {
-                case LineKind.Code:
-                    code++;
-                    break;
-
-                case LineKind.Comment:
-                    comment++;
-                    break;
-
-                default:
-                    blank++;
-                    break;
-            }
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
         }
 
-        return new FileAnalysis
+        public override void Flush()
         {
-            Path = path,
-            Language = language.Name,
-            Code = code,
-            Comment = comment,
-            Blank = blank
-        };
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = inner.Read(buffer);
+            if (read > 0)
+            {
+                hash.AppendData(buffer[..read]);
+            }
+
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

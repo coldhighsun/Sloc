@@ -1,3 +1,6 @@
+using Sloc.Cli.Analysis;
+using Sloc.Cli.Parsing;
+
 namespace Sloc.Cli.Tests;
 
 /// <summary>

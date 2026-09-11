@@ -1,3 +1,4 @@
+using Sloc.Cli.Analysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 

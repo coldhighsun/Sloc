@@ -36,7 +36,7 @@ public sealed class CsvRenderer : IResultRenderer
     /// and is intentionally ignored, for the same reason this renderer has no
     /// report-generation-time field (see the class remarks).
     /// </remarks>
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -44,11 +44,11 @@ public sealed class CsvRenderer : IResultRenderer
         // single well-formed table), so --by-file alone selects the per-file view.
         if (byFile && !detailed)
         {
-            RenderByFile(summary, noHealth);
+            RenderByFile(summary, noHealth, noComplexity);
         }
         else
         {
-            RenderByLanguage(summary, noHealth);
+            RenderByLanguage(summary, noHealth, noComplexity);
         }
 
         if (summary.Skipped.Count > 0)
@@ -56,6 +56,9 @@ public sealed class CsvRenderer : IResultRenderer
             RenderSkipped(summary);
         }
     }
+
+    private static string ComplexityCell(int? complexity) =>
+        complexity?.ToString() ?? string.Empty;
 
     private static string Escape(string field)
     {
@@ -70,12 +73,16 @@ public sealed class CsvRenderer : IResultRenderer
     private static string HealthCell(CommentHealthLevel health) =>
         health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
 
-    private void RenderByFile(AnalysisSummary summary, bool noHealth)
+    private void RenderByFile(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
         if (!noHealth)
         {
             header.Add("Health");
+        }
+        if (!noComplexity)
+        {
+            header.Add("Complexity");
         }
 
         WriteRow(header);
@@ -95,19 +102,27 @@ public sealed class CsvRenderer : IResultRenderer
             {
                 row.Add(HealthCell(file.Health));
             }
+            if (!noComplexity)
+            {
+                row.Add(ComplexityCell(file.Complexity));
+            }
 
             WriteRow(row);
         }
 
-        WriteTotalRow(summary, noHealth, string.Empty);
+        WriteTotalRow(summary, noHealth, noComplexity, string.Empty);
     }
 
-    private void RenderByLanguage(AnalysisSummary summary, bool noHealth)
+    private void RenderByLanguage(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         var header = new List<string> { "Language", "Files", "Code", "Comment", "Blank", "Total" };
         if (!noHealth)
         {
             header.Add("Health");
+        }
+        if (!noComplexity)
+        {
+            header.Add("Complexity");
         }
 
         WriteRow(header);
@@ -127,11 +142,15 @@ public sealed class CsvRenderer : IResultRenderer
             {
                 row.Add(HealthCell(language.Health));
             }
+            if (!noComplexity)
+            {
+                row.Add(ComplexityCell(language.ComplexityTotal));
+            }
 
             WriteRow(row);
         }
 
-        WriteTotalRow(summary, noHealth, summary.FileCount.ToString());
+        WriteTotalRow(summary, noHealth, noComplexity, summary.FileCount.ToString());
     }
 
     private void RenderSkipped(AnalysisSummary summary)
@@ -165,7 +184,7 @@ public sealed class CsvRenderer : IResultRenderer
 
     // The second column is the file/language count for the by-language table and blank for
     // the by-file table; every numeric column carries the run-wide total.
-    private void WriteTotalRow(AnalysisSummary summary, bool noHealth, string secondColumn)
+    private void WriteTotalRow(AnalysisSummary summary, bool noHealth, bool noComplexity, string secondColumn)
     {
         var row = new List<string>
         {
@@ -179,6 +198,10 @@ public sealed class CsvRenderer : IResultRenderer
         if (!noHealth)
         {
             row.Add(string.Empty);
+        }
+        if (!noComplexity)
+        {
+            row.Add(ComplexityCell(summary.ComplexityTotal));
         }
 
         WriteRow(row);

@@ -30,7 +30,7 @@ public sealed class MarkdownRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -52,7 +52,7 @@ public sealed class MarkdownRenderer : IResultRenderer
                 sb.AppendLine();
             }
 
-            AppendLanguageTable(sb, summary, noHealth);
+            AppendLanguageTable(sb, summary, noHealth, noComplexity);
         }
 
         if (detailed || byFile)
@@ -64,7 +64,7 @@ public sealed class MarkdownRenderer : IResultRenderer
                 sb.AppendLine();
             }
 
-            AppendFileTable(sb, summary, noHealth);
+            AppendFileTable(sb, summary, noHealth, noComplexity);
         }
 
         if (summary.Skipped.Count > 0)
@@ -75,7 +75,7 @@ public sealed class MarkdownRenderer : IResultRenderer
         _writer.Write(sb.ToString());
     }
 
-    private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
+    private static void AppendFileTable(StringBuilder sb, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
         var aligns = new List<string> { ":---", ":---", "---:", "---:", "---:", "---:" };
@@ -83,6 +83,11 @@ public sealed class MarkdownRenderer : IResultRenderer
         {
             header.Add("Health");
             aligns.Add(":---");
+        }
+        if (!noComplexity)
+        {
+            header.Add("Complexity");
+            aligns.Add("---:");
         }
 
         AppendRow(sb, header);
@@ -103,6 +108,10 @@ public sealed class MarkdownRenderer : IResultRenderer
             {
                 row.Add(HealthCell(file.Health));
             }
+            if (!noComplexity)
+            {
+                row.Add(ComplexityCell(file.Complexity));
+            }
 
             AppendRow(sb, row);
         }
@@ -120,11 +129,15 @@ public sealed class MarkdownRenderer : IResultRenderer
         {
             totalRow.Add(string.Empty);
         }
+        if (!noComplexity)
+        {
+            totalRow.Add(ComplexityCell(summary.ComplexityTotal));
+        }
 
         AppendRow(sb, totalRow);
     }
 
-    private static void AppendLanguageTable(StringBuilder sb, AnalysisSummary summary, bool noHealth)
+    private static void AppendLanguageTable(StringBuilder sb, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         // ':' alignment markers: language name left, numeric columns right.
         var header = new List<string> { "Language", "Files", "Code", "Comment", "Blank", "Total" };
@@ -133,6 +146,11 @@ public sealed class MarkdownRenderer : IResultRenderer
         {
             header.Add("Health");
             aligns.Add(":---");
+        }
+        if (!noComplexity)
+        {
+            header.Add("Complexity");
+            aligns.Add("---:");
         }
 
         AppendRow(sb, header);
@@ -153,6 +171,10 @@ public sealed class MarkdownRenderer : IResultRenderer
             {
                 row.Add(HealthCell(language.Health));
             }
+            if (!noComplexity)
+            {
+                row.Add(ComplexityCell(language.ComplexityTotal));
+            }
 
             AppendRow(sb, row);
         }
@@ -169,6 +191,10 @@ public sealed class MarkdownRenderer : IResultRenderer
         if (!noHealth)
         {
             totalRow.Add(string.Empty);
+        }
+        if (!noComplexity)
+        {
+            totalRow.Add(ComplexityCell(summary.ComplexityTotal));
         }
 
         AppendRow(sb, totalRow);
@@ -196,8 +222,11 @@ public sealed class MarkdownRenderer : IResultRenderer
         }
     }
 
+    private static string ComplexityCell(int? complexity) =>
+        complexity?.ToString("N0") ?? string.Empty;
+
     private static string Escape(string cell) =>
-        cell.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+            cell.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
 
     private static string HealthCell(CommentHealthLevel health) =>
                 health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();

@@ -18,7 +18,7 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: false);
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: false, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Language,Files,Code,Comment,Blank,Total,Health", lines[0]);
@@ -34,11 +34,47 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Language,Files,Code,Comment,Blank,Total", lines[0]);
         Assert.DoesNotContain("Health", lines[0]);
+    }
+
+    /// <summary>
+    /// Verifies that <c>noComplexity</c> drops the Complexity column from the header and rows.
+    /// </summary>
+    [Fact]
+    public void Render_NoComplexity_OmitsComplexityColumn()
+    {
+        var summary = BuildSummary("a.cs");
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Language,Files,Code,Comment,Blank,Total", lines[0]);
+        Assert.DoesNotContain("Complexity", lines[0]);
+    }
+
+    /// <summary>
+    /// Verifies that the Complexity column is present by default, with C#'s per-file
+    /// complexity value and an empty cell for a language that does not support it.
+    /// </summary>
+    [Fact]
+    public void Render_Complexity_PopulatesForSupportedLanguageOnly()
+    {
+        var supported = new FileAnalysis { Path = "a.cs", Language = "C#", Code = 80, Comment = 20, Blank = 5, Complexity = 4 };
+        var unsupported = new FileAnalysis { Path = "b.yml", Language = "YAML", Code = 10, Comment = 0, Blank = 0 };
+        var summary = new AnalysisSummary([supported, unsupported]);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("Path,Language,Code,Comment,Blank,Total,Complexity", lines[0]);
+        Assert.Equal("a.cs,C#,80,20,5,105,4", lines[1]);
+        Assert.Equal("b.yml,YAML,10,0,0,10,", lines[2]);
     }
 
     /// <summary>
@@ -50,7 +86,7 @@ public class CsvRendererTests
         var summary = BuildSummary("weird, name.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true);
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true, noComplexity: true);
         var text = writer.ToString();
 
         Assert.Contains("\"weird, name.cs\"", text);
@@ -65,7 +101,7 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Total,1,80,20,5,105", lines[^1]);
@@ -80,7 +116,7 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true);
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Total,,80,20,5,105", lines[^1]);
@@ -96,7 +132,7 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs");
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, detailed: true);
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, detailed: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Language,Files,Code,Comment,Blank,Total", lines[0]);
@@ -112,7 +148,7 @@ public class CsvRendererTests
         var summary = BuildSummary("a.cs", skipped: [new SkippedEntry("bad.cs", "binary file")]);
         using var writer = new StringWriter();
 
-        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true);
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Equal("Path,Reason", lines[^2]);

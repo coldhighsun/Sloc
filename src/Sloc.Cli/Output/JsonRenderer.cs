@@ -30,7 +30,7 @@ public sealed class JsonRenderer : IResultRenderer
     }
 
     /// <inheritdoc />
-    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null)
+    public void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
@@ -49,6 +49,7 @@ public sealed class JsonRenderer : IResultRenderer
             Blank = summary.Blank,
             BlankPct = Pct(summary.Blank, summary.Total),
             Total = summary.Total,
+            Complexity = noComplexity ? null : summary.ComplexityTotal,
             ByLanguage = !includeLanguages ? null : summary.ByLanguage.Select(language => new JsonLanguage
             {
                 Language = language.Language,
@@ -60,7 +61,8 @@ public sealed class JsonRenderer : IResultRenderer
                 Blank = language.Blank,
                 BlankPct = Pct(language.Blank, language.Total),
                 Total = language.Total,
-                Health = Health(language.Health, noHealth)
+                Health = Health(language.Health, noHealth),
+                Complexity = noComplexity ? null : language.ComplexityTotal
             }).ToList(),
             Files = includeFiles
                 ? summary.Files.Select(file => new JsonFile
@@ -74,7 +76,8 @@ public sealed class JsonRenderer : IResultRenderer
                     Blank = file.Blank,
                     BlankPct = Pct(file.Blank, file.Total),
                     Total = file.Total,
-                    Health = Health(file.Health, noHealth)
+                    Health = Health(file.Health, noHealth),
+                    Complexity = noComplexity ? null : file.Complexity
                 }).ToList()
                 : null,
             Skipped = summary.Skipped.Select(entry => new JsonSkipped
@@ -125,6 +128,11 @@ internal sealed class JsonFile
     }
 
     public double? CommentPct
+    {
+        get; init;
+    }
+
+    public int? Complexity
     {
         get; init;
     }
@@ -181,6 +189,11 @@ internal sealed class JsonLanguage
     }
 
     public double? CommentPct
+    {
+        get; init;
+    }
+
+    public int? Complexity
     {
         get; init;
     }
@@ -242,6 +255,11 @@ internal sealed class JsonReport
     }
 
     public double? CommentPct
+    {
+        get; init;
+    }
+
+    public int? Complexity
     {
         get; init;
     }

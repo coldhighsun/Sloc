@@ -1,287 +1,13 @@
 using Sloc.Cli.Output;
+using Sloc.Cli.Updates;
 using Sloc.Core;
 using Sloc.Core.Models;
+using Sloc.Core.Scanning;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Reflection;
 
-namespace Sloc.Cli;
-
-/// <summary>
-/// The supported output formats.
-/// </summary>
-public enum OutputFormat
-{
-    /// <summary>
-    /// A human-readable, colored table.
-    /// </summary>
-    Table,
-
-    /// <summary>
-    /// Machine-readable JSON.
-    /// </summary>
-    Json,
-
-    /// <summary>
-    /// A human-readable HTML report.
-    /// </summary>
-    Html,
-
-    /// <summary>
-    /// Comma-separated values (spreadsheet-friendly).
-    /// </summary>
-    Csv,
-
-    /// <summary>
-    /// GitHub-Flavored Markdown tables (documentation-friendly).
-    /// </summary>
-    Markdown
-}
-
-/// <summary>
-/// Process exit codes returned by the CLI.
-/// </summary>
-public static class ExitCode
-{
-    /// <summary>
-    /// The requested path was not found or could not be read.
-    /// </summary>
-    public const int Error = 1;
-
-    /// <summary>
-    /// The run completed successfully.
-    /// </summary>
-    public const int Success = 0;
-
-    /// <summary>
-    /// A configured threshold (e.g. <c>--min-comment-pct</c>) was not met.
-    /// </summary>
-    public const int ThresholdNotMet = 2;
-
-    /// <summary>
-    /// An unexpected error occurred.
-    /// </summary>
-    public const int Unexpected = 3;
-}
-
-/// <summary>
-/// The parsed options for an analysis run.
-/// </summary>
-public sealed class AnalyzeOptions
-{
-    /// <summary>
-    /// When set, a previously saved JSON report to compare the current run against; the
-    /// output becomes a diff of line counts rather than the normal report.
-    /// </summary>
-    public string? BaselinePath
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, a per-file breakdown is shown.
-    /// </summary>
-    public bool ByFile
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, JSON and HTML output includes both the by-language
-    /// summary and the per-file breakdown together (only meaningful for those formats).
-    /// </summary>
-    public bool Detailed
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// Language display names to exclude (e.g. <c>"Markdown"</c>).
-    /// </summary>
-    public IReadOnlyList<string> ExcludeLangs { get; init; } = [];
-
-    /// <summary>
-    /// Glob patterns of files to exclude.
-    /// </summary>
-    public IReadOnlyList<string> Excludes { get; init; } = [];
-
-    /// <summary>
-    /// Whether to descend into symlinked/junctioned directories rather than skip them.
-    /// Defaults to <see langword="false"/>.
-    /// </summary>
-    public bool FollowSymlinks
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// The output format.
-    /// </summary>
-    public OutputFormat Format
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When set, a commit/tree-ish to analyze the repository tree of as it existed at
-    /// that commit, without checking it out. <see cref="Path"/> is used as the repo root
-    /// to query. Mutually exclusive with <see cref="ListFile"/>.
-    /// </summary>
-    public string? GitHash
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// Language display names to include (e.g. <c>"C#"</c>). When empty, all languages
-    /// are considered.
-    /// </summary>
-    public IReadOnlyList<string> IncludeLangs { get; init; } = [];
-
-    /// <summary>
-    /// Glob patterns of files to include.
-    /// </summary>
-    public IReadOnlyList<string> Includes { get; init; } = [];
-
-    /// <summary>
-    /// When <see langword="true"/>, files with unknown extensions are included.
-    /// </summary>
-    public bool IncludeUnknown
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// The maximum number of files to analyze in parallel. When <see langword="null"/>
-    /// or non-positive, <see cref="Environment.ProcessorCount"/> is used. Set to 1 for
-    /// fully sequential analysis.
-    /// </summary>
-    public int? Jobs
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When set, a file listing paths (one per line) to analyze directly instead of
-    /// scanning <see cref="Path"/>. <c>-</c> reads the list from stdin.
-    /// </summary>
-    public string? ListFile
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When set, the run fails (returns <see cref="ExitCode.ThresholdNotMet"/>) if the
-    /// overall comment percentage (comment lines / total lines) is below this value.
-    /// </summary>
-    public double? MinCommentPct
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, the Comment Health column and percentage
-    /// breakdowns are hidden.
-    /// </summary>
-    public bool NoHealth
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, suppresses the live table and progress bar while
-    /// still printing the banner and result.
-    /// </summary>
-    public bool NoProgress
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, subdirectories are not scanned.
-    /// </summary>
-    public bool NoRecursive
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, skips the GitHub check for a newer release.
-    /// </summary>
-    public bool NoUpdateCheck
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// The output file path for Json and Html formats.
-    /// When <see langword="null"/>, a default name is used.
-    /// </summary>
-    public string? OutputFile
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, the per-file console output is paginated.
-    /// </summary>
-    public bool Paged
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// The file or directory to analyze.
-    /// </summary>
-    public required string Path
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, suppresses the version banner, progress UI, and the
-    /// "Saved to" message, leaving only the result output.
-    /// </summary>
-    public bool Quiet
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
-    /// in <c>.gitattributes</c> files discovered under the scan root. Defaults to
-    /// <see langword="true"/>.
-    /// </summary>
-    public bool RespectGitAttributes { get; init; } = true;
-
-    /// <summary>
-    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
-    /// Defaults to <see langword="true"/>.
-    /// </summary>
-    public bool RespectGitignore { get; init; } = true;
-
-    /// <summary>
-    /// The key by which the per-language summary is ordered.
-    /// </summary>
-    public LanguageSort Sort { get; init; } = LanguageSort.Total;
-
-    /// <summary>
-    /// When set, keeps only the first this-many languages in the summary after sorting.
-    /// </summary>
-    public int? Top
-    {
-        get; init;
-    }
-
-    /// <summary>
-    /// When <see langword="true"/>, files with identical content are only counted once;
-    /// later duplicates are reported as skipped rather than double-counted.
-    /// </summary>
-    public bool Unique
-    {
-        get; init;
-    }
-}
+namespace Sloc.Cli.Analysis;
 
 /// <summary>
 /// Orchestrates an analysis run: scan files, analyze each one, aggregate the
@@ -485,7 +211,7 @@ public sealed class AnalyzeHandler
             }
             else if (options is { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
             {
-                AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth))
+                AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
                     .AutoClear(false)
                     .Start(ctx =>
                     {
@@ -497,12 +223,13 @@ public sealed class AnalyzeHandler
                             ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
                                 aggregator.ToSummary(),
                                 $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
-                                noHealth: options.NoHealth));
+                                noHealth: options.NoHealth,
+                                noComplexity: options.NoComplexity));
                             Thread.Sleep(LiveTableRefreshInterval);
                         }
 
                         work.GetAwaiter().GetResult();
-                        ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth));
+                        ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity));
                     });
             }
             else
@@ -614,11 +341,11 @@ public sealed class AnalyzeHandler
                 // JSON defaults to stdout (pipeable); an explicit path writes a file.
                 if (options.OutputFile is null || options.OutputFile == StdoutToken)
                 {
-                    new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath);
+                    new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
                 }
                 else
                 {
-                    if (!WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath), options.Quiet))
+                    if (!WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
                     {
                         return ExitCode.Error;
                     }
@@ -629,11 +356,11 @@ public sealed class AnalyzeHandler
                 // Html defaults to stdout (pipeable); an explicit path writes a file.
                 if (options.OutputFile is null || options.OutputFile == StdoutToken)
                 {
-                    new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath);
+                    new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
                 }
                 else
                 {
-                    if (!WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath), options.Quiet))
+                    if (!WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
                     {
                         return ExitCode.Error;
                     }
@@ -644,11 +371,11 @@ public sealed class AnalyzeHandler
                 // CSV defaults to stdout (pipeable); an explicit path writes a file.
                 if (options.OutputFile is null || options.OutputFile == StdoutToken)
                 {
-                    new CsvRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath);
+                    new CsvRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
                 }
                 else
                 {
-                    if (!WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath), options.Quiet))
+                    if (!WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
                     {
                         return ExitCode.Error;
                     }
@@ -659,11 +386,11 @@ public sealed class AnalyzeHandler
                 // Markdown defaults to stdout (pasteable); an explicit path writes a file.
                 if (options.OutputFile is null || options.OutputFile == StdoutToken)
                 {
-                    new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath);
+                    new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
                 }
                 else
                 {
-                    if (!WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath), options.Quiet))
+                    if (!WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
                     {
                         return ExitCode.Error;
                     }
@@ -677,12 +404,12 @@ public sealed class AnalyzeHandler
                 }
                 else if (options.ByFile)
                 {
-                    tableRenderer.RenderByFile(summary, options.NoHealth, options.Paged);
+                    tableRenderer.RenderByFile(summary, options.NoHealth, options.Paged, options.NoComplexity);
                 }
                 else if (!showProgress)
                 {
                     // The live table only renders during progress; render it here otherwise.
-                    AnsiConsole.Write(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth));
+                    AnsiConsole.Write(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth, noComplexity: options.NoComplexity));
                 }
 
                 tableRenderer.RenderSkipped(summary);
@@ -761,6 +488,7 @@ public sealed class AnalyzeHandler
                     Code = analysis.Code,
                     Comment = analysis.Comment,
                     Blank = analysis.Blank,
+                    Complexity = analysis.Complexity,
                     Hash = analysis.Hash
                 };
             }
@@ -870,67 +598,5 @@ public sealed class AnalyzeHandler
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Thread-safe incremental aggregator of per-language counts, used to refresh the
-    /// live table without re-aggregating every analyzed file on each tick.
-    /// </summary>
-    private sealed class LiveAggregator(LanguageSort sortBy, int? top)
-    {
-        private readonly Dictionary<string, Counts> _byLanguage = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object _gate = new();
-        private int _files;
-
-        public int FilesProcessed
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _files;
-                }
-            }
-        }
-
-        public void Add(FileAnalysis analysis)
-        {
-            lock (_gate)
-            {
-                _files++;
-                _byLanguage.TryGetValue(analysis.Language, out var counts);
-                _byLanguage[analysis.Language] = new Counts(
-                    counts.Files + 1,
-                    counts.Code + analysis.Code,
-                    counts.Comment + analysis.Comment,
-                    counts.Blank + analysis.Blank);
-            }
-        }
-
-        public AnalysisSummary ToSummary()
-        {
-            lock (_gate)
-            {
-                var byLanguage = _byLanguage
-                    .Select(entry => new LanguageStatistics
-                    {
-                        Language = entry.Key,
-                        Files = entry.Value.Files,
-                        Code = entry.Value.Code,
-                        Comment = entry.Value.Comment,
-                        Blank = entry.Value.Blank
-                    });
-
-                var ordered = AnalysisSummary.OrderAndLimit(
-                    byLanguage,
-                    sortBy,
-                    descending: sortBy != LanguageSort.Name,
-                    top);
-
-                return new AnalysisSummary(ordered, _files);
-            }
-        }
-
-        private readonly record struct Counts(int Files, int Code, int Comment, int Blank);
     }
 }
