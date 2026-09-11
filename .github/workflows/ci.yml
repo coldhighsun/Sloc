@@ -37,13 +37,15 @@ jobs:
         run: dotnet build Sloc.slnx --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test Sloc.slnx --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+        run: >
+          dotnet test Sloc.slnx --no-build --configuration Release
+          -- --coverage --coverage-output-format cobertura --results-directory ./coverage
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}
-          path: ./coverage/**/coverage.cobertura.xml
+          path: ./coverage/**/*.cobertura.xml
           if-no-files-found: warn
 
   publish:
