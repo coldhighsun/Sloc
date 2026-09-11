@@ -212,13 +212,25 @@ public sealed class DirectoryScanner
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles) : null;
         var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles) : null;
 
+        // Batch the glob match across all candidate paths instead of re-running Matcher.Match
+        // (which rebuilds an InMemoryDirectoryInfo internally) once per file.
+        var relativePaths = new Dictionary<string, string>(walk.FilePaths.Count);
+        foreach (var fullPath in walk.FilePaths)
+        {
+            relativePaths[fullPath] = Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/');
+        }
+
+        var matchedPaths = new HashSet<string>(
+            matcher.Match(relativePaths.Values).Files.Select(static f => f.Path),
+            StringComparer.OrdinalIgnoreCase);
+
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>(walk.Skipped);
         foreach (var fullPath in walk.FilePaths)
         {
-            var relativePath = Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/');
+            var relativePath = relativePaths[fullPath];
 
-            if (!matcher.Match([relativePath]).HasMatches)
+            if (!matchedPaths.Contains(relativePath))
             {
                 continue;
             }

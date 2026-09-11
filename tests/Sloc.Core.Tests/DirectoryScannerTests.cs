@@ -276,6 +276,32 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that combined include/exclude globs are matched independently per file
+    /// across a larger candidate set, guarding against the batched <c>Matcher.Match</c>
+    /// call (which matches all candidate paths in a single call for performance) mixing up
+    /// results between files.
+    /// </summary>
+    [Fact]
+    public void Scan_IncludeAndExcludeGlobs_DiscriminatePerFileAcrossManyCandidates()
+    {
+        Write("keep-a.cs", "// keep a");
+        Write("keep-b.cs", "// keep b");
+        Write("nested/keep-c.cs", "// keep c");
+        Write("nested/drop.cs", "// dropped by exclude");
+        Write("other.py", "print(1)");
+        Write("nested/other.py", "print(2)");
+
+        var result = _scanner.Scan(_root, new ScanOptions
+        {
+            Includes = ["**/*.cs"],
+            Excludes = ["**/drop.cs"]
+        });
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["keep-a.cs", "keep-b.cs", "keep-c.cs"], names);
+    }
+
+    /// <summary>
     /// Verifies that unknown extensions are dropped by default and included as the
     /// "Other" language when <see cref="ScanOptions.IncludeUnknown"/> is set.
     /// </summary>
