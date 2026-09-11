@@ -21,9 +21,9 @@ public sealed class LineClassifier
 {
     private readonly LanguageDefinition _language;
     private BlockComment? _activeBlock;
-    private int _blockDepth;
     private StringLiteral? _activeString;
     private bool _activeStringIsDoc;
+    private int _blockDepth;
 
     /// <summary>
     /// Creates a classifier for the supplied language.
@@ -130,6 +130,48 @@ public sealed class LineClassifier
         return LineKind.Blank;
     }
 
+    private static bool IsWordToken(string token)
+    {
+        foreach (var c in token)
+        {
+            if (!char.IsLetterOrDigit(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MatchesAt(
+        string line,
+        int index,
+        string token,
+        StringComparison comparison = StringComparison.Ordinal)
+    {
+        if (token.Length == 0)
+        {
+            return false;
+        }
+
+        if (index + token.Length > line.Length)
+        {
+            return false;
+        }
+
+        return line.AsSpan(index, token.Length).Equals(token, comparison);
+    }
+
+    private static bool MatchesBlockToken(string line, int index, string token, BlockComment block)
+    {
+        if (block.RequireLineStart && index != 0)
+        {
+            return false;
+        }
+
+        return MatchesAt(line, index, token);
+    }
+
     private int ConsumeBlock(string line, int index, ref bool sawComment)
     {
         var block = _activeBlock!;
@@ -206,42 +248,22 @@ public sealed class LineClassifier
         }
     }
 
-    private static bool MatchesAt(
-        string line,
-        int index,
-        string token,
-        StringComparison comparison = StringComparison.Ordinal)
-    {
-        if (token.Length == 0)
-        {
-            return false;
-        }
-
-        if (index + token.Length > line.Length)
-        {
-            return false;
-        }
-
-        return line.AsSpan(index, token.Length).Equals(token, comparison);
-    }
-
-    private static bool MatchesBlockToken(string line, int index, string token, BlockComment block)
-    {
-        if (block.RequireLineStart && index != 0)
-        {
-            return false;
-        }
-
-        return MatchesAt(line, index, token);
-    }
-
     private bool MatchesLineComment(string line, int index)
     {
+        var key = _language.CaseInsensitiveLineComments
+            ? char.ToUpperInvariant(line[index])
+            : line[index];
+
+        if (!_language.LineCommentsByFirstChar.TryGetValue(key, out var candidates))
+        {
+            return false;
+        }
+
         var comparison = _language.CaseInsensitiveLineComments
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
-        foreach (var token in _language.LineCommentTokens)
+        foreach (var token in candidates)
         {
             if (!MatchesAt(line, index, token, comparison))
             {
@@ -264,27 +286,17 @@ public sealed class LineClassifier
         return false;
     }
 
-    private static bool IsWordToken(string token)
-    {
-        foreach (var c in token)
-        {
-            if (!char.IsLetterOrDigit(c))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private bool TryMatchBlockOpen(string line, int index, [NotNullWhen(true)] out BlockComment? block)
     {
-        foreach (var candidate in _language.BlockComments)
+        if (_language.BlockCommentsByFirstChar.TryGetValue(line[index], out var candidates))
         {
-            if (MatchesBlockToken(line, index, candidate.Open, candidate))
+            foreach (var candidate in candidates)
             {
-                block = candidate;
-                return true;
+                if (MatchesBlockToken(line, index, candidate.Open, candidate))
+                {
+                    block = candidate;
+                    return true;
+                }
             }
         }
 
@@ -294,12 +306,15 @@ public sealed class LineClassifier
 
     private bool TryMatchStringOpen(string line, int index, [NotNullWhen(true)] out StringLiteral? literal)
     {
-        foreach (var candidate in _language.StringLiterals)
+        if (_language.StringLiteralsByFirstChar.TryGetValue(line[index], out var candidates))
         {
-            if (MatchesAt(line, index, candidate.Delimiter))
+            foreach (var candidate in candidates)
             {
-                literal = candidate;
-                return true;
+                if (MatchesAt(line, index, candidate.Delimiter))
+                {
+                    literal = candidate;
+                    return true;
+                }
             }
         }
 
