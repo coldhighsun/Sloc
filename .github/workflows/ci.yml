@@ -42,7 +42,7 @@ jobs:
           -- --coverage --coverage-output-format cobertura --results-directory ./coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.os }}
           path: ./coverage/**/*.cobertura.xml
@@ -85,7 +85,7 @@ jobs:
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sloc-${{ matrix.rid }}
           path: ./${{ env.ZIP_NAME }}
@@ -114,7 +114,7 @@ jobs:
         run: dotnet pack src/Sloc.Cli/Sloc.Cli.csproj --no-restore --configuration Release --output ./artifacts
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: ./artifacts/*.nupkg
@@ -132,14 +132,14 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: sloc-*
           path: ./artifacts
           merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Sloc ${{ github.ref_name }}
           files: ./artifacts/*.zip
