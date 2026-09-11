@@ -2,7 +2,7 @@ using Microsoft.Extensions.FileSystemGlobbing;
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
 
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// A file discovered by the <see cref="DirectoryScanner"/>, paired with the

@@ -14,6 +14,8 @@ public static class LanguageRegistry
     private static readonly IReadOnlyList<(string Suffix, LanguageDefinition Language)> SuffixLookup = CreateSuffixLookup(AllLanguages);
     private static readonly IReadOnlyDictionary<string, bool> HealthSupportByName =
         AllLanguages.ToDictionary(language => language.Name, language => language.SupportsHealth, StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlyDictionary<string, bool> ComplexitySupportByName =
+        AllLanguages.ToDictionary(language => language.Name, language => language.SupportsComplexity, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Gets every language known to the registry.
@@ -83,6 +85,17 @@ public static class LanguageRegistry
     public static bool SupportsHealth(string? name) =>
         name is not null && HealthSupportByName.TryGetValue(name, out var supports) && supports;
 
+    /// <summary>
+    /// Determines whether the simplified cyclomatic-complexity metric is meaningful for the
+    /// language with the given display name. Unknown names are treated as unsupported.
+    /// </summary>
+    /// <param name="name">The language display name (e.g. "C#").</param>
+    /// <returns>
+    /// <see langword="true"/> if the language supports complexity analysis; otherwise <see langword="false"/>.
+    /// </returns>
+    public static bool SupportsComplexity(string? name) =>
+        name is not null && ComplexitySupportByName.TryGetValue(name, out var supports) && supports;
+
     private static IReadOnlyList<LanguageDefinition> CreateLanguages()
     {
         var cStyleBlock = new BlockComment("/*", "*/");
@@ -114,6 +127,15 @@ public static class LanguageRegistry
             AllowEscape: false,
             CloseDelimiter: "\"#");
 
+        // Shared simplified cyclomatic-complexity keyword sets: branch points that add a
+        // decision point to a function's control flow. "else if"/"elif" are not listed
+        // separately since the shared "if" token already matches inside them.
+        string[] cStyleComplexity = ["if", "for", "while", "case", "catch", "&&", "||", "?:"];
+        string[] cComplexity = ["if", "for", "while", "case", "&&", "||", "?:"];
+        string[] pythonComplexity = ["if", "elif", "for", "while", "except", "and", "or"];
+        string[] rubyComplexity = ["if", "elsif", "for", "while", "case", "rescue", "&&", "||"];
+        string[] rustComplexity = ["if", "for", "while", "match", "&&", "||"];
+
         return new List<LanguageDefinition>
         {
             new()
@@ -122,7 +144,8 @@ public static class LanguageRegistry
                 Extensions = [".cs", ".csx"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [csVerbatimString, doubleQuote, singleQuote]
+                StringLiterals = [csVerbatimString, doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
@@ -130,7 +153,8 @@ public static class LanguageRegistry
                 Extensions = [".c", ".h"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [doubleQuote, singleQuote],
+                ComplexityKeywords = cComplexity
             },
             new()
             {
@@ -138,7 +162,8 @@ public static class LanguageRegistry
                 Extensions = [".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".ipp"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
@@ -146,7 +171,8 @@ public static class LanguageRegistry
                 Extensions = [".java"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
@@ -154,7 +180,8 @@ public static class LanguageRegistry
                 Extensions = [".kt", ".kts"],
                 LineCommentTokens = ["//"],
                 BlockComments = [nestedCStyleBlock],
-                StringLiterals = [rawTripleDouble, doubleQuote, singleQuote]
+                StringLiterals = [rawTripleDouble, doubleQuote, singleQuote],
+                ComplexityKeywords = ["if", "for", "while", "when", "catch", "&&", "||"]
             },
             new()
             {
@@ -162,7 +189,8 @@ public static class LanguageRegistry
                 Extensions = [".swift"],
                 LineCommentTokens = ["//"],
                 BlockComments = [nestedCStyleBlock],
-                StringLiterals = [rawTripleDouble, doubleQuote]
+                StringLiterals = [rawTripleDouble, doubleQuote],
+                ComplexityKeywords = ["if", "for", "while", "case", "catch", "guard", "&&", "||"]
             },
             new()
             {
@@ -170,7 +198,8 @@ public static class LanguageRegistry
                 Extensions = [".js", ".jsx", ".mjs", ".cjs"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
@@ -178,14 +207,16 @@ public static class LanguageRegistry
                 Extensions = [".ts", ".tsx", ".mts", ".cts"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
                 Name = "Python",
                 Extensions = [".py", ".pyw"],
                 LineCommentTokens = ["#"],
-                StringLiterals = [pyTripleDouble, pyTripleSingle, doubleQuote, singleQuote]
+                StringLiterals = [pyTripleDouble, pyTripleSingle, doubleQuote, singleQuote],
+                ComplexityKeywords = pythonComplexity
             },
             new()
             {
@@ -193,7 +224,8 @@ public static class LanguageRegistry
                 Extensions = [".go"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [backtickRaw, doubleQuote, singleQuote]
+                StringLiterals = [backtickRaw, doubleQuote, singleQuote],
+                ComplexityKeywords = ["if", "for", "case", "&&", "||"]
             },
             new()
             {
@@ -203,7 +235,8 @@ public static class LanguageRegistry
                 BlockComments = [nestedCStyleBlock],
                 // Single quotes denote lifetimes as well as char literals in Rust, so they
                 // are not treated as string delimiters here.
-                StringLiterals = [rustRawStringOneHash, rustRawStringNoHash, doubleQuote]
+                StringLiterals = [rustRawStringOneHash, rustRawStringNoHash, doubleQuote],
+                ComplexityKeywords = rustComplexity
             },
             new()
             {
@@ -211,7 +244,8 @@ public static class LanguageRegistry
                 Extensions = [".php"],
                 LineCommentTokens = ["//", "#"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [doubleQuote, singleQuote],
+                ComplexityKeywords = cStyleComplexity
             },
             new()
             {
@@ -220,7 +254,8 @@ public static class LanguageRegistry
                 Filenames = ["Rakefile", "Gemfile", "Guardfile", "Podfile"],
                 LineCommentTokens = ["#"],
                 BlockComments = [new BlockComment("=begin", "=end", RequireLineStart: true)],
-                StringLiterals = [doubleQuote, singleQuote]
+                StringLiterals = [doubleQuote, singleQuote],
+                ComplexityKeywords = rubyComplexity
             },
             new()
             {

@@ -1,3 +1,5 @@
+using Sloc.Core.Languages;
+
 namespace Sloc.Core.Models;
 
 /// <summary>
@@ -72,6 +74,23 @@ public sealed class LanguageStatistics
     {
         get; init;
     }
+
+    /// <summary>
+    /// The sum of <see cref="FileAnalysis.Complexity"/> across every file counted for this
+    /// language, or <see langword="null"/> when the language does not support complexity
+    /// analysis (<see cref="Languages.LanguageDefinition.SupportsComplexity"/>).
+    /// </summary>
+    public int? ComplexityTotal
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// The average per-file complexity for this language (<see cref="ComplexityTotal"/>
+    /// divided by <see cref="Files"/>), or <see langword="null"/> when complexity is not
+    /// supported.
+    /// </summary>
+    public double? ComplexityAverage => ComplexityTotal.HasValue && Files > 0 ? (double)ComplexityTotal / Files : null;
 
     /// <summary>
     /// The display name of the language.
@@ -151,6 +170,9 @@ public sealed class AnalysisSummary
         Code = code;
         Comment = comment;
         Blank = blank;
+        ComplexityTotal = files.Any(file => LanguageRegistry.SupportsComplexity(file.Language))
+            ? files.Sum(file => file.Complexity ?? 0)
+            : null;
 
         var grouped = files
             .GroupBy(file => file.Language, StringComparer.OrdinalIgnoreCase)
@@ -160,7 +182,10 @@ public sealed class AnalysisSummary
                 Files = group.Count(),
                 Code = group.Sum(file => file.Code),
                 Comment = group.Sum(file => file.Comment),
-                Blank = group.Sum(file => file.Blank)
+                Blank = group.Sum(file => file.Blank),
+                ComplexityTotal = LanguageRegistry.SupportsComplexity(group.Key)
+                    ? group.Sum(file => file.Complexity ?? 0)
+                    : null
             });
 
         ByLanguage = OrderAndLimit(grouped, sortBy, descending, top);
@@ -239,16 +264,24 @@ public sealed class AnalysisSummary
         var code = 0;
         var comment = 0;
         var blank = 0;
+        var hasComplexitySupport = false;
+        var complexityTotal = 0;
         foreach (var language in byLanguage)
         {
             code += language.Code;
             comment += language.Comment;
             blank += language.Blank;
+            if (language.ComplexityTotal is { } languageComplexity)
+            {
+                hasComplexitySupport = true;
+                complexityTotal += languageComplexity;
+            }
         }
 
         Code = code;
         Comment = comment;
         Blank = blank;
+        ComplexityTotal = hasComplexitySupport ? complexityTotal : null;
         ByLanguage = byLanguage;
     }
 
@@ -256,6 +289,16 @@ public sealed class AnalysisSummary
     /// The total number of blank lines across all files.
     /// </summary>
     public int Blank
+    {
+        get;
+    }
+
+    /// <summary>
+    /// The sum of <see cref="FileAnalysis.Complexity"/> across every analyzed file that
+    /// supports complexity analysis, or <see langword="null"/> when no contributing
+    /// language does (<see cref="Languages.LanguageDefinition.SupportsComplexity"/>).
+    /// </summary>
+    public int? ComplexityTotal
     {
         get;
     }

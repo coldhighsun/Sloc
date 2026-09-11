@@ -1,4 +1,4 @@
-namespace Sloc.Cli;
+namespace Sloc.Cli.Parsing;
 
 /// <summary>
 /// Validates numeric CLI arguments that <c>System.CommandLine</c>'s parsing alone cannot
@@ -13,7 +13,7 @@ internal static class CliArgumentValidation
     /// <param name="value">The parsed <c>--min-comment-pct</c> value, if any.</param>
     /// <returns><see langword="true"/> if the value is valid; otherwise <see langword="false"/>.</returns>
     public static bool IsValidMinCommentPct(double? value) =>
-        value is null || (value >= 0 && value <= 100);
+        value is null or >= 0 and <= 100;
 
     /// <summary>
     /// Determines whether a <c>--top</c> value is 1 or greater. A <see langword="null"/>
@@ -22,5 +22,5 @@ internal static class CliArgumentValidation
     /// <param name="value">The parsed <c>--top</c> value, if any.</param>
     /// <returns><see langword="true"/> if the value is valid; otherwise <see langword="false"/>.</returns>
     public static bool IsValidTop(int? value) =>
-        value is null || value >= 1;
+        value is null or >= 1;
 }

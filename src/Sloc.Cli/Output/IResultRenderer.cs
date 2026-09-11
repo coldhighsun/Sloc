@@ -22,5 +22,6 @@ public interface IResultRenderer
     /// metadata (where supported) so a saved or shared report can be traced back to its
     /// source. <see langword="null"/> omits it.
     /// </param>
-    void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null);
+    /// <param name="noComplexity">When <see langword="true"/>, the Complexity column/field is hidden.</param>
+    void Render(AnalysisSummary summary, bool byFile, bool noHealth, bool detailed = false, string? sourcePath = null, bool noComplexity = false);
 }

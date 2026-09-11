@@ -55,6 +55,16 @@ public sealed class FileAnalysis
     }
 
     /// <summary>
+    /// The simplified cyclomatic complexity of the file (1 + the number of branch-point
+    /// tokens found in its code lines), or <see langword="null"/> when the language does
+    /// not support complexity analysis (<see cref="Languages.LanguageDefinition.SupportsComplexity"/>).
+    /// </summary>
+    public int? Complexity
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// The total number of physical lines in the file.
     /// </summary>
     public int Total => Code + Comment + Blank;

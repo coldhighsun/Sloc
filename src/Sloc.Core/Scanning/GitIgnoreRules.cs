@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// Evaluates whether a path is ignored according to a set of <c>.gitignore</c> files,

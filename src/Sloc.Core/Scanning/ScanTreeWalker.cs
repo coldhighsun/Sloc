@@ -1,6 +1,6 @@
 using Sloc.Core.Models;
 
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// The result of a single <see cref="ScanTreeWalker.Walk"/> pass: every <c>.gitignore</c>

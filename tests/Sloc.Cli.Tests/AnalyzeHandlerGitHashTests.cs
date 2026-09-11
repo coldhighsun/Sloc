@@ -1,3 +1,4 @@
+using Sloc.Cli.Analysis;
 using System.Diagnostics;
 using System.Text.Json;
 

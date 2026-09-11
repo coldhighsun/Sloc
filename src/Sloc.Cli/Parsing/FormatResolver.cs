@@ -1,4 +1,6 @@
-namespace Sloc.Cli;
+using Sloc.Cli.Analysis;
+
+namespace Sloc.Cli.Parsing;
 
 /// <summary>
 /// Resolves the effective <see cref="OutputFormat"/> from an explicit <c>--format</c>
@@ -6,6 +8,22 @@ namespace Sloc.Cli;
 /// </summary>
 internal static class FormatResolver
 {
+    /// <summary>
+    /// Gets a value indicating whether an <c>--output</c> file path would be silently
+    /// ignored: a real file path was supplied (not <see langword="null"/> and not the
+    /// stdout token <c>-</c>) but the resolved format is <see cref="OutputFormat.Table"/>,
+    /// which never writes a file.
+    /// </summary>
+    /// <param name="format">The resolved output format.</param>
+    /// <param name="outputFile">The value of <c>--output</c>.</param>
+    /// <returns>
+    /// <see langword="true"/> when the output path will be ignored; otherwise <see langword="false"/>.
+    /// </returns>
+    public static bool OutputIgnoredForTable(OutputFormat format, string? outputFile) =>
+        format == OutputFormat.Table
+        && !string.IsNullOrEmpty(outputFile)
+        && outputFile != "-";
+
     /// <summary>
     /// Determines the output format to use. An explicit format always wins; otherwise the
     /// format is inferred from the output file's extension, falling back to
@@ -41,20 +59,4 @@ internal static class FormatResolver
             _ => OutputFormat.Table
         };
     }
-
-    /// <summary>
-    /// Gets a value indicating whether an <c>--output</c> file path would be silently
-    /// ignored: a real file path was supplied (not <see langword="null"/> and not the
-    /// stdout token <c>-</c>) but the resolved format is <see cref="OutputFormat.Table"/>,
-    /// which never writes a file.
-    /// </summary>
-    /// <param name="format">The resolved output format.</param>
-    /// <param name="outputFile">The value of <c>--output</c>.</param>
-    /// <returns>
-    /// <see langword="true"/> when the output path will be ignored; otherwise <see langword="false"/>.
-    /// </returns>
-    public static bool OutputIgnoredForTable(OutputFormat format, string? outputFile) =>
-        format == OutputFormat.Table
-        && !string.IsNullOrEmpty(outputFile)
-        && outputFile != "-";
 }

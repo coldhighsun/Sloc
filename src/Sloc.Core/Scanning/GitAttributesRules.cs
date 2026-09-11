@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Sloc.Core;
+namespace Sloc.Core.Scanning;
 
 /// <summary>
 /// Evaluates whether a path is marked vendored or generated according to a set of

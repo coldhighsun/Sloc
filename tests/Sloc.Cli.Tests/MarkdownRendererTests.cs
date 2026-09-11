@@ -17,7 +17,7 @@ public class MarkdownRendererTests
     {
         var summary = BuildSummary("a.cs");
 
-        var text = Render(summary, byFile: false, noHealth: false);
+        var text = Render(summary, byFile: false, noHealth: false, noComplexity: true);
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.TrimEnd('\r'))
             .ToArray();
@@ -30,6 +30,34 @@ public class MarkdownRendererTests
     }
 
     /// <summary>
+    /// Verifies that the Complexity column is present by default with the per-language total.
+    /// </summary>
+    [Fact]
+    public void Render_Complexity_WritesComplexityColumn()
+    {
+        var file = new FileAnalysis { Path = "a.cs", Language = "C#", Code = 80, Comment = 20, Blank = 5, Complexity = 4 };
+        var summary = new AnalysisSummary([file]);
+
+        var text = Render(summary, byFile: false, noHealth: true);
+
+        Assert.Contains("| Language | Files | Code | Comment | Blank | Total | Complexity |", text);
+        Assert.Contains("| C# | 1 | 80 | 20 | 5 | 105 | 4 |", text);
+    }
+
+    /// <summary>
+    /// Verifies that <c>noComplexity</c> drops the Complexity column.
+    /// </summary>
+    [Fact]
+    public void Render_NoComplexity_OmitsComplexityColumn()
+    {
+        var summary = BuildSummary("a.cs");
+
+        var text = Render(summary, byFile: false, noHealth: true, noComplexity: true);
+
+        Assert.DoesNotContain("Complexity", text);
+    }
+
+    /// <summary>
     /// Verifies that the by-language table ends with a bolded Total row summing all languages.
     /// </summary>
     [Fact]
@@ -37,7 +65,7 @@ public class MarkdownRendererTests
     {
         var summary = BuildSummary("a.cs");
 
-        var text = Render(summary, byFile: false, noHealth: false);
+        var text = Render(summary, byFile: false, noHealth: false, noComplexity: true);
 
         Assert.Contains("| **Total** | 1 | 80 | 20 | 5 | 105 |", text);
     }
@@ -50,7 +78,7 @@ public class MarkdownRendererTests
     {
         var summary = BuildSummary("a.cs");
 
-        var text = Render(summary, byFile: true, noHealth: false);
+        var text = Render(summary, byFile: true, noHealth: false, noComplexity: true);
 
         Assert.Contains("| **Total** |  | 80 | 20 | 5 | 105 |", text);
     }
@@ -92,7 +120,7 @@ public class MarkdownRendererTests
     {
         var summary = BuildSummary("a.cs");
 
-        var text = Render(summary, byFile: false, noHealth: true);
+        var text = Render(summary, byFile: false, noHealth: true, noComplexity: true);
 
         Assert.Contains("| Language | Files | Code | Comment | Blank | Total |", text);
         Assert.DoesNotContain("Health", text);
@@ -106,7 +134,7 @@ public class MarkdownRendererTests
     {
         var summary = BuildSummary("weird|name.cs");
 
-        var text = Render(summary, byFile: true, noHealth: true);
+        var text = Render(summary, byFile: true, noHealth: true, noComplexity: true);
 
         Assert.Contains("weird\\|name.cs", text);
     }
@@ -126,10 +154,10 @@ public class MarkdownRendererTests
         Assert.Contains("- bad.bin — binary file", text);
     }
 
-    private static string Render(AnalysisSummary summary, bool byFile, bool noHealth)
+    private static string Render(AnalysisSummary summary, bool byFile, bool noHealth, bool noComplexity = false)
     {
         using var writer = new StringWriter();
-        new MarkdownRenderer(writer).Render(summary, byFile, noHealth);
+        new MarkdownRenderer(writer).Render(summary, byFile, noHealth, noComplexity: noComplexity);
         return writer.ToString();
     }
 
