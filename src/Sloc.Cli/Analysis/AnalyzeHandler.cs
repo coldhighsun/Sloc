@@ -19,6 +19,10 @@ public sealed class AnalyzeHandler
     private static readonly TimeSpan LiveTableRefreshInterval = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan WatchDebounceInterval = TimeSpan.FromMilliseconds(400);
+    // Mirrors DirectoryScanner's default-excluded directory names (kept separately since
+    // that set is private to DirectoryScanner); see IsInIgnoredDirectory.
+    private static readonly string[] WatchIgnoredDirectoryNames =
+        ["bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"];
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
 
@@ -177,53 +181,35 @@ public sealed class AnalyzeHandler
 
             var files = scanResult.Files;
             var skipped = new List<SkippedEntry>(scanResult.Skipped);
-
-            // Analyze into fixed slots so the merged order is deterministic (scan order),
-            // independent of the degree of parallelism.
-            var analyses = new FileAnalysis?[files.Count];
-            var fileSkips = new SkippedEntry?[files.Count];
-            var aggregator = new LiveAggregator(options.Sort, options.Top);
-
-            void AnalyzeAt(int i)
-            {
-                try
-                {
-                    var analysis = _analyzer.Analyze(files[i].Path, files[i].Language, computeHash: options.Unique);
-                    analyses[i] = analysis;
-                    aggregator.Add(analysis);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BinaryFileException)
-                {
-                    fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
-                {
-                    // Any other per-file failure (e.g. a decoding error) skips just that file
-                    // rather than aborting the whole run; fatal conditions are left to propagate.
-                    fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
-                }
-            }
-
-            var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
-            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = jobs };
+            List<FileAnalysis> results;
 
             if (files.Count == 0)
             {
                 // Nothing to analyze.
+                results = [];
             }
             else if (!showProgress)
             {
-                Parallel.For(0, files.Count, parallelOptions, AnalyzeAt);
+                results = AnalyzeFiles(files, options, skipped);
             }
             else if (options is { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
             {
+                var aggregator = new LiveAggregator(options.Sort, options.Top);
+                results = [];
+
                 AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
                     .AutoClear(false)
                     .Start(ctx =>
                     {
                         // Analyze on a background task while this thread refreshes the table
                         // from the thread-safe aggregator (no per-tick re-aggregation).
-                        var work = Task.Run(() => Parallel.For(0, files.Count, parallelOptions, AnalyzeAt));
+                        var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, analysis) =>
+                        {
+                            if (analysis is not null)
+                            {
+                                aggregator.Add(analysis);
+                            }
+                        }));
                         while (!work.IsCompleted)
                         {
                             ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
@@ -240,42 +226,17 @@ public sealed class AnalyzeHandler
             }
             else
             {
+                results = [];
+
                 AnsiConsole.Progress()
                     .AutoClear(true)
                     .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
                     .Start(ctx =>
                     {
                         var task = ctx.AddTask("[green]Analyzing[/]", maxValue: files.Count);
-                        var work = Task.Run(() => Parallel.For(0, files.Count, parallelOptions, i =>
-                        {
-                            AnalyzeAt(i);
-                            task.Increment(1);
-                        }));
+                        var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, _) => task.Increment(1)));
                         work.GetAwaiter().GetResult();
                     });
-            }
-
-            // Merge in scan order so results are deterministic regardless of --jobs.
-            var results = new List<FileAnalysis>(files.Count);
-            foreach (var analysis in analyses)
-            {
-                if (analysis is not null)
-                {
-                    results.Add(analysis);
-                }
-            }
-
-            foreach (var fileSkip in fileSkips)
-            {
-                if (fileSkip is not null)
-                {
-                    skipped.Add(fileSkip);
-                }
-            }
-
-            if (options.Unique)
-            {
-                results = DeduplicateByHash(results, skipped);
             }
 
             if (gitSnapshot is not null)
@@ -418,6 +379,9 @@ public sealed class AnalyzeHandler
         var watchDir = Directory.Exists(options.Path) ? options.Path : Path.GetDirectoryName(Path.GetFullPath(options.Path)) ?? ".";
 
         var cancellationRequested = false;
+        // Signaled immediately on Ctrl+C so the debounce wait below wakes up right away,
+        // instead of a plain Thread.Sleep leaving Ctrl+C waiting out the rest of the interval.
+        using var cancelSignal = new ManualResetEventSlim(false);
         Console.CancelKeyPress += OnCancelKeyPress;
 
         try
@@ -429,7 +393,22 @@ public sealed class AnalyzeHandler
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
             };
 
-            void OnChange(object sender, FileSystemEventArgs e) => Interlocked.Exchange(ref pendingChange, 1);
+            void OnChange(object sender, FileSystemEventArgs e)
+            {
+                // Best-effort noise reduction: skip the well-known build/VCS/package
+                // directories the scanner itself always excludes by default. This is not a
+                // full replay of --include/--exclude/.gitignore filtering (which would mean
+                // duplicating DirectoryScanner's glob/gitignore matching here); other filtered
+                // files can still trigger a rescan, which is harmless since rescans are
+                // idempotent, just more frequent than the exact watched file set.
+                if (IsInIgnoredDirectory(e.FullPath))
+                {
+                    return;
+                }
+
+                Interlocked.Exchange(ref pendingChange, 1);
+            }
+
             watcher.Changed += OnChange;
             watcher.Created += OnChange;
             watcher.Deleted += OnChange;
@@ -442,7 +421,7 @@ public sealed class AnalyzeHandler
                 {
                     while (!cancellationRequested)
                     {
-                        Thread.Sleep(WatchDebounceInterval);
+                        cancelSignal.Wait(WatchDebounceInterval);
 
                         if (cancellationRequested)
                         {
@@ -474,20 +453,61 @@ public sealed class AnalyzeHandler
         {
             e.Cancel = true;
             cancellationRequested = true;
+            cancelSignal.Set();
         }
     }
 
     /// <summary>
+    /// Whether <paramref name="path"/> falls under one of the well-known build/VCS/package
+    /// directories that <see cref="DirectoryScanner"/> always excludes by default, used to
+    /// cheaply filter obviously-irrelevant <see cref="FileSystemWatcher"/> events in
+    /// <see cref="ExecuteWatch"/> without replaying the scanner's full glob/gitignore logic.
+    /// </summary>
+    private static bool IsInIgnoredDirectory(string path) =>
+        path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => WatchIgnoredDirectoryNames.Contains(segment, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>
     /// Scans and analyzes once for <see cref="ExecuteWatch"/>: full re-scan (applying the
     /// same include/exclude/gitignore/gitattributes/language filters as a normal run),
-    /// parallel per-file analysis, and aggregation into an <see cref="AnalysisSummary"/>.
+    /// then <see cref="AnalyzeFiles"/> for the per-file analysis and aggregation into an
+    /// <see cref="AnalysisSummary"/>.
     /// </summary>
     private AnalysisSummary RunWatchPass(AnalyzeOptions options, ScanOptions scanOptions)
     {
         var scanResult = _scanner.Scan(options.Path, scanOptions);
-        var files = scanResult.Files;
         var skipped = new List<SkippedEntry>(scanResult.Skipped);
+        var results = AnalyzeFiles(scanResult.Files, options, skipped);
 
+        return new AnalysisSummary(
+            results,
+            skipped,
+            options.Sort,
+            descending: options.Sort != LanguageSort.Name,
+            top: options.Top);
+    }
+
+    /// <summary>
+    /// Analyzes <paramref name="files"/> in parallel (respecting <see cref="AnalyzeOptions.Jobs"/>),
+    /// merges results in scan order so output is deterministic regardless of the degree of
+    /// parallelism, appends any per-file failures to <paramref name="skipped"/>, and applies
+    /// <see cref="AnalyzeOptions.Unique"/> deduplication. Shared by the one-shot pipeline in
+    /// <see cref="Execute"/> and the repeated passes in <see cref="ExecuteWatch"/> so per-file
+    /// error handling and merge/dedup behavior can't drift between the two.
+    /// </summary>
+    /// <param name="onFileAnalyzed">
+    /// Optional callback invoked (from a worker thread, once per file) with the file's index
+    /// and its analysis, or <see langword="null"/> if that file was skipped. Used to drive
+    /// progress UI (a live-aggregated table or a progress bar) while analysis runs.
+    /// </param>
+    private List<FileAnalysis> AnalyzeFiles(
+        IReadOnlyList<ScannedFile> files,
+        AnalyzeOptions options,
+        List<SkippedEntry> skipped,
+        Action<int, FileAnalysis?>? onFileAnalyzed = null)
+    {
+        // Analyze into fixed slots so the merged order is deterministic (scan order),
+        // independent of the degree of parallelism.
         var analyses = new FileAnalysis?[files.Count];
         var fileSkips = new SkippedEntry?[files.Count];
 
@@ -503,13 +523,18 @@ public sealed class AnalyzeHandler
             }
             catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
             {
+                // Any other per-file failure (e.g. a decoding error) skips just that file
+                // rather than aborting the whole run; fatal conditions are left to propagate.
                 fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
             }
+
+            onFileAnalyzed?.Invoke(i, analyses[i]);
         }
 
         var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
         Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs }, AnalyzeAt);
 
+        // Merge in scan order so results are deterministic regardless of --jobs.
         var results = new List<FileAnalysis>(files.Count);
         foreach (var analysis in analyses)
         {
@@ -527,17 +552,7 @@ public sealed class AnalyzeHandler
             }
         }
 
-        if (options.Unique)
-        {
-            results = DeduplicateByHash(results, skipped);
-        }
-
-        return new AnalysisSummary(
-            results,
-            skipped,
-            options.Sort,
-            descending: options.Sort != LanguageSort.Name,
-            top: options.Top);
+        return options.Unique ? DeduplicateByHash(results, skipped) : results;
     }
 
     /// <summary>
