@@ -336,61 +336,16 @@ public sealed class AnalyzeHandler
                 return ThresholdResult(options, summary);
             }
 
-            if (options.Format == OutputFormat.Json)
+            if (CreateRenderer(options.Format) is { } createRenderer)
             {
-                // JSON defaults to stdout (pipeable); an explicit path writes a file.
+                // These formats default to stdout (pipeable/pasteable); an explicit path writes a file.
                 if (options.OutputFile is null || options.OutputFile == StdoutToken)
                 {
-                    new JsonRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
+                    createRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
                 }
                 else
                 {
-                    if (!WriteToFile(options.OutputFile, writer => new JsonRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
-                    {
-                        return ExitCode.Error;
-                    }
-                }
-            }
-            else if (options.Format == OutputFormat.Html)
-            {
-                // Html defaults to stdout (pipeable); an explicit path writes a file.
-                if (options.OutputFile is null || options.OutputFile == StdoutToken)
-                {
-                    new HtmlRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
-                }
-                else
-                {
-                    if (!WriteToFile(options.OutputFile, writer => new HtmlRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
-                    {
-                        return ExitCode.Error;
-                    }
-                }
-            }
-            else if (options.Format == OutputFormat.Csv)
-            {
-                // CSV defaults to stdout (pipeable); an explicit path writes a file.
-                if (options.OutputFile is null || options.OutputFile == StdoutToken)
-                {
-                    new CsvRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
-                }
-                else
-                {
-                    if (!WriteToFile(options.OutputFile, writer => new CsvRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
-                    {
-                        return ExitCode.Error;
-                    }
-                }
-            }
-            else if (options.Format == OutputFormat.Markdown)
-            {
-                // Markdown defaults to stdout (pasteable); an explicit path writes a file.
-                if (options.OutputFile is null || options.OutputFile == StdoutToken)
-                {
-                    new MarkdownRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
-                }
-                else
-                {
-                    if (!WriteToFile(options.OutputFile, writer => new MarkdownRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
+                    if (!WriteToFile(options.OutputFile, writer => createRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
                     {
                         return ExitCode.Error;
                     }
@@ -423,6 +378,22 @@ public sealed class AnalyzeHandler
             gitSnapshot?.Dispose();
         }
     }
+
+    /// <summary>
+    /// Returns a factory for the <see cref="IResultRenderer"/> matching <paramref name="format"/>,
+    /// or <see langword="null"/> for <see cref="OutputFormat.Table"/> (rendered separately, since
+    /// it writes directly to the console rather than through a <see cref="TextWriter"/>). A
+    /// factory (rather than a single instance) is returned so the same format can be rendered
+    /// twice with different writers, e.g. once to stdout and once to a file.
+    /// </summary>
+    private static Func<TextWriter, IResultRenderer>? CreateRenderer(OutputFormat format) => format switch
+    {
+        OutputFormat.Json => writer => new JsonRenderer(writer),
+        OutputFormat.Html => writer => new HtmlRenderer(writer),
+        OutputFormat.Csv => writer => new CsvRenderer(writer),
+        OutputFormat.Markdown => writer => new MarkdownRenderer(writer),
+        _ => null
+    };
 
     /// <summary>
     /// Keeps only the first file (in scan order) for each distinct content hash; every

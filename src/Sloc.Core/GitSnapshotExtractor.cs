@@ -154,16 +154,44 @@ public sealed class GitSnapshotExtractor
 
         using var process = StartGit(repoRoot, ["cat-file", "--batch"], redirectInput: true);
         var stdin = process.StandardInput.BaseStream;
-        var stdout = process.StandardOutput.BaseStream;
+        var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536);
+
+        // Write every request on a background thread while this thread reads responses,
+        // instead of alternating one write then one blocking read per blob. That previous
+        // request/response ping-pong left git idle between blobs; pipelining lets it start
+        // producing the next blob's header while this thread is still copying the current
+        // one's content. Writing and reading concurrently (rather than writing everything
+        // up front) also avoids a deadlock if the requests exceed the stdin pipe buffer
+        // while nobody is draining stdout yet.
+        var writerTask = Task.Run(() =>
+        {
+            try
+            {
+                foreach (var (hash, _) in blobs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var request = Encoding.ASCII.GetBytes(hash + "\n");
+                    stdin.Write(request, 0, request.Length);
+                }
+
+                stdin.Flush();
+            }
+            catch (IOException)
+            {
+                // The read loop below already detects (or will detect) that the batch
+                // process closed its stdout early; the matching stdin write failure is
+                // reported there, so it is safe to swallow here.
+            }
+            finally
+            {
+                stdin.Dispose();
+            }
+        }, cancellationToken);
 
         for (var i = 0; i < blobs.Count; i++)
         {
-            var (hash, gitPath) = blobs[i];
+            var gitPath = blobs[i].GitPath;
             cancellationToken.ThrowIfCancellationRequested();
-
-            var request = Encoding.ASCII.GetBytes(hash + "\n");
-            stdin.Write(request, 0, request.Length);
-            stdin.Flush();
 
             string header;
             try
@@ -210,7 +238,7 @@ public sealed class GitSnapshotExtractor
             files.Add(new GitSnapshotFile(tempPath, gitPath));
         }
 
-        stdin.Dispose();
+        writerTask.GetAwaiter().GetResult();
         if (!process.WaitForExit((int)TimeSpan.FromMinutes(5).TotalMilliseconds))
         {
             process.Kill(entireProcessTree: true);
@@ -222,11 +250,16 @@ public sealed class GitSnapshotExtractor
     private static (List<(string Hash, string GitPath)> Blobs, List<Models.SkippedEntry> Skipped) ListTree(
                     string repoRoot, string treeHash)
     {
-        var output = RunGitRaw(repoRoot, ["ls-tree", "-r", "-z", treeHash]);
+        string[] arguments = ["ls-tree", "-r", "-z", treeHash];
+        using var process = StartGit(repoRoot, arguments, redirectInput: false);
         var blobs = new List<(string Hash, string GitPath)>();
         var skipped = new List<Models.SkippedEntry>();
 
-        foreach (var record in SplitRecords(output))
+        // Parse records as they arrive instead of buffering the whole listing into one
+        // byte array and one decoded string first; a monorepo's tree can list millions of
+        // entries, and that buffering was an extra full-size allocation for no benefit.
+        using var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536);
+        foreach (var record in ReadNullTerminatedRecords(stdout))
         {
             // Each record is: "<mode> <type> <hash>\t<path>"
             var tabIndex = record.IndexOf('\t');
@@ -262,21 +295,72 @@ public sealed class GitSnapshotExtractor
             blobs.Add((hash, gitPath));
         }
 
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            throw new GitSnapshotException(DescribeFailure(arguments, stderr));
+        }
+
         return (blobs, skipped);
+    }
+
+    /// <summary>
+    /// Reads records separated by NUL bytes from <paramref name="stream"/>, decoding each
+    /// as UTF-8 as soon as its terminator is seen. Splitting on 0x00 is always safe for
+    /// UTF-8 text since that byte never appears within or between multi-byte sequences.
+    /// </summary>
+    private static IEnumerable<string> ReadNullTerminatedRecords(Stream stream)
+    {
+        var buffer = new byte[4096];
+        var length = 0;
+        int b;
+        while ((b = stream.ReadByte()) != -1)
+        {
+            if (b == 0)
+            {
+                if (length > 0)
+                {
+                    yield return Encoding.UTF8.GetString(buffer, 0, length);
+                    length = 0;
+                }
+
+                continue;
+            }
+
+            if (length == buffer.Length)
+            {
+                Array.Resize(ref buffer, buffer.Length * 2);
+            }
+
+            buffer[length++] = (byte)b;
+        }
+
+        if (length > 0)
+        {
+            yield return Encoding.UTF8.GetString(buffer, 0, length);
+        }
     }
 
     private static string ReadLine(Stream stream)
     {
-        var bytes = new List<byte>();
+        var buffer = new byte[128];
+        var length = 0;
         int b;
         while ((b = stream.ReadByte()) != -1)
         {
             if (b == '\n')
             {
-                return Encoding.ASCII.GetString(bytes.ToArray());
+                return Encoding.ASCII.GetString(buffer, 0, length);
             }
 
-            bytes.Add((byte)b);
+            if (length == buffer.Length)
+            {
+                Array.Resize(ref buffer, buffer.Length * 2);
+            }
+
+            buffer[length++] = (byte)b;
         }
 
         throw new EndOfStreamException();
@@ -302,12 +386,6 @@ public sealed class GitSnapshotExtractor
         }
 
         return stdout.ToArray();
-    }
-
-    private static IEnumerable<string> SplitRecords(byte[] output)
-    {
-        var text = Encoding.UTF8.GetString(output);
-        return text.Split('\0', StringSplitOptions.RemoveEmptyEntries);
     }
 
     private static System.Diagnostics.Process StartGit(string workingDirectory, string[] arguments, bool redirectInput)

@@ -93,6 +93,42 @@ public class CsvRendererTests
     }
 
     /// <summary>
+    /// Verifies that a path starting with a formula-trigger character (=, +, -, @, or tab)
+    /// is prefixed with a quote so spreadsheet apps do not execute it as a formula.
+    /// </summary>
+    [Theory]
+    [InlineData("=cmd|'/c calc'!A1")]
+    [InlineData("+1+1")]
+    [InlineData("-1+1")]
+    [InlineData("@SUM(A1:A2)")]
+    public void Render_ByFile_NeutralizesFormulaTriggerPaths(string maliciousPath)
+    {
+        var summary = BuildSummary(maliciousPath);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true, noComplexity: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.StartsWith("'" + maliciousPath[0], lines[1]);
+    }
+
+    /// <summary>
+    /// Verifies that a skip-reason starting with a formula-trigger character is also
+    /// neutralized, not just file paths.
+    /// </summary>
+    [Fact]
+    public void Render_WithSkippedFiles_NeutralizesFormulaTriggerReason()
+    {
+        var summary = BuildSummary("a.cs", skipped: [new SkippedEntry("bad.cs", "=HYPERLINK(http://evil)")]);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
+        var text = writer.ToString();
+
+        Assert.Contains("bad.cs,'=HYPERLINK", text);
+    }
+
+    /// <summary>
     /// Verifies that the by-language CSV ends with a Total row summing all languages.
     /// </summary>
     [Fact]
