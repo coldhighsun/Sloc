@@ -18,6 +18,7 @@ public sealed class AnalyzeHandler
     private const string StdoutToken = "-";
     private static readonly TimeSpan LiveTableRefreshInterval = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan WatchDebounceInterval = TimeSpan.FromMilliseconds(400);
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
 
@@ -86,6 +87,11 @@ public sealed class AnalyzeHandler
             RespectGitAttributes = options.RespectGitAttributes,
             FollowSymlinks = options.FollowSymlinks
         };
+
+        if (options.Watch)
+        {
+            return ExecuteWatch(options, scanOptions, tableRenderer, sourcePath);
+        }
 
         GitSnapshot? gitSnapshot = null;
         if (options.GitHash is { } gitHash)
@@ -377,6 +383,161 @@ public sealed class AnalyzeHandler
         {
             gitSnapshot?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Runs a watch loop: renders an initial table, then watches <paramref name="options"/>'s
+    /// path for file-system changes, debouncing bursts of events and re-running the scan +
+    /// analysis on each settled change, refreshing the same live table. Runs until the user
+    /// presses Ctrl+C.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately re-implements a small, self-contained scan+analyze+summarize pass
+    /// (<see cref="RunWatchPass"/>) rather than reusing the one-shot pipeline in
+    /// <see cref="Execute"/>, whose progress-bar/spinner/git-snapshot/baseline branches are
+    /// not relevant here (watch is Table-only and excludes --git-hash/--list-file/--baseline)
+    /// and would add risk to entangle with a repeatedly-run loop.
+    /// </remarks>
+    private int ExecuteWatch(AnalyzeOptions options, ScanOptions scanOptions, TableRenderer tableRenderer, string sourcePath)
+    {
+        if (!options.Quiet)
+        {
+            var version = typeof(AnalyzeHandler).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+
+            if (!string.IsNullOrEmpty(version))
+            {
+                AnsiConsole.MarkupLine($"[grey]sloc {Markup.Escape(version)}[/]");
+            }
+
+            AnsiConsole.MarkupLine($"[grey]Watching: {Markup.Escape(sourcePath)}[/]");
+            AnsiConsole.MarkupLine("[grey]Press Ctrl+C to stop.[/]");
+        }
+
+        var watchDir = Directory.Exists(options.Path) ? options.Path : Path.GetDirectoryName(Path.GetFullPath(options.Path)) ?? ".";
+
+        var cancellationRequested = false;
+        Console.CancelKeyPress += OnCancelKeyPress;
+
+        try
+        {
+            var pendingChange = 0;
+            using var watcher = new FileSystemWatcher(watchDir)
+            {
+                IncludeSubdirectories = !options.NoRecursive,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+            };
+
+            void OnChange(object sender, FileSystemEventArgs e) => Interlocked.Exchange(ref pendingChange, 1);
+            watcher.Changed += OnChange;
+            watcher.Created += OnChange;
+            watcher.Deleted += OnChange;
+            watcher.Renamed += OnChange;
+            watcher.EnableRaisingEvents = true;
+
+            AnsiConsole.Live(tableRenderer.BuildLanguageTable(RunWatchPass(options, scanOptions), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
+                .AutoClear(false)
+                .Start(ctx =>
+                {
+                    while (!cancellationRequested)
+                    {
+                        Thread.Sleep(WatchDebounceInterval);
+
+                        if (cancellationRequested)
+                        {
+                            break;
+                        }
+
+                        if (Interlocked.Exchange(ref pendingChange, 0) == 0)
+                        {
+                            continue;
+                        }
+
+                        var summary = RunWatchPass(options, scanOptions);
+                        ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
+                            summary,
+                            $"[grey]Last update: {DateTime.Now:T}[/]",
+                            noHealth: options.NoHealth,
+                            noComplexity: options.NoComplexity));
+                    }
+                });
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnCancelKeyPress;
+        }
+
+        return ExitCode.Success;
+
+        void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            cancellationRequested = true;
+        }
+    }
+
+    /// <summary>
+    /// Scans and analyzes once for <see cref="ExecuteWatch"/>: full re-scan (applying the
+    /// same include/exclude/gitignore/gitattributes/language filters as a normal run),
+    /// parallel per-file analysis, and aggregation into an <see cref="AnalysisSummary"/>.
+    /// </summary>
+    private AnalysisSummary RunWatchPass(AnalyzeOptions options, ScanOptions scanOptions)
+    {
+        var scanResult = _scanner.Scan(options.Path, scanOptions);
+        var files = scanResult.Files;
+        var skipped = new List<SkippedEntry>(scanResult.Skipped);
+
+        var analyses = new FileAnalysis?[files.Count];
+        var fileSkips = new SkippedEntry?[files.Count];
+
+        void AnalyzeAt(int i)
+        {
+            try
+            {
+                analyses[i] = _analyzer.Analyze(files[i].Path, files[i].Language, computeHash: options.Unique);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BinaryFileException)
+            {
+                fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
+            }
+        }
+
+        var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
+        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs }, AnalyzeAt);
+
+        var results = new List<FileAnalysis>(files.Count);
+        foreach (var analysis in analyses)
+        {
+            if (analysis is not null)
+            {
+                results.Add(analysis);
+            }
+        }
+
+        foreach (var fileSkip in fileSkips)
+        {
+            if (fileSkip is not null)
+            {
+                skipped.Add(fileSkip);
+            }
+        }
+
+        if (options.Unique)
+        {
+            results = DeduplicateByHash(results, skipped);
+        }
+
+        return new AnalysisSummary(
+            results,
+            skipped,
+            options.Sort,
+            descending: options.Sort != LanguageSort.Name,
+            top: options.Top);
     }
 
     /// <summary>

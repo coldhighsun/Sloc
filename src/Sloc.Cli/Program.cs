@@ -120,6 +120,11 @@ var noProgressOption = new Option<bool>("--no-progress")
     Description = "Suppress the live table and progress bar."
 };
 
+var watchOption = new Option<bool>("--watch", "-w")
+{
+    Description = "Watch the path for file changes and re-run the analysis, refreshing the table. Table format only; press Ctrl+C to stop."
+};
+
 var minCommentPctOption = new Option<double?>("--min-comment-pct")
 {
     Description = "Fail (exit code 2) if the overall comment percentage is below this value."
@@ -193,6 +198,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     noComplexityOption,
     quietOption,
     noProgressOption,
+    watchOption,
     minCommentPctOption,
     jobsOption,
     noGitignoreOption,
@@ -248,6 +254,29 @@ rootCommand.SetAction(parseResult =>
         return ExitCode.Error;
     }
 
+    var watch = parseResult.GetValue(watchOption);
+    var baselinePath = parseResult.GetValue(baselineOption);
+    if (watch)
+    {
+        if (listFile is not null || gitHash is not null)
+        {
+            Console.Error.WriteLine("sloc: --watch cannot be used with --git-hash or --list-file.");
+            return ExitCode.Error;
+        }
+
+        if (format != OutputFormat.Table)
+        {
+            Console.Error.WriteLine("sloc: --watch only supports Table format.");
+            return ExitCode.Error;
+        }
+
+        if (baselinePath is not null)
+        {
+            Console.Error.WriteLine("sloc: --watch cannot be used with --baseline.");
+            return ExitCode.Error;
+        }
+    }
+
     var options = new AnalyzeOptions
     {
         Path = parseResult.GetValue(pathArgument) ?? ".",
@@ -276,11 +305,12 @@ rootCommand.SetAction(parseResult =>
         RespectGitignore = !parseResult.GetValue(noGitignoreOption),
         RespectGitAttributes = !parseResult.GetValue(noGitAttributesOption),
         FollowSymlinks = parseResult.GetValue(followSymlinksOption),
-        BaselinePath = parseResult.GetValue(baselineOption),
+        BaselinePath = baselinePath,
         Sort = parseResult.GetValue(sortOption),
         Top = top,
         NoUpdateCheck = parseResult.GetValue(noUpdateCheckOption),
-        Unique = parseResult.GetValue(uniqueOption)
+        Unique = parseResult.GetValue(uniqueOption),
+        Watch = watch
     };
 
     return new AnalyzeHandler().Execute(options);

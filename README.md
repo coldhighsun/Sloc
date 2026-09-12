@@ -145,6 +145,7 @@ sloc . --format markdown --detailed -o -
 | `--all` | | Include files with unknown extensions (grouped as `Other`) |
 | `--quiet` | `-q` | Suppress the banner, progress UI, and `Saved to` message |
 | `--no-progress` | | Suppress the live table and progress bar |
+| `--watch` | `-w` | Watch the path for file changes and re-run the analysis, refreshing the table (Table format only; press Ctrl+C to stop) |
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
@@ -354,6 +355,7 @@ sloc . --format markdown --detailed -o -
 | `--all` | | 包含扩展名未知的文件（归入 `Other`） |
 | `--quiet` | `-q` | 抑制横幅、进度 UI 和 `Saved to` 提示 |
 | `--no-progress` | | 抑制实时表格和进度条 |
+| `--watch` | `-w` | 监视路径下的文件变化并自动重新分析,刷新表格(仅支持 Table 格式;按 Ctrl+C 停止) |
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |

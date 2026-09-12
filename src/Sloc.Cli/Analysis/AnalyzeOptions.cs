@@ -227,4 +227,14 @@ public sealed class AnalyzeOptions
     {
         get; init;
     }
+
+    /// <summary>
+    /// When <see langword="true"/>, watches <see cref="Path"/> for file changes and
+    /// re-runs the analysis, refreshing the live table on each change, until interrupted.
+    /// Only supported for <see cref="OutputFormat.Table"/>.
+    /// </summary>
+    public bool Watch
+    {
+        get; init;
+    }
 }
