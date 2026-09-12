@@ -60,8 +60,19 @@ public sealed class CsvRenderer : IResultRenderer
     private static string ComplexityCell(int? complexity) =>
         complexity?.ToString() ?? string.Empty;
 
+    // Spreadsheet apps (Excel, Google Sheets, LibreOffice) treat a cell starting with
+    // =, +, -, @, or tab as a formula. A file path or skip-reason with such a leading
+    // character would otherwise execute as a formula when the CSV is opened; prefixing
+    // it with a quote neutralizes that without changing the visible text.
+    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@', '\t'];
+
     private static string Escape(string field)
     {
+        if (field.Length > 0 && Array.IndexOf(FormulaTriggers, field[0]) >= 0)
+        {
+            field = "'" + field;
+        }
+
         if (field.IndexOfAny([',', '"', '\r', '\n']) < 0)
         {
             return field;
