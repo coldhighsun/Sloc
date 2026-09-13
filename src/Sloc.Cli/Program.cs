@@ -30,6 +30,13 @@ var gitHashOption = new Option<string>("--git-hash")
         + "'path' is used as the repo root to query. Requires git on PATH. Mutually exclusive with --list-file."
 };
 
+var compareToOption = new Option<string>("--compare-to")
+{
+    Description = "Diff the current analysis against 'path' as of this other commit/tree-ish, without checking it out or saving a baseline file first. "
+        + "Requires git on PATH. Combine with --git-hash to diff two commits directly. "
+        + "Mutually exclusive with --baseline, --watch, and --list-file; output is Table or Json only, same as --baseline."
+};
+
 var includeOption = new Option<string[]>("--include", "-i")
 {
     Description = "Glob pattern of files to include. Can be specified multiple times.",
@@ -182,6 +189,7 @@ var rootCommand = new RootCommand("Sloc - counts code, comment, and blank lines 
     pathArgument,
     listFileOption,
     gitHashOption,
+    compareToOption,
     includeOption,
     excludeOption,
     excludeDirOption,
@@ -263,11 +271,20 @@ rootCommand.SetAction(parseResult =>
         return ExitCode.Error;
     }
 
+    var compareTo = parseResult.GetValue(compareToOption);
+    var compareToError = CliArgumentValidation.ValidateCompareTo(compareTo, baselinePath, watch, listFile);
+    if (compareToError is not null)
+    {
+        Console.Error.WriteLine(compareToError);
+        return ExitCode.Error;
+    }
+
     var options = new AnalyzeOptions
     {
         Path = parseResult.GetValue(pathArgument) ?? ".",
         ListFile = listFile,
         GitHash = gitHash,
+        CompareTo = compareTo,
         Includes = parseResult.GetValue(includeOption) ?? [],
         Excludes = [
             .. parseResult.GetValue(excludeOption) ?? [],

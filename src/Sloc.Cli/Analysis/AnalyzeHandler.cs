@@ -267,40 +267,29 @@ public sealed class AnalyzeHandler
                     return ExitCode.Error;
                 }
 
-                // Baseline diffs are only rendered as a console Table or as JSON. Any other
-                // requested format (and any --output for a non-JSON diff) is not supported, so
-                // warn and fall back to the Table rather than silently ignoring the request.
-                if (options.Format is not (OutputFormat.Json or OutputFormat.Table))
-                {
-                    if (options.OutputFile is not null && options.OutputFile != StdoutToken)
-                    {
-                        Console.Error.WriteLine(
-                            $"sloc: --baseline diff output is only supported for Table and Json formats; -f {options.Format.ToString().ToLowerInvariant()} with -o '{options.OutputFile}' cannot be honored.");
-                        return ExitCode.Error;
-                    }
+                return RenderDiffAndFinish(
+                    summary, "--baseline", options, updateCheck, version,
+                    writer => DiffRenderer.RenderJson(writer, summary, baseline),
+                    () => DiffRenderer.RenderTable(summary, baseline));
+            }
 
-                    Console.Error.WriteLine(
-                        $"sloc: --baseline diff output is only supported for Table and Json formats; ignoring -f {options.Format.ToString().ToLowerInvariant()} and rendering a table.");
-                }
-
-                if (options.Format == OutputFormat.Json && (options.OutputFile is null || options.OutputFile == StdoutToken))
+            if (options.CompareTo is { } compareToRef)
+            {
+                AnalysisSummary compareBaseline;
+                try
                 {
-                    DiffRenderer.RenderJson(Console.Out, summary, baseline);
+                    compareBaseline = AnalyzeGitRef(options.Path, compareToRef, scanOptions, options);
                 }
-                else if (options.Format == OutputFormat.Json)
+                catch (Exception ex) when (ex is GitSnapshotException or DirectoryNotFoundException or IOException or UnauthorizedAccessException)
                 {
-                    if (!WriteToFile(options.OutputFile!, writer => DiffRenderer.RenderJson(writer, summary, baseline), options.Quiet))
-                    {
-                        return ExitCode.Error;
-                    }
-                }
-                else
-                {
-                    DiffRenderer.RenderTable(summary, baseline);
+                    Console.Error.WriteLine($"sloc: {ex.Message}");
+                    return ExitCode.Error;
                 }
 
-                ReportUpdate(updateCheck, version);
-                return ThresholdResult(options, summary);
+                return RenderDiffAndFinish(
+                    summary, "--compare-to", options, updateCheck, version,
+                    writer => DiffRenderer.RenderJson(writer, summary, compareBaseline),
+                    () => DiffRenderer.RenderTable(summary, compareBaseline));
             }
 
             if (CreateRenderer(options.Format) is { } createRenderer)
@@ -485,6 +474,111 @@ public sealed class AnalyzeHandler
             options.Sort,
             descending: options.Sort != LanguageSort.Name,
             top: options.Top);
+    }
+
+    /// <summary>
+    /// Extracts <paramref name="repoPath"/>'s repository tree as of <paramref name="gitRef"/>
+    /// via <see cref="GitSnapshotExtractor"/>, then scans and analyzes it with
+    /// <paramref name="scanOptions"/> and remaps results back to git-relative paths. Used by
+    /// <c>--compare-to</c> to build the baseline side of a diff without requiring a previously
+    /// saved report. The temporary extraction directory is always cleaned up before returning.
+    /// </summary>
+    /// <remarks>
+    /// When <see cref="AnalyzeOptions.GitHash"/> is not set, the "current" side being diffed
+    /// against is a normal filesystem scan scoped to <paramref name="repoPath"/>, so the
+    /// baseline is restricted to that same subtree — otherwise the diff would compare a
+    /// scoped current summary against an unscoped (whole-repository) baseline. But when
+    /// <see cref="AnalyzeOptions.GitHash"/> is set, the current side is itself unscoped (per
+    /// <c>--git-hash</c>'s own "<paramref name="repoPath"/> is the repo root" convention, it
+    /// always analyzes the whole repository regardless of <paramref name="repoPath"/>), so the
+    /// baseline must stay unscoped too, to match.
+    /// </remarks>
+    private AnalysisSummary AnalyzeGitRef(string repoPath, string gitRef, ScanOptions scanOptions, AnalyzeOptions options)
+    {
+        using var snapshot = new GitSnapshotExtractor().Extract(repoPath, gitRef);
+
+        IReadOnlyList<GitSnapshotFile> filesInScope = snapshot.Files;
+        IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
+        if (options.GitHash is null)
+        {
+            var relativePrefix = Path.GetRelativePath(Path.GetFullPath(snapshot.RepoRoot), Path.GetFullPath(repoPath))
+                .Replace('\\', '/');
+            if (relativePrefix != ".")
+            {
+                bool InScope(string gitPath) =>
+                    gitPath.Equals(relativePrefix, StringComparison.OrdinalIgnoreCase)
+                        || gitPath.StartsWith(relativePrefix + "/", StringComparison.OrdinalIgnoreCase);
+
+                filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
+                skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
+            }
+        }
+
+        var scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
+        var skipped = new List<SkippedEntry>(scanResult.Skipped);
+        var results = AnalyzeFiles(scanResult.Files, options, skipped);
+
+        var gitPathByTempPath = filesInScope.ToDictionary(f => f.TempPath, f => f.GitPath);
+        results = RemapGitPaths(results, gitPathByTempPath);
+        skipped = RemapGitPaths(skipped, gitPathByTempPath);
+        skipped.AddRange(skippedInScope);
+
+        // No --top limit here: the diff needs every language present in either side to
+        // compare correctly, regardless of how the current run's summary was truncated.
+        return new AnalysisSummary(results, skipped, options.Sort, descending: options.Sort != LanguageSort.Name);
+    }
+
+    /// <summary>
+    /// Renders a diff (<paramref name="renderJson"/>/<paramref name="renderTable"/>) the same
+    /// way regardless of whether the baseline came from <c>--baseline</c> or <c>--compare-to</c>:
+    /// diffs only support Table and Json output, so any other requested format (and any
+    /// <c>--output</c> for a non-Json diff) is rejected or falls back to Table, then the
+    /// threshold/exit-code handling shared with a normal run applies.
+    /// </summary>
+    /// <param name="flagName">
+    /// The option name to name in the unsupported-format warning/error (<c>--baseline</c> or
+    /// <c>--compare-to</c>).
+    /// </param>
+    private int RenderDiffAndFinish(
+        AnalysisSummary summary,
+        string flagName,
+        AnalyzeOptions options,
+        Task<UpdateCheckResult?>? updateCheck,
+        string? version,
+        Action<TextWriter> renderJson,
+        Action renderTable)
+    {
+        if (options.Format is not (OutputFormat.Json or OutputFormat.Table))
+        {
+            if (options.OutputFile is not null && options.OutputFile != StdoutToken)
+            {
+                Console.Error.WriteLine(
+                    $"sloc: {flagName} diff output is only supported for Table and Json formats; -f {options.Format.ToString().ToLowerInvariant()} with -o '{options.OutputFile}' cannot be honored.");
+                return ExitCode.Error;
+            }
+
+            Console.Error.WriteLine(
+                $"sloc: {flagName} diff output is only supported for Table and Json formats; ignoring -f {options.Format.ToString().ToLowerInvariant()} and rendering a table.");
+        }
+
+        if (options.Format == OutputFormat.Json && (options.OutputFile is null || options.OutputFile == StdoutToken))
+        {
+            renderJson(Console.Out);
+        }
+        else if (options.Format == OutputFormat.Json)
+        {
+            if (!WriteToFile(options.OutputFile!, renderJson, options.Quiet))
+            {
+                return ExitCode.Error;
+            }
+        }
+        else
+        {
+            renderTable();
+        }
+
+        ReportUpdate(updateCheck, version);
+        return ThresholdResult(options, summary);
     }
 
     /// <summary>
