@@ -499,19 +499,15 @@ public sealed class AnalyzeHandler
 
         IReadOnlyList<GitSnapshotFile> filesInScope = snapshot.Files;
         IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
-        if (options.GitHash is null)
+        if (options.GitHash is null && snapshot.RelativePrefix.Length > 0)
         {
-            var relativePrefix = Path.GetRelativePath(Path.GetFullPath(snapshot.RepoRoot), Path.GetFullPath(repoPath))
-                .Replace('\\', '/');
-            if (relativePrefix != ".")
-            {
-                bool InScope(string gitPath) =>
-                    gitPath.Equals(relativePrefix, StringComparison.OrdinalIgnoreCase)
-                        || gitPath.StartsWith(relativePrefix + "/", StringComparison.OrdinalIgnoreCase);
+            var relativePrefix = snapshot.RelativePrefix;
+            bool InScope(string gitPath) =>
+                gitPath.Equals(relativePrefix, StringComparison.OrdinalIgnoreCase)
+                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.OrdinalIgnoreCase);
 
-                filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
-                skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
-            }
+            filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
+            skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
         }
 
         var scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
