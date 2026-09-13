@@ -15,10 +15,13 @@ public sealed record GitSnapshotFile(string TempPath, string GitPath);
 /// Disposing deletes the temporary directory and everything under it.
 /// </summary>
 /// <param name="TempRoot">The temporary directory the blobs were dumped into.</param>
-/// <param name="RepoRoot">
-/// The absolute path of the git repository's working-tree root, as resolved by
-/// <c>git rev-parse --show-toplevel</c>. Lets a caller that was given a subdirectory of the
-/// repo compute that subdirectory's git-relative prefix and filter <see cref="Files"/> to it.
+/// <param name="RelativePrefix">
+/// The repo-root-relative, forward-slash path of the directory <c>repoPathHint</c> pointed
+/// at, as resolved by <c>git rev-parse --show-prefix</c> (empty when it was the repo root
+/// itself). Resolving this via git rather than comparing filesystem paths in .NET avoids
+/// mismatches when the hint path and the repo root differ only by an unresolved symlink
+/// (e.g. macOS's <c>/var/folders/...</c> vs. its <c>/private/var/folders/...</c> real path).
+/// Lets a caller that was given a subdirectory of the repo filter <see cref="Files"/> to it.
 /// </param>
 /// <param name="Files">The dumped files, paired with their git-relative paths.</param>
 /// <param name="Skipped">
@@ -27,7 +30,7 @@ public sealed record GitSnapshotFile(string TempPath, string GitPath);
 /// </param>
 public sealed record GitSnapshot(
     string TempRoot,
-    string RepoRoot,
+    string RelativePrefix,
     IReadOnlyList<GitSnapshotFile> Files,
     IReadOnlyList<Models.SkippedEntry> Skipped) : IDisposable
 {
@@ -89,6 +92,9 @@ public sealed class GitSnapshotExtractor
 
         var repoRoot = RunGit(repoPathHint, ["rev-parse", "--show-toplevel"]).Trim();
         var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{commitHash}^{{tree}}"]).Trim();
+        // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
+        // "prefix/" (an empty result means repoPathHint was the repo root itself).
+        var relativePrefix = RunGit(repoPathHint, ["rev-parse", "--show-prefix"]).Trim().TrimEnd('/');
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "sloc-git-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -97,7 +103,7 @@ public sealed class GitSnapshotExtractor
         {
             var (blobsToExtract, skipped) = ListTree(repoRoot, treeHash);
             var files = ExtractBlobs(repoRoot, tempRoot, blobsToExtract, skipped, cancellationToken);
-            return new GitSnapshot(tempRoot, repoRoot, files, skipped);
+            return new GitSnapshot(tempRoot, relativePrefix, files, skipped);
         }
         catch
         {
