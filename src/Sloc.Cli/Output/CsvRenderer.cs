@@ -81,22 +81,9 @@ public sealed class CsvRenderer : IResultRenderer
         return "\"" + field.Replace("\"", "\"\"") + "\"";
     }
 
-    private static string HealthCell(CommentHealthLevel health) =>
-        health == CommentHealthLevel.NotApplicable ? string.Empty : health.ToString();
-
     private void RenderByFile(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
-        var header = new List<string> { "Path", "Language", "Code", "Comment", "Blank", "Total" };
-        if (!noHealth)
-        {
-            header.Add("Health");
-        }
-        if (!noComplexity)
-        {
-            header.Add("Complexity");
-        }
-
-        WriteRow(header);
+        WriteRow(ColumnLayout.FileHeader(noHealth, noComplexity));
 
         foreach (var file in summary.Files)
         {
@@ -109,14 +96,7 @@ public sealed class CsvRenderer : IResultRenderer
                 file.Blank.ToString(),
                 file.Total.ToString()
             };
-            if (!noHealth)
-            {
-                row.Add(HealthCell(file.Health));
-            }
-            if (!noComplexity)
-            {
-                row.Add(ComplexityCell(file.Complexity));
-            }
+            ColumnLayout.AddOptional(row, noHealth, noComplexity, ColumnLayout.HealthCell(file.Health), ComplexityCell(file.Complexity));
 
             WriteRow(row);
         }
@@ -126,17 +106,7 @@ public sealed class CsvRenderer : IResultRenderer
 
     private void RenderByLanguage(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
-        var header = new List<string> { "Language", "Files", "Code", "Comment", "Blank", "Total" };
-        if (!noHealth)
-        {
-            header.Add("Health");
-        }
-        if (!noComplexity)
-        {
-            header.Add("Complexity");
-        }
-
-        WriteRow(header);
+        WriteRow(ColumnLayout.LanguageHeader(noHealth, noComplexity));
 
         foreach (var language in summary.ByLanguage)
         {
@@ -149,14 +119,7 @@ public sealed class CsvRenderer : IResultRenderer
                 language.Blank.ToString(),
                 language.Total.ToString()
             };
-            if (!noHealth)
-            {
-                row.Add(HealthCell(language.Health));
-            }
-            if (!noComplexity)
-            {
-                row.Add(ComplexityCell(language.ComplexityTotal));
-            }
+            ColumnLayout.AddOptional(row, noHealth, noComplexity, ColumnLayout.HealthCell(language.Health), ComplexityCell(language.ComplexityTotal));
 
             WriteRow(row);
         }
@@ -206,14 +169,7 @@ public sealed class CsvRenderer : IResultRenderer
             summary.Blank.ToString(),
             summary.Total.ToString()
         };
-        if (!noHealth)
-        {
-            row.Add(string.Empty);
-        }
-        if (!noComplexity)
-        {
-            row.Add(ComplexityCell(summary.ComplexityTotal));
-        }
+        ColumnLayout.AddOptional(row, noHealth, noComplexity, string.Empty, ComplexityCell(summary.ComplexityTotal));
 
         WriteRow(row);
     }
