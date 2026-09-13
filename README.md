@@ -33,8 +33,8 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Honors `.gitignore` files (including nested ones) by default; `--no-gitignore` disables it
 - Parallel analysis across CPU cores (`--jobs`), with deterministic output
 - CI-friendly: JSON to stdout for piping (e.g. `| jq`), meaningful exit codes, and a `--min-comment-pct` threshold gate
-- Compare against a saved JSON report with `--baseline` to see how line counts changed
-- Sort and limit the language summary with `--sort` / `--top`
+- Compare against a saved JSON report with `--baseline`, or directly against another commit with `--compare-to`, to see how line counts changed
+- Sort and limit the language summary with `--sort` (including by comment percentage) / `--top`
 - Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end (in every format except `Csv`, which stays a single machine-parsable table)
 
 ## Installation
@@ -116,8 +116,17 @@ sloc . --min-comment-pct 10
 sloc . --format json --output baseline.json
 sloc . --baseline baseline.json
 
+# Diff the current working tree directly against a commit, no baseline file needed
+sloc . --compare-to HEAD~5
+
+# Diff two commits directly, without checking either out
+sloc . --git-hash HEAD --compare-to main
+
 # Sort by comment lines and show only the top 5 languages
 sloc . --sort comment --top 5
+
+# Sort by comment percentage, descending
+sloc . --sort commentpct
 
 # Markdown report with both language summary and per-file breakdown, printed to stdout
 sloc . --format markdown --detailed -o -
@@ -151,7 +160,8 @@ sloc . --format markdown --detailed -o -
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
 | `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors is still skipped |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
-| `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, or `Name` |
+| `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
+| `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, `Name`, or `CommentPct` |
 | `--top` | | Show only the top N languages in the summary |
 | `--no-update-check` | | Do not check GitHub for a newer release (checked by default, with a 2 second timeout) |
 | `--help` | `-h` | Show help |
@@ -163,7 +173,7 @@ Supported language display names (for `--include-lang`/`--exclude-lang`):
 
 All non-table formats (`Json`, `Html`, `Csv`, `Markdown`) are written to stdout by default (so they can be piped, e.g. `sloc . -f json | jq`); pass `--output <path>` to write a file instead.
 
-`.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed. Baseline diff output is only rendered as a console table or as JSON (`-f json`); other formats fall back to the table.
+`.gitignore` files (including nested ones) are honored by default; pass `--no-gitignore` to disable. Save a JSON report and pass it to `--baseline` on a later run to see how line counts changed, or skip the saved report entirely and pass a commit/tree-ish to `--compare-to`. Diff output (from either `--baseline` or `--compare-to`) is only rendered as a console table or as JSON (`-f json`); other formats fall back to the table.
 
 ### Exit Codes
 
@@ -243,8 +253,8 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 默认遵循 `.gitignore` 文件（含子目录中的）；`--no-gitignore` 可禁用
 - 跨 CPU 核心并行分析（`--jobs`），输出保持确定性
 - 适配 CI：JSON 可输出到标准输出便于管道处理（例如 `| jq`）、提供有意义的退出码、以及 `--min-comment-pct` 阈值门禁
-- 通过 `--baseline` 与已保存的 JSON 报告对比，查看行数变化
-- 通过 `--sort` / `--top` 对语言汇总排序和限制条数
+- 通过 `--baseline` 与已保存的 JSON 报告对比，或用 `--compare-to` 直接与另一个 commit 对比，查看行数变化
+- 通过 `--sort`（支持按注释占比排序）/ `--top` 对语言汇总排序和限制条数
 - 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因（除 `Csv` 外的所有格式;CSV 保持为单张可机器解析的表格）
 
 ## 安装
@@ -326,8 +336,17 @@ sloc . --min-comment-pct 10
 sloc . --format json --output baseline.json
 sloc . --baseline baseline.json
 
+# 直接与某个 commit 对比当前工作区，无需先保存基线文件
+sloc . --compare-to HEAD~5
+
+# 直接对比两个 commit，无需检出任何一个
+sloc . --git-hash HEAD --compare-to main
+
 # 按注释行排序，仅显示前 5 种语言
 sloc . --sort comment --top 5
+
+# 按注释占比降序排序
+sloc . --sort commentpct
 
 # 生成同时包含语言汇总和逐文件明细的 Markdown 报告，输出到标准输出
 sloc . --format markdown --detailed -o -
@@ -361,7 +380,8 @@ sloc . --format markdown --detailed -o -
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
 | `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录的循环链接目录仍会被跳过 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
-| `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files` 或 `Name` |
+| `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
+| `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files`、`Name` 或 `CommentPct` |
 | `--top` | | 仅显示汇总中排名前 N 的语言 |
 | `--no-update-check` | | 不检查 GitHub 上是否有新版本(默认检查,超时时间为 2 秒) |
 | `--help` | `-h` | 显示帮助 |
@@ -373,7 +393,7 @@ sloc . --format markdown --detailed -o -
 
 所有非表格格式(`Json`、`Html`、`Csv`、`Markdown`)默认都会输出到标准输出(便于管道处理,例如 `sloc . -f json | jq`);传入 `--output <路径>` 则写入文件。
 
-默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化。baseline 差异仅支持控制台表格或 JSON(`-f json`)输出;其它格式会回退为表格。
+默认遵循 `.gitignore` 文件(含子目录中的);传入 `--no-gitignore` 可禁用。先保存一份 JSON 报告,之后用 `--baseline` 传入即可查看行数变化,也可以跳过保存报告这一步,直接把 commit/tree-ish 传给 `--compare-to`。差异输出(无论来自 `--baseline` 还是 `--compare-to`)仅支持控制台表格或 JSON(`-f json`)输出;其它格式会回退为表格。
 
 ### 退出码
 
