@@ -1,3 +1,5 @@
+using Sloc.Cli.Analysis;
+
 namespace Sloc.Cli.Parsing;
 
 /// <summary>
@@ -23,4 +25,32 @@ internal static class CliArgumentValidation
     /// <returns><see langword="true"/> if the value is valid; otherwise <see langword="false"/>.</returns>
     public static bool IsValidTop(int? value) =>
         value is null or >= 1;
+
+    /// <summary>
+    /// Validates <c>--watch</c>'s mutual exclusivity with <c>--git-hash</c>, <c>--list-file</c>,
+    /// non-Table formats, and <c>--baseline</c>.
+    /// </summary>
+    /// <returns>
+    /// An error message describing the first violated constraint, or <see langword="null"/>
+    /// when <paramref name="watch"/> is <see langword="false"/> or no constraint is violated.
+    /// </returns>
+    public static string? ValidateWatch(bool watch, string? listFile, string? gitHash, OutputFormat format, string? baselinePath)
+    {
+        if (!watch)
+        {
+            return null;
+        }
+
+        if (listFile is not null || gitHash is not null)
+        {
+            return "sloc: --watch cannot be used with --git-hash or --list-file.";
+        }
+
+        if (format != OutputFormat.Table)
+        {
+            return "sloc: --watch only supports Table format.";
+        }
+
+        return baselinePath is not null ? "sloc: --watch cannot be used with --baseline." : null;
+    }
 }

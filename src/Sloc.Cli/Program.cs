@@ -256,25 +256,11 @@ rootCommand.SetAction(parseResult =>
 
     var watch = parseResult.GetValue(watchOption);
     var baselinePath = parseResult.GetValue(baselineOption);
-    if (watch)
+    var watchError = CliArgumentValidation.ValidateWatch(watch, listFile, gitHash, format, baselinePath);
+    if (watchError is not null)
     {
-        if (listFile is not null || gitHash is not null)
-        {
-            Console.Error.WriteLine("sloc: --watch cannot be used with --git-hash or --list-file.");
-            return ExitCode.Error;
-        }
-
-        if (format != OutputFormat.Table)
-        {
-            Console.Error.WriteLine("sloc: --watch only supports Table format.");
-            return ExitCode.Error;
-        }
-
-        if (baselinePath is not null)
-        {
-            Console.Error.WriteLine("sloc: --watch cannot be used with --baseline.");
-            return ExitCode.Error;
-        }
+        Console.Error.WriteLine(watchError);
+        return ExitCode.Error;
     }
 
     var options = new AnalyzeOptions

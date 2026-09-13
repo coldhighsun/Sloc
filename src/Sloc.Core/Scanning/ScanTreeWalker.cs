@@ -122,11 +122,24 @@ internal static class ScanTreeWalker
                 // below needs no separate per-file stat call.
                 foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
                 {
-                    filePaths.Add(file.FullName);
-                    if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    try
                     {
-                        reparsePointFilePaths.Add(file.FullName);
+                        if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                        {
+                            reparsePointFilePaths.Add(file.FullName);
+                        }
                     }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // Matches the granularity of the per-file try/catch this replaced:
+                        // one file's attribute read failing skips only that file, not the
+                        // whole directory (and its subdirectories, since a directory-level
+                        // catch would abort the walk below this point too).
+                        skipped.Add(new SkippedEntry(file.FullName, ex.Message));
+                        continue;
+                    }
+
+                    filePaths.Add(file.FullName);
                 }
             }
 

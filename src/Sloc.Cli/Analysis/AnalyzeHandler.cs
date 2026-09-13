@@ -463,7 +463,7 @@ public sealed class AnalyzeHandler
     /// cheaply filter obviously-irrelevant <see cref="FileSystemWatcher"/> events in
     /// <see cref="ExecuteWatch"/> without replaying the scanner's full glob/gitignore logic.
     /// </summary>
-    private static bool IsInIgnoredDirectory(string path) =>
+    internal static bool IsInIgnoredDirectory(string path) =>
         path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             .Any(segment => WatchIgnoredDirectoryNames.Contains(segment, StringComparer.OrdinalIgnoreCase));
 
