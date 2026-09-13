@@ -35,7 +35,12 @@ public enum LanguageSort
     /// <summary>
     /// Order alphabetically by language name.
     /// </summary>
-    Name
+    Name,
+
+    /// <summary>
+    /// Order by the percentage of physical lines that are comments.
+    /// </summary>
+    CommentPct
 }
 
 /// <summary>
@@ -228,6 +233,14 @@ public sealed class AnalysisSummary
             return descending
                 ? languages.OrderByDescending(stats => stats.Language, StringComparer.OrdinalIgnoreCase)
                 : languages.OrderBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (sortBy == LanguageSort.CommentPct)
+        {
+            var orderedByPct = descending
+                ? languages.OrderByDescending(stats => stats.CommentPct)
+                : languages.OrderBy(stats => stats.CommentPct);
+            return orderedByPct.ThenBy(stats => stats.Language, StringComparer.OrdinalIgnoreCase);
         }
 
         Func<LanguageStatistics, int> key = sortBy switch

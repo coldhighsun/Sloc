@@ -13,6 +13,7 @@ internal sealed record ScanTreeWalkResult(
     IReadOnlyList<GitAttributesRules.AttributesFile> AttributesFiles,
     IReadOnlyList<string> SymlinkedDirectories,
     IReadOnlyList<string> FilePaths,
+    IReadOnlySet<string> ReparsePointFilePaths,
     IReadOnlyList<SkippedEntry> Skipped);
 
 /// <summary>
@@ -44,6 +45,7 @@ internal static class ScanTreeWalker
         var attributesFiles = new List<GitAttributesRules.AttributesFile>();
         var symlinkedDirectories = new List<string>();
         var filePaths = new List<string>();
+        var reparsePointFilePaths = new HashSet<string>();
         var skipped = new List<SkippedEntry>();
         var visited = 0;
         var ancestors = new List<string> { normalizedRoot };
@@ -52,10 +54,11 @@ internal static class ScanTreeWalker
         Collect(
             fullRoot, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
             collectGitignore, collectGitattributes, collectFiles,
-            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, skipped,
+            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
             onDirectoryVisited, ref visited, ancestors, followedTargets);
 
-        return new ScanTreeWalkResult(gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, skipped);
+        return new ScanTreeWalkResult(
+            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped);
     }
 
     private static void Collect(
@@ -71,6 +74,7 @@ internal static class ScanTreeWalker
         List<GitAttributesRules.AttributesFile> attributesFiles,
         List<string> symlinkedDirectories,
         List<string> filePaths,
+        HashSet<string> reparsePointFilePaths,
         List<SkippedEntry> skipped,
         Action<int, string>? onDirectoryVisited,
         ref int visited,
@@ -113,7 +117,17 @@ internal static class ScanTreeWalker
 
             if (collectFiles)
             {
-                filePaths.AddRange(Directory.GetFiles(directory));
+                // Enumerating via DirectoryInfo yields FileInfo entries whose Attributes are
+                // already populated from this same directory read, so the reparse-point check
+                // below needs no separate per-file stat call.
+                foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
+                {
+                    filePaths.Add(file.FullName);
+                    if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    {
+                        reparsePointFilePaths.Add(file.FullName);
+                    }
+                }
             }
 
             subdirectories = recursive ? Directory.GetDirectories(directory) : [];
@@ -138,7 +152,7 @@ internal static class ScanTreeWalker
                 Collect(
                     subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
                     collectGitignore, collectGitattributes, collectFiles,
-                    gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, skipped,
+                    gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
                     onDirectoryVisited, ref visited, ancestors, followedTargets);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
@@ -167,7 +181,7 @@ internal static class ScanTreeWalker
             Collect(
                 subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
                 collectGitignore, collectGitattributes, collectFiles,
-                gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, skipped,
+                gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
                 onDirectoryVisited, ref visited, ancestors, followedTargets);
             ancestors.RemoveAt(ancestors.Count - 1);
         }

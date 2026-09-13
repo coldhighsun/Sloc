@@ -213,24 +213,27 @@ public sealed class DirectoryScanner
         var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles) : null;
 
         // Batch the glob match across all candidate paths instead of re-running Matcher.Match
-        // (which rebuilds an InMemoryDirectoryInfo internally) once per file.
-        var relativePaths = new Dictionary<string, string>(walk.FilePaths.Count);
+        // (which rebuilds an InMemoryDirectoryInfo internally) once per file. The reverse map
+        // also lets the loop below iterate only the matched subset instead of every candidate
+        // file, so excludes that filter out most files don't cost a second full-length pass.
+        // Ordinal (case-sensitive) comparer: Matcher.Match's OrdinalIgnoreCase comparison is
+        // for pattern matching only, its Files results echo back the exact strings it was
+        // given, so an ignore-case map here would collide two paths differing only by case
+        // (possible on case-sensitive filesystems) and silently drop one from the scan.
+        var pathByRelative = new Dictionary<string, string>(walk.FilePaths.Count);
         foreach (var fullPath in walk.FilePaths)
         {
-            relativePaths[fullPath] = Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/');
+            pathByRelative[Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/')] = fullPath;
         }
 
-        var matchedPaths = new HashSet<string>(
-            matcher.Match(relativePaths.Values).Files.Select(static f => f.Path),
-            StringComparer.OrdinalIgnoreCase);
+        var matched = matcher.Match(pathByRelative.Keys).Files;
 
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>(walk.Skipped);
-        foreach (var fullPath in walk.FilePaths)
+        foreach (var matchedFile in matched)
         {
-            var relativePath = relativePaths[fullPath];
-
-            if (!matchedPaths.Contains(relativePath))
+            var relativePath = matchedFile.Path;
+            if (!pathByRelative.TryGetValue(relativePath, out var fullPath))
             {
                 continue;
             }
@@ -245,16 +248,8 @@ public sealed class DirectoryScanner
                 continue;
             }
 
-            try
+            if (!options.FollowSymlinks && walk.ReparsePointFilePaths.Contains(fullPath))
             {
-                if (!options.FollowSymlinks && new FileInfo(fullPath).Attributes.HasFlag(FileAttributes.ReparsePoint))
-                {
-                    continue;
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                skipped.Add(new SkippedEntry(fullPath, ex.Message));
                 continue;
             }
 
