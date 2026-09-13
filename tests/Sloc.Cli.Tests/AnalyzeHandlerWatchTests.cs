@@ -13,12 +13,16 @@ public class AnalyzeHandlerWatchTests
     /// A path with no well-known build/VCS/package directory segment is not ignored.
     /// </summary>
     [Theory]
-    [InlineData(@"C:\repo\src\Program.cs")]
-    [InlineData(@"C:\repo\README.md")]
-    [InlineData("/home/me/repo/src/lib.rs")]
+    [MemberData(nameof(OrdinaryPaths))]
     public void IsInIgnoredDirectory_ReturnsFalse_ForOrdinaryPaths(string path)
     {
         Assert.False(AnalyzeHandler.IsInIgnoredDirectory(path));
+    }
+
+    public static IEnumerable<object[]> OrdinaryPaths()
+    {
+        yield return [Combine("repo", "src", "Program.cs")];
+        yield return [Combine("repo", "README.md")];
     }
 
     /// <summary>
@@ -26,15 +30,20 @@ public class AnalyzeHandlerWatchTests
     /// ignored, regardless of case or position.
     /// </summary>
     [Theory]
-    [InlineData(@"C:\repo\bin\Debug\net8.0\sloc.dll")]
-    [InlineData(@"C:\repo\obj\Debug\Sloc.csproj.nuget.g.props")]
-    [InlineData(@"C:\repo\.git\index")]
-    [InlineData(@"C:\repo\node_modules\typescript\lib\tsc.js")]
-    [InlineData(@"C:\repo\src\NODE_MODULES\pkg\index.js")]
-    [InlineData("/home/me/repo/artifacts/bin/Sloc.Cli/debug/sloc.dll")]
+    [MemberData(nameof(ExcludedDirectoryPaths))]
     public void IsInIgnoredDirectory_ReturnsTrue_ForKnownExcludedDirectories(string path)
     {
         Assert.True(AnalyzeHandler.IsInIgnoredDirectory(path));
+    }
+
+    public static IEnumerable<object[]> ExcludedDirectoryPaths()
+    {
+        yield return [Combine("repo", "bin", "Debug", "net8.0", "sloc.dll")];
+        yield return [Combine("repo", "obj", "Debug", "Sloc.csproj.nuget.g.props")];
+        yield return [Combine("repo", ".git", "index")];
+        yield return [Combine("repo", "node_modules", "typescript", "lib", "tsc.js")];
+        yield return [Combine("repo", "src", "NODE_MODULES", "pkg", "index.js")];
+        yield return [Combine("repo", "artifacts", "bin", "Sloc.Cli", "debug", "sloc.dll")];
     }
 
     /// <summary>
@@ -44,6 +53,11 @@ public class AnalyzeHandlerWatchTests
     [Fact]
     public void IsInIgnoredDirectory_DoesNotMatchSubstringOfASegment()
     {
-        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(@"C:\repo\src\binary_search.cs"));
+        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(Combine("repo", "src", "binary_search.cs")));
     }
+
+    // IsInIgnoredDirectory splits on the platform's own directory separators, so test paths
+    // must be built with Path.Combine rather than hardcoded Windows-style backslashes to
+    // behave the same way on Linux CI as on a Windows dev machine.
+    private static string Combine(params string[] segments) => Path.Combine(segments);
 }
