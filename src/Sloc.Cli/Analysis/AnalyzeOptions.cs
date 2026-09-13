@@ -25,6 +25,19 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When set, a commit/tree-ish to diff the current analysis against: <see cref="Path"/>
+    /// is analyzed as of that commit (without checking it out) and compared to the current
+    /// run, the same way <see cref="BaselinePath"/> compares against a saved report.
+    /// Mutually exclusive with <see cref="BaselinePath"/>, <see cref="Watch"/>, and
+    /// <see cref="ListFile"/>; compatible with <see cref="GitHash"/> to diff two commits
+    /// directly.
+    /// </summary>
+    public string? CompareTo
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When <see langword="true"/>, JSON and HTML output includes both the by-language
     /// summary and the per-file breakdown together (only meaningful for those formats).
     /// </summary>

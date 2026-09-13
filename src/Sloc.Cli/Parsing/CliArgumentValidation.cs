@@ -53,4 +53,34 @@ internal static class CliArgumentValidation
 
         return baselinePath is not null ? "sloc: --watch cannot be used with --baseline." : null;
     }
+
+    /// <summary>
+    /// Validates <c>--compare-to</c>'s mutual exclusivity with <c>--baseline</c>, <c>--watch</c>,
+    /// and <c>--list-file</c>. It is deliberately compatible with <c>--git-hash</c> (diffing two
+    /// commits directly) and with any output format (format restrictions are enforced later,
+    /// alongside <c>--baseline</c>'s, once the diff is actually rendered).
+    /// </summary>
+    /// <returns>
+    /// An error message describing the first violated constraint, or <see langword="null"/>
+    /// when <paramref name="compareTo"/> is <see langword="null"/> or no constraint is violated.
+    /// </returns>
+    public static string? ValidateCompareTo(string? compareTo, string? baselinePath, bool watch, string? listFile)
+    {
+        if (compareTo is null)
+        {
+            return null;
+        }
+
+        if (baselinePath is not null)
+        {
+            return "sloc: --compare-to cannot be used with --baseline.";
+        }
+
+        if (watch)
+        {
+            return "sloc: --compare-to cannot be used with --watch.";
+        }
+
+        return listFile is not null ? "sloc: --compare-to cannot be used with --list-file." : null;
+    }
 }

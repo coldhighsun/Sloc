@@ -15,6 +15,11 @@ public sealed record GitSnapshotFile(string TempPath, string GitPath);
 /// Disposing deletes the temporary directory and everything under it.
 /// </summary>
 /// <param name="TempRoot">The temporary directory the blobs were dumped into.</param>
+/// <param name="RepoRoot">
+/// The absolute path of the git repository's working-tree root, as resolved by
+/// <c>git rev-parse --show-toplevel</c>. Lets a caller that was given a subdirectory of the
+/// repo compute that subdirectory's git-relative prefix and filter <see cref="Files"/> to it.
+/// </param>
 /// <param name="Files">The dumped files, paired with their git-relative paths.</param>
 /// <param name="Skipped">
 /// Tree entries that were not dumped (symlinks, submodules/gitlinks, or blobs that
@@ -22,6 +27,7 @@ public sealed record GitSnapshotFile(string TempPath, string GitPath);
 /// </param>
 public sealed record GitSnapshot(
     string TempRoot,
+    string RepoRoot,
     IReadOnlyList<GitSnapshotFile> Files,
     IReadOnlyList<Models.SkippedEntry> Skipped) : IDisposable
 {
@@ -91,7 +97,7 @@ public sealed class GitSnapshotExtractor
         {
             var (blobsToExtract, skipped) = ListTree(repoRoot, treeHash);
             var files = ExtractBlobs(repoRoot, tempRoot, blobsToExtract, skipped, cancellationToken);
-            return new GitSnapshot(tempRoot, files, skipped);
+            return new GitSnapshot(tempRoot, repoRoot, files, skipped);
         }
         catch
         {

@@ -110,4 +110,60 @@ public class CliArgumentValidationTests
 
         Assert.Equal("sloc: --watch cannot be used with --baseline.", error);
     }
+
+    /// <summary>
+    /// When <c>--compare-to</c> is not supplied, no other option combination should be rejected.
+    /// </summary>
+    [Fact]
+    public void ValidateCompareTo_ReturnsNull_WhenCompareToNotRequested()
+    {
+        Assert.Null(CliArgumentValidation.ValidateCompareTo(
+            compareTo: null, baselinePath: "baseline.json", watch: true, listFile: "files.txt"));
+    }
+
+    /// <summary>
+    /// A plain <c>--compare-to</c> with no conflicting options is valid.
+    /// </summary>
+    [Fact]
+    public void ValidateCompareTo_ReturnsNull_ForValidCombination()
+    {
+        Assert.Null(CliArgumentValidation.ValidateCompareTo(
+            compareTo: "HEAD~1", baselinePath: null, watch: false, listFile: null));
+    }
+
+    /// <summary>
+    /// <c>--compare-to</c> rejects <c>--baseline</c>.
+    /// </summary>
+    [Fact]
+    public void ValidateCompareTo_RejectsBaseline()
+    {
+        var error = CliArgumentValidation.ValidateCompareTo(
+            compareTo: "HEAD~1", baselinePath: "baseline.json", watch: false, listFile: null);
+
+        Assert.Equal("sloc: --compare-to cannot be used with --baseline.", error);
+    }
+
+    /// <summary>
+    /// <c>--compare-to</c> rejects <c>--watch</c>.
+    /// </summary>
+    [Fact]
+    public void ValidateCompareTo_RejectsWatch()
+    {
+        var error = CliArgumentValidation.ValidateCompareTo(
+            compareTo: "HEAD~1", baselinePath: null, watch: true, listFile: null);
+
+        Assert.Equal("sloc: --compare-to cannot be used with --watch.", error);
+    }
+
+    /// <summary>
+    /// <c>--compare-to</c> rejects <c>--list-file</c>.
+    /// </summary>
+    [Fact]
+    public void ValidateCompareTo_RejectsListFile()
+    {
+        var error = CliArgumentValidation.ValidateCompareTo(
+            compareTo: "HEAD~1", baselinePath: null, watch: false, listFile: "files.txt");
+
+        Assert.Equal("sloc: --compare-to cannot be used with --list-file.", error);
+    }
 }

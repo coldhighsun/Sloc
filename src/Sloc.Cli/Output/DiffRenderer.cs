@@ -66,8 +66,30 @@ internal static class DiffRenderer
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(baseline);
 
-        var deltas = Compute(current, baseline);
+        RenderTable(Compute(current, baseline), console);
+    }
 
+    /// <summary>
+    /// Renders the difference between <paramref name="current"/> and <paramref name="baseline"/>
+    /// as a console table, where <paramref name="baseline"/> is itself a freshly analyzed
+    /// summary (e.g. a git commit analyzed via <c>--compare-to</c>) rather than a saved report.
+    /// </summary>
+    /// <param name="current">The current analysis summary.</param>
+    /// <param name="baseline">The baseline analysis summary.</param>
+    /// <param name="console">
+    /// The console to write to. Defaults to <see cref="AnsiConsole.Console"/> when
+    /// <see langword="null"/>; supply a test console to capture the output.
+    /// </param>
+    public static void RenderTable(AnalysisSummary current, AnalysisSummary baseline, IAnsiConsole? console = null)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(baseline);
+
+        RenderTable(Compute(current, baseline), console);
+    }
+
+    private static void RenderTable(Deltas deltas, IAnsiConsole? console)
+    {
         var table = new Table().Border(TableBorder.Rounded);
         table.Caption(new TableTitle("[grey]Δ vs baseline[/]"));
         table.AddColumn("Language");
@@ -110,7 +132,28 @@ internal static class DiffRenderer
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(baseline);
 
-        var deltas = Compute(current, baseline);
+        RenderJson(writer, Compute(current, baseline));
+    }
+
+    /// <summary>
+    /// Renders the difference between <paramref name="current"/> and <paramref name="baseline"/>
+    /// as JSON, where <paramref name="baseline"/> is itself a freshly analyzed summary (e.g. a
+    /// git commit analyzed via <c>--compare-to</c>) rather than a saved report.
+    /// </summary>
+    /// <param name="writer">The destination writer.</param>
+    /// <param name="current">The current analysis summary.</param>
+    /// <param name="baseline">The baseline analysis summary.</param>
+    public static void RenderJson(TextWriter writer, AnalysisSummary current, AnalysisSummary baseline)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(baseline);
+
+        RenderJson(writer, Compute(current, baseline));
+    }
+
+    private static void RenderJson(TextWriter writer, Deltas deltas)
+    {
         var payload = new JsonDiff
         {
             Total = new JsonDiffTotals
@@ -133,24 +176,38 @@ internal static class DiffRenderer
         writer.WriteLine(JsonSerializer.Serialize(payload, SlocDiffJsonContext.Default.JsonDiff));
     }
 
-    private static Deltas Compute(AnalysisSummary current, JsonReport baseline)
+    private static Deltas Compute(AnalysisSummary current, JsonReport baseline) =>
+        Compute(
+            current,
+            ResolveBaselineLanguages(baseline).Select(language => (language.Language, language.Code, language.Comment, language.Blank, language.Total)),
+            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total);
+
+    private static Deltas Compute(AnalysisSummary current, AnalysisSummary baseline) =>
+        Compute(
+            current,
+            baseline.ByLanguage.Select(language => (language.Language, language.Code, language.Comment, language.Blank, language.Total)),
+            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total);
+
+    private static Deltas Compute(
+        AnalysisSummary current,
+        IEnumerable<(string Language, int Code, int Comment, int Blank, int Total)> baselineLanguages,
+        int baselineCode, int baselineComment, int baselineBlank, int baselineTotal)
     {
-        var baseByLanguage = ResolveBaselineLanguages(baseline)
-            .ToDictionary(language => language.Language, StringComparer.OrdinalIgnoreCase);
+        var baseByLanguage = baselineLanguages.ToDictionary(language => language.Language, StringComparer.OrdinalIgnoreCase);
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var languages = new List<LanguageDelta>();
 
         foreach (var language in current.ByLanguage)
         {
-            baseByLanguage.TryGetValue(language.Language, out var previous);
+            var hasPrevious = baseByLanguage.TryGetValue(language.Language, out var previous);
             seen.Add(language.Language);
             languages.Add(new LanguageDelta(
                 language.Language,
-                language.Code - (previous?.Code ?? 0),
-                language.Comment - (previous?.Comment ?? 0),
-                language.Blank - (previous?.Blank ?? 0),
-                language.Total - (previous?.Total ?? 0)));
+                language.Code - (hasPrevious ? previous.Code : 0),
+                language.Comment - (hasPrevious ? previous.Comment : 0),
+                language.Blank - (hasPrevious ? previous.Blank : 0),
+                language.Total - (hasPrevious ? previous.Total : 0)));
         }
 
         // Languages present only in the baseline (fully removed).
@@ -171,10 +228,10 @@ internal static class DiffRenderer
 
         var total = new LanguageDelta(
             "Total",
-            current.Code - baseline.Code,
-            current.Comment - baseline.Comment,
-            current.Blank - baseline.Blank,
-            current.Total - baseline.Total);
+            current.Code - baselineCode,
+            current.Comment - baselineComment,
+            current.Blank - baselineBlank,
+            current.Total - baselineTotal);
 
         return new Deltas(languages, total);
     }
