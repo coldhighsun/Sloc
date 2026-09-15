@@ -106,6 +106,15 @@ sloc . --all
 # Do not recurse into subdirectories
 sloc ./src --no-recursive
 
+# Exclude a directory by name, at any depth
+sloc . --exclude-dir vendor
+
+# Watch for file changes and live-refresh the table
+sloc ./src --watch
+
+# Count byte-identical files only once
+sloc . --unique
+
 # Pipe JSON to jq
 sloc . --format json | jq .total
 
@@ -121,6 +130,12 @@ sloc . --compare-to HEAD~5
 
 # Diff two commits directly, without checking either out
 sloc . --git-hash HEAD --compare-to main
+
+# Analyze a specific commit's tree without checking it out
+sloc . --git-hash v1.2.0
+
+# Analyze exactly the files listed in a text file
+sloc --list-file files.txt
 
 # Sort by comment lines and show only the top 5 languages
 sloc . --sort comment --top 5
@@ -158,6 +173,8 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
+| `--no-gitattributes` | | Do not honor `.gitattributes` files (`linguist-vendored`/`linguist-generated` files are excluded by default) |
+| `--git-hash` | | Analyze the repository tree as of this commit/tree-ish, without checking it out; `path` is used as the repo root; requires `git` on `PATH`; symlinked and submodule tree entries are skipped; `--include`/`--exclude`, `--no-recursive`, `--follow-symlinks`, `--no-gitignore`, and `--no-gitattributes` have no effect in this mode; mutually exclusive with `--list-file` |
 | `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors is still skipped |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
@@ -326,6 +343,15 @@ sloc . --all
 # 不递归子目录
 sloc ./src --no-recursive
 
+# 按名称排除任意深度的目录
+sloc . --exclude-dir vendor
+
+# 监视文件变化并实时刷新表格
+sloc ./src --watch
+
+# 内容字节完全相同的文件只计一次
+sloc . --unique
+
 # 将 JSON 通过管道传给 jq
 sloc . --format json | jq .total
 
@@ -341,6 +367,12 @@ sloc . --compare-to HEAD~5
 
 # 直接对比两个 commit，无需检出任何一个
 sloc . --git-hash HEAD --compare-to main
+
+# 分析某个 commit 时的树状态，无需检出
+sloc . --git-hash v1.2.0
+
+# 分析文本文件中逐行列出的文件列表
+sloc --list-file files.txt
 
 # 按注释行排序，仅显示前 5 种语言
 sloc . --sort comment --top 5
@@ -378,6 +410,8 @@ sloc . --format markdown --detailed -o -
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
+| `--no-gitattributes` | | 不遵循 `.gitattributes` 文件(默认会排除标记为 `linguist-vendored`/`linguist-generated` 的文件) |
+| `--git-hash` | | 分析仓库在该 commit/tree-ish 时的树状态,无需检出;`path` 作为仓库根目录;需要 `git` 在 `PATH` 中;符号链接与子模块条目会被跳过;此模式下 `--include`/`--exclude`、`--no-recursive`、`--follow-symlinks`、`--no-gitignore`、`--no-gitattributes` 均不生效;与 `--list-file` 互斥 |
 | `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录的循环链接目录仍会被跳过 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
