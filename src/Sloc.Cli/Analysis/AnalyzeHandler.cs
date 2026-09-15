@@ -53,7 +53,7 @@ public sealed class AnalyzeHandler
                 ? $"list: {ResolveFullPath(listFileForDisplay)}"
                 : resolvedPath;
 
-        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected && !options.Quiet)
+        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected && !options.Quiet && !options.Watch)
         {
             if (!string.IsNullOrEmpty(version))
             {
@@ -405,9 +405,11 @@ public sealed class AnalyzeHandler
             watcher.EnableRaisingEvents = true;
 
             AnsiConsole.Live(tableRenderer.BuildLanguageTable(RunWatchPass(options, scanOptions), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
-                .AutoClear(false)
+                .AutoClear(true)
                 .Start(ctx =>
                 {
+                    ctx.Refresh();
+
                     while (!cancellationRequested)
                     {
                         cancelSignal.Wait(WatchDebounceInterval);
