@@ -2,6 +2,7 @@
 # Sloc
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/coldhighsun/Sloc/branch/main/graph/badge.svg)](https://codecov.io/gh/coldhighsun/Sloc)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
