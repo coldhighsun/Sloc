@@ -13,7 +13,9 @@ public class SymlinkGuardTests
     [Fact]
     public void IsAncestorOrSelf_SamePath_ReturnsTrue()
     {
-        Assert.True(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\repo"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(ancestor, ancestor));
     }
 
     /// <summary>
@@ -22,16 +24,22 @@ public class SymlinkGuardTests
     [Fact]
     public void IsAncestorOrSelf_NestedPath_ReturnsTrue()
     {
-        Assert.True(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\repo\src\sub"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+        var nested = Path.Combine(ancestor, "src", "sub");
+
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(ancestor, nested));
     }
 
     /// <summary>
-    /// Verifies that comparison is case-insensitive, matching Windows path semantics.
+    /// Verifies that comparison is case-insensitive.
     /// </summary>
     [Fact]
     public void IsAncestorOrSelf_DifferentCasing_ReturnsTrue()
     {
-        Assert.True(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\REPO\Src"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+        var nested = Path.Combine(ancestor, "src").ToUpperInvariant();
+
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(ancestor, nested));
     }
 
     /// <summary>
@@ -41,7 +49,10 @@ public class SymlinkGuardTests
     [Fact]
     public void IsAncestorOrSelf_PrefixWithoutSeparator_ReturnsFalse()
     {
-        Assert.False(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\repo-extra"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+        var sibling = ancestor + "-extra";
+
+        Assert.False(SymlinkGuard.IsAncestorOrSelf(ancestor, sibling));
     }
 
     /// <summary>
@@ -50,7 +61,10 @@ public class SymlinkGuardTests
     [Fact]
     public void IsAncestorOrSelf_UnrelatedPath_ReturnsFalse()
     {
-        Assert.False(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\other"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+        var unrelated = Path.Combine(Path.GetTempPath(), "other");
+
+        Assert.False(SymlinkGuard.IsAncestorOrSelf(ancestor, unrelated));
     }
 
     /// <summary>
@@ -60,7 +74,10 @@ public class SymlinkGuardTests
     [Fact]
     public void IsAncestorOrSelf_TrailingSeparator_IsIgnored()
     {
-        Assert.True(SymlinkGuard.IsAncestorOrSelf(@"C:\repo", @"C:\repo\src\"));
+        var ancestor = Path.Combine(Path.GetTempPath(), "repo");
+        var nested = Path.Combine(ancestor, "src") + Path.DirectorySeparatorChar;
+
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(ancestor, nested));
     }
 
     /// <summary>
@@ -102,19 +119,22 @@ public class SymlinkGuardTests
     }
 
     /// <summary>
-    /// Verifies that a directory junction resolves to its target and is flagged as a loop
+    /// Verifies that a directory symlink resolves to its target and is flagged as a loop
     /// when the target is (or is nested under) one of the supplied ancestors.
     /// </summary>
     [Fact]
-    public void Resolve_JunctionLoopingToAncestor_ReturnsLoop()
+    public void Resolve_SymlinkLoopingToAncestor_ReturnsLoop()
     {
         var root = Directory.CreateTempSubdirectory();
-        var junctionPath = Path.Combine(root.FullName, "loop");
+        var linkPath = Path.Combine(root.FullName, "loop");
         try
         {
-            RequireJunctionCreated(junctionPath, root.FullName);
+            if (!TryCreateDirectorySymlink(linkPath, root.FullName))
+            {
+                return;
+            }
 
-            var resolution = SymlinkGuard.Resolve(junctionPath, ancestors: [root.FullName]);
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [root.FullName]);
 
             Assert.True(resolution.Resolved);
             Assert.NotNull(resolution.Target);
@@ -122,55 +142,65 @@ public class SymlinkGuardTests
         }
         finally
         {
-            if (Directory.Exists(junctionPath)) { Directory.Delete(junctionPath, recursive: false); }
+            if (Directory.Exists(linkPath))
+            {
+                Directory.Delete(linkPath, recursive: false);
+            }
+
             root.Delete(recursive: true);
         }
     }
 
     /// <summary>
-    /// Verifies that a directory junction pointing outside any ancestor resolves without
+    /// Verifies that a directory symlink pointing outside any ancestor resolves without
     /// being flagged as a loop.
     /// </summary>
     [Fact]
-    public void Resolve_JunctionToUnrelatedDirectory_ReturnsNotLoop()
+    public void Resolve_SymlinkToUnrelatedDirectory_ReturnsNotLoop()
     {
         var root = Directory.CreateTempSubdirectory();
         var target = Directory.CreateTempSubdirectory();
-        var junctionPath = Path.Combine(root.FullName, "link");
+        var linkPath = Path.Combine(root.FullName, "link");
         try
         {
-            RequireJunctionCreated(junctionPath, target.FullName);
+            if (!TryCreateDirectorySymlink(linkPath, target.FullName))
+            {
+                return;
+            }
 
-            var resolution = SymlinkGuard.Resolve(junctionPath, ancestors: [root.FullName]);
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [root.FullName]);
 
             Assert.True(resolution.Resolved);
             Assert.False(resolution.IsLoop);
         }
         finally
         {
-            if (Directory.Exists(junctionPath)) { Directory.Delete(junctionPath, recursive: false); }
+            if (Directory.Exists(linkPath))
+            {
+                Directory.Delete(linkPath, recursive: false);
+            }
+
             root.Delete(recursive: true);
             target.Delete(recursive: true);
         }
     }
 
-    private static void RequireJunctionCreated(string junctionPath, string targetPath)
+    /// <summary>
+    /// Creates a directory symlink at <paramref name="linkPath"/> pointing at
+    /// <paramref name="targetPath"/>, returning <see langword="false"/> instead of
+    /// throwing when the environment does not grant the privilege required (e.g.
+    /// Windows without developer mode or elevation).
+    /// </summary>
+    private static bool TryCreateDirectorySymlink(string linkPath, string targetPath)
     {
-        var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junctionPath}\" \"{targetPath}\"")
+        try
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = System.Diagnostics.Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start mklink process.");
-        process.WaitForExit();
-
-        if (process.ExitCode != 0 || !Directory.Exists(junctionPath))
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new InvalidOperationException("Unable to create a directory junction in this environment.");
+            return false;
         }
     }
 }
