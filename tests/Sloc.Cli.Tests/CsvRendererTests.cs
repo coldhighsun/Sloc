@@ -176,10 +176,12 @@ public class CsvRendererTests
     }
 
     /// <summary>
-    /// Verifies that skipped files are appended as a second table after a blank line.
+    /// Verifies that skipped files are appended as a second table after a blank line, padded
+    /// to the same column count as the preceding table so the whole file stays a single
+    /// fixed-column CSV that a strict RFC 4180 consumer can parse.
     /// </summary>
     [Fact]
-    public void Render_WithSkippedFiles_AppendsSkippedTable()
+    public void Render_WithSkippedFiles_AppendsSkippedTablePaddedToSameColumnCount()
     {
         var summary = BuildSummary("a.cs", skipped: [new SkippedEntry("bad.cs", "binary file")]);
         using var writer = new StringWriter();
@@ -187,8 +189,29 @@ public class CsvRendererTests
         new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
         var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
-        Assert.Equal("Path,Reason", lines[^2]);
-        Assert.Equal("bad.cs,binary file", lines[^1]);
+        var columnCount = lines[0].Split(',').Length;
+        Assert.Equal("Path,Reason,,,,", lines[^2]);
+        Assert.Equal("bad.cs,binary file,,,,", lines[^1]);
+        Assert.Equal(columnCount, lines[^2].Split(',').Length);
+        Assert.Equal(columnCount, lines[^1].Split(',').Length);
+    }
+
+    /// <summary>
+    /// Verifies that the skipped table's column count matches the per-file table's column
+    /// count when <c>--by-file</c> is used, not a fixed width.
+    /// </summary>
+    [Fact]
+    public void Render_ByFileWithSkippedFiles_PadsToFileTableColumnCount()
+    {
+        var summary = BuildSummary("a.cs", skipped: [new SkippedEntry("bad.cs", "binary file")]);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: false, noComplexity: false);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        var columnCount = lines[0].Split(',').Length;
+        Assert.Equal(columnCount, lines[^2].Split(',').Length);
+        Assert.Equal(columnCount, lines[^1].Split(',').Length);
     }
 
     private static AnalysisSummary BuildSummary(string path, IReadOnlyList<SkippedEntry>? skipped = null)

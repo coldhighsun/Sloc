@@ -193,7 +193,15 @@ internal static class DiffRenderer
         IEnumerable<(string Language, int Code, int Comment, int Blank, int Total)> baselineLanguages,
         int baselineCode, int baselineComment, int baselineBlank, int baselineTotal)
     {
-        var baseByLanguage = baselineLanguages.ToDictionary(language => language.Language, StringComparer.OrdinalIgnoreCase);
+        // Built manually (last entry wins) instead of ToDictionary: a baseline JSON file may
+        // be hand-edited or produced by another tool/version and contain two language
+        // entries differing only by case, which ToDictionary's case-insensitive comparer
+        // would otherwise throw on.
+        var baseByLanguage = new Dictionary<string, (string Language, int Code, int Comment, int Blank, int Total)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var language in baselineLanguages)
+        {
+            baseByLanguage[language.Language] = language;
+        }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var languages = new List<LanguageDelta>();

@@ -78,6 +78,44 @@ public class DiffRendererTests
         }
     }
 
+    /// <summary>
+    /// Verifies that a baseline whose <c>byLanguage</c> array contains two entries differing
+    /// only by case (e.g. hand-edited, or produced by another tool/version) does not crash
+    /// the diff, and that the later entry wins.
+    /// </summary>
+    [Fact]
+    public void RenderTable_BaselineWithCaseVariantDuplicateLanguages_DoesNotThrow()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-dup-lang-baseline-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path, """
+            {
+                "generatedAt": "2024-01-01T00:00:00Z",
+                "fileCount": 2,
+                "code": 90, "comment": 10, "blank": 0, "total": 100,
+                "byLanguage": [
+                    { "language": "C#", "files": 1, "code": 50, "comment": 5, "blank": 0, "total": 55, "health": "Healthy" },
+                    { "language": "c#", "files": 1, "code": 40, "comment": 5, "blank": 0, "total": 45, "health": "Healthy" }
+                ]
+            }
+            """);
+
+        try
+        {
+            var baseline = DiffRenderer.Load(path);
+            var current = BuildSummary(code: 80, comment: 20, blank: 5);
+
+            var console = new TestConsole();
+            var exception = Record.Exception(() => DiffRenderer.RenderTable(current, baseline, console));
+
+            Assert.Null(exception);
+            Assert.Contains("+40", console.Output); // code delta 80 - 40 (later "c#" entry wins)
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteBaseline(int code, int comment, int blank)
     {
         var path = Path.Combine(Path.GetTempPath(), "sloc-baseline-" + Guid.NewGuid().ToString("N") + ".json");

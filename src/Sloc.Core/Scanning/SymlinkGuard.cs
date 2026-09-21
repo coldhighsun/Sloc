@@ -51,7 +51,7 @@ internal static class SymlinkGuard
         }
 
         target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(target, ancestor));
+        var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(ancestor, target));
         return new Resolution(Resolved: true, Target: target, IsLoop: isLoop);
     }
 

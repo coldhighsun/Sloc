@@ -50,11 +50,6 @@ public sealed class CsvRenderer : IResultRenderer
         {
             RenderByLanguage(summary, noHealth, noComplexity);
         }
-
-        if (summary.Skipped.Count > 0)
-        {
-            RenderSkipped(summary);
-        }
     }
 
     private static string ComplexityCell(int? complexity) =>
@@ -83,7 +78,8 @@ public sealed class CsvRenderer : IResultRenderer
 
     private void RenderByFile(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
-        WriteRow(ColumnLayout.FileHeader(noHealth, noComplexity));
+        var header = ColumnLayout.FileHeader(noHealth, noComplexity);
+        WriteRow(header);
 
         foreach (var file in summary.Files)
         {
@@ -102,11 +98,17 @@ public sealed class CsvRenderer : IResultRenderer
         }
 
         WriteTotalRow(summary, noHealth, noComplexity, string.Empty);
+
+        if (summary.Skipped.Count > 0)
+        {
+            RenderSkipped(summary, header.Count);
+        }
     }
 
     private void RenderByLanguage(AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
-        WriteRow(ColumnLayout.LanguageHeader(noHealth, noComplexity));
+        var header = ColumnLayout.LanguageHeader(noHealth, noComplexity);
+        WriteRow(header);
 
         foreach (var language in summary.ByLanguage)
         {
@@ -125,17 +127,37 @@ public sealed class CsvRenderer : IResultRenderer
         }
 
         WriteTotalRow(summary, noHealth, noComplexity, summary.FileCount.ToString());
+
+        if (summary.Skipped.Count > 0)
+        {
+            RenderSkipped(summary, header.Count);
+        }
     }
 
-    private void RenderSkipped(AnalysisSummary summary)
+    // Padded to columnCount (the preceding table's column count) so the whole file stays a
+    // single fixed-column table: a strict RFC 4180 consumer parsing every row with one
+    // column count would otherwise choke on (or misparse) a differently-shaped Path/Reason
+    // table appended after it.
+    private void RenderSkipped(AnalysisSummary summary, int columnCount)
     {
         _writer.Write("\r\n");
-        WriteRow(["Path", "Reason"]);
+        WriteRow(PadRow(["Path", "Reason"], columnCount));
 
         foreach (var entry in summary.Skipped)
         {
-            WriteRow([entry.Path, entry.Reason]);
+            WriteRow(PadRow([entry.Path, entry.Reason], columnCount));
         }
+    }
+
+    private static List<string> PadRow(IReadOnlyList<string> fields, int columnCount)
+    {
+        var row = new List<string>(fields);
+        while (row.Count < columnCount)
+        {
+            row.Add(string.Empty);
+        }
+
+        return row;
     }
 
     private void WriteRow(IReadOnlyList<string> fields)

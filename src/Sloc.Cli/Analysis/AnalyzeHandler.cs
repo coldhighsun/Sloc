@@ -373,6 +373,8 @@ public sealed class AnalyzeHandler
         using var cancelSignal = new ManualResetEventSlim(false);
         Console.CancelKeyPress += OnCancelKeyPress;
 
+        AnalysisSummary? lastSummary = null;
+
         try
         {
             var pendingChange = 0;
@@ -404,7 +406,8 @@ public sealed class AnalyzeHandler
             watcher.Renamed += OnChange;
             watcher.EnableRaisingEvents = true;
 
-            AnsiConsole.Live(tableRenderer.BuildLanguageTable(RunWatchPass(options, scanOptions), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
+            lastSummary = RunWatchPass(options, scanOptions);
+            AnsiConsole.Live(tableRenderer.BuildLanguageTable(lastSummary, noHealth: options.NoHealth, noComplexity: options.NoComplexity))
                 .AutoClear(true)
                 .Start(ctx =>
                 {
@@ -424,9 +427,9 @@ public sealed class AnalyzeHandler
                             continue;
                         }
 
-                        var summary = RunWatchPass(options, scanOptions);
+                        lastSummary = RunWatchPass(options, scanOptions);
                         ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
-                            summary,
+                            lastSummary,
                             $"[grey]Last update: {DateTime.Now:T}[/]",
                             noHealth: options.NoHealth,
                             noComplexity: options.NoComplexity));
@@ -438,7 +441,7 @@ public sealed class AnalyzeHandler
             Console.CancelKeyPress -= OnCancelKeyPress;
         }
 
-        return ExitCode.Success;
+        return WatchExitCode(options, lastSummary);
 
         void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
         {
@@ -447,6 +450,15 @@ public sealed class AnalyzeHandler
             cancelSignal.Set();
         }
     }
+
+    /// <summary>
+    /// Determines <see cref="ExecuteWatch"/>'s exit code once the watch loop ends: the same
+    /// <c>--min-comment-pct</c> threshold gate every other code path applies, evaluated
+    /// against the last summary the watch loop rendered (or a plain success if the loop
+    /// exited before ever completing a pass).
+    /// </summary>
+    internal static int WatchExitCode(AnalyzeOptions options, AnalysisSummary? lastSummary) =>
+        lastSummary is null ? ExitCode.Success : ThresholdResult(options, lastSummary);
 
     /// <summary>
     /// Whether <paramref name="path"/> falls under one of the well-known build/VCS/package

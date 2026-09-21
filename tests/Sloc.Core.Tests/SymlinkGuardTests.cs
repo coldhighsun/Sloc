@@ -152,6 +152,44 @@ public class SymlinkGuardTests
     }
 
     /// <summary>
+    /// Verifies that a symlink resolving to a directory nested *under* (but not equal to)
+    /// one of the ancestors is still flagged as a loop. This guards against the loop check
+    /// being called with its two arguments swapped, which would only catch the
+    /// target-equals-ancestor case and miss a target that is a proper descendant of an
+    /// ancestor reached through an earlier followed symlink.
+    /// </summary>
+    [Fact]
+    public void Resolve_SymlinkToDescendantOfAncestor_ReturnsLoop()
+    {
+        var root = Directory.CreateTempSubdirectory();
+        var ancestor = Directory.CreateTempSubdirectory();
+        var nestedInsideAncestor = ancestor.CreateSubdirectory("inner");
+        var linkPath = Path.Combine(root.FullName, "link");
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, nestedInsideAncestor.FullName))
+            {
+                return;
+            }
+
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [ancestor.FullName]);
+
+            Assert.True(resolution.Resolved);
+            Assert.True(resolution.IsLoop);
+        }
+        finally
+        {
+            if (Directory.Exists(linkPath))
+            {
+                Directory.Delete(linkPath, recursive: false);
+            }
+
+            root.Delete(recursive: true);
+            ancestor.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Verifies that a directory symlink pointing outside any ancestor resolves without
     /// being flagged as a loop.
     /// </summary>

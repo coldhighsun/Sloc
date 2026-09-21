@@ -1,14 +1,61 @@
 using Sloc.Cli.Analysis;
+using Sloc.Core.Models;
 
 namespace Sloc.Cli.Tests;
 
 /// <summary>
 /// Contains unit tests for <see cref="AnalyzeHandler.IsInIgnoredDirectory"/>, the cheap
 /// noise filter <c>--watch</c> applies to <see cref="System.IO.FileSystemWatcher"/> events
-/// before triggering a rescan.
+/// before triggering a rescan, and <see cref="AnalyzeHandler.WatchExitCode"/>, which decides
+/// the process exit code once the watch loop ends.
 /// </summary>
 public class AnalyzeHandlerWatchTests
 {
+    /// <summary>
+    /// Verifies that <c>--watch --min-comment-pct</c> reports the threshold exit code when
+    /// the last watched summary is below the requested minimum, matching every other code
+    /// path (<c>Execute</c>, baseline/compare-to) which enforces the same gate.
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_BelowCommentThreshold_ReturnsThresholdCode()
+    {
+        var summary = new AnalysisSummary([
+            new FileAnalysis { Path = "a.cs", Language = "C#", Code = 2, Comment = 0, Blank = 0 }
+        ]);
+
+        var exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, summary);
+
+        Assert.Equal(ExitCode.ThresholdNotMet, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that <c>--watch --min-comment-pct</c> still succeeds when the last watched
+    /// summary meets the requested minimum.
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_MeetsCommentThreshold_ReturnsSuccess()
+    {
+        var summary = new AnalysisSummary([
+            new FileAnalysis { Path = "a.cs", Language = "C#", Code = 1, Comment = 1, Blank = 0 }
+        ]);
+
+        var exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, summary);
+
+        Assert.Equal(ExitCode.Success, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that no threshold was ever configured, or the watch loop ended before
+    /// completing a single pass, still yields success rather than throwing.
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_NoSummary_ReturnsSuccess()
+    {
+        var exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, lastSummary: null);
+
+        Assert.Equal(ExitCode.Success, exitCode);
+    }
+
     /// <summary>
     /// A path with no well-known build/VCS/package directory segment is not ignored.
     /// </summary>

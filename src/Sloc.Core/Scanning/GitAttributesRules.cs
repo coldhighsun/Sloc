@@ -240,9 +240,20 @@ internal sealed class AttributePattern
             return false;
         }
 
-        if (!GitIgnorePattern.TryCompilePattern(tokens[0], out var regex, out _))
+        if (!GitIgnorePattern.TryCompilePattern(tokens[0], out var regex, out var directoryOnly))
         {
             return false;
+        }
+
+        if (directoryOnly)
+        {
+            // A directory-only pattern (trailing "/") applies to the directory itself and,
+            // since IsVendoredOrGenerated checks each file's full path in one shot rather
+            // than walking ancestor directories the way GitIgnoreRules does, must also match
+            // every path nested under it: the compiled regex always ends in "$" anchoring to
+            // the directory name exactly, so that anchor is loosened to allow "/<anything>".
+            var source = regex.ToString();
+            regex = new Regex(source[..^1] + "(?:$|/.*)", regex.Options);
         }
 
         pattern = new AttributePattern(regex, vendored, generated);

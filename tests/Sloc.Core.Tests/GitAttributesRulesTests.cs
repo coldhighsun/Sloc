@@ -72,6 +72,20 @@ public class GitAttributesRulesTests
     }
 
     /// <summary>
+    /// Verifies that a bare directory pattern (trailing slash, no wildcard) applies to
+    /// every file nested under that directory, not just the directory path itself.
+    /// </summary>
+    [Fact]
+    public void IsVendoredOrGenerated_DirectoryOnlyPattern_MatchesNestedFiles()
+    {
+        var rules = GitAttributesRules.FromLines(string.Empty, ["vendor/ linguist-vendored"]);
+
+        Assert.True(rules.IsVendoredOrGenerated("vendor/lib/thing.js"));
+        Assert.True(rules.IsVendoredOrGenerated("vendor/thing.js"));
+        Assert.False(rules.IsVendoredOrGenerated("src/vendor-adjacent.js"));
+    }
+
+    /// <summary>
     /// Verifies that unsetting the attribute with a leading <c>-</c> is recognized as
     /// "not vendored", overriding an earlier matching pattern that set it.
     /// </summary>
