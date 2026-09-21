@@ -39,6 +39,7 @@
     </PackageReference>
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="GitHubReleaseUpdater" />
   </ItemGroup>
 
   <ItemGroup>

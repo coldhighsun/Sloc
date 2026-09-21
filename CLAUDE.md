@@ -50,7 +50,7 @@ Line classification is text-based, not a full lexer. String literals are tracked
 
 ## Key Configuration
 
-- **`Directory.Build.props`** — global settings: targets `net8.0`, nullable enabled, warnings-as-errors, artifacts output layout
+- **`Directory.Build.props`** — global settings: targets `net10.0`, nullable enabled, warnings-as-errors, artifacts output layout
 - **`Directory.Packages.props`** — central NuGet version management; add new packages here, not in individual `.csproj` files
 - **Versioning** — MinVer derives the NuGet version automatically from git tags (`v*`); do not set `<Version>` manually. CI publish/pack/release jobs only run on `v*` tag pushes.
 

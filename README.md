@@ -46,7 +46,7 @@ Install via [winget](https://learn.microsoft.com/windows/package-manager/winget/
 winget install coldhighsun.sloc
 ```
 
-Or install as a .NET global tool (requires .NET 8 SDK):
+Or install as a .NET global tool (requires .NET 10 SDK):
 
 ```bash
 dotnet tool install --global Sloc
@@ -283,7 +283,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 winget install coldhighsun.sloc
 ```
 
-或作为 .NET 全局工具安装（需要 .NET 8 SDK）：
+或作为 .NET 全局工具安装（需要 .NET 10 SDK）：
 
 ```bash
 dotnet tool install --global Sloc

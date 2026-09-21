@@ -1,21 +1,22 @@
+using GitHubReleaseUpdater.GitHub;
+using GitHubReleaseUpdater.GitHub.Models;
 using Sloc.Cli.Updates;
-using System.Net;
 
 namespace Sloc.Cli.Tests;
 
 /// <summary>
-/// Contains unit tests for <see cref="UpdateChecker"/>, using a stubbed HTTP handler so
-/// no real network call is made.
+/// Contains unit tests for <see cref="UpdateChecker"/>, using a stub
+/// <see cref="IGitHubReleaseClient"/> so no real network call is made.
 /// </summary>
 public class UpdateCheckerTests
 {
     /// <summary>
-    /// Verifies that an HTTP failure is swallowed and reported as no update.
+    /// Verifies that a client failure is swallowed and reported as no update.
     /// </summary>
     [Fact]
-    public async Task CheckForUpdateAsync_HttpFailure_ReturnsNull()
+    public async Task CheckForUpdateAsync_ClientFailure_ReturnsNull()
     {
-        var checker = new UpdateChecker(new HttpClient(new ThrowingHandler()));
+        var checker = new UpdateChecker(new ThrowingClient());
 
         var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -28,8 +29,7 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_NewerRelease_ReturnsResult()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v2.0.0","html_url":"https://example.com/releases/2.0.0"}"""));
+        var checker = new UpdateChecker(StubClient("v2.0.0", "https://example.com/releases/2.0.0"));
 
         var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -44,10 +44,27 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_SameVersion_ReturnsNull()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v1.0.0","html_url":"https://example.com/releases/1.0.0"}"""));
+        var checker = new UpdateChecker(StubClient("v1.0.0", "https://example.com/releases/1.0.0"));
 
         var result = await checker.CheckForUpdateAsync("1.0.0", TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    /// <summary>
+    /// Verifies that a two-part release tag (e.g. <c>v1.2</c>) is not treated as lower than
+    /// the equivalent three-part running version <c>1.2.0</c>: both parse to the same
+    /// major/minor/patch core, so neither is reported as an update over the other. Regression
+    /// test for the old hand-rolled parser's use of <see cref="Version.TryParse"/>, which
+    /// padded a missing component with -1 instead of 0 and made "1.2" compare as lower than
+    /// "1.2.0" even though they represent the same release.
+    /// </summary>
+    [Fact]
+    public async Task CheckForUpdateAsync_TwoPartTagEquivalentToThreePartCurrent_ReturnsNull()
+    {
+        var checker = new UpdateChecker(StubClient("v1.2", "https://example.com/releases/1.2"));
+
+        var result = await checker.CheckForUpdateAsync("1.2.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -59,8 +76,7 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_PrereleaseLocalStableRemote_ReturnsResult()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v2.2.0","html_url":"https://example.com/releases/2.2.0"}"""));
+        var checker = new UpdateChecker(StubClient("v2.2.0", "https://example.com/releases/2.2.0"));
 
         var result = await checker.CheckForUpdateAsync("2.2.0-alpha.1", TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -74,8 +90,7 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_StableLocalPrereleaseRemote_ReturnsNull()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v2.2.0-alpha.1","html_url":"https://example.com/releases/2.2.0-alpha.1"}"""));
+        var checker = new UpdateChecker(StubClient("v2.2.0-alpha.1", "https://example.com/releases/2.2.0-alpha.1"));
 
         var result = await checker.CheckForUpdateAsync("2.2.0", TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -88,8 +103,7 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_TwoPrereleases_ReturnsResult()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v2.2.0-alpha.2","html_url":"https://example.com/releases/2.2.0-alpha.2"}"""));
+        var checker = new UpdateChecker(StubClient("v2.2.0-alpha.2", "https://example.com/releases/2.2.0-alpha.2"));
 
         var result = await checker.CheckForUpdateAsync("2.2.0-alpha.1", TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -103,29 +117,63 @@ public class UpdateCheckerTests
     [Fact]
     public async Task CheckForUpdateAsync_SamePrerelease_ReturnsNull()
     {
-        var checker = new UpdateChecker(StubClient(HttpStatusCode.OK,
-            """{"tag_name":"v2.2.0-alpha.1","html_url":"https://example.com/releases/2.2.0-alpha.1"}"""));
+        var checker = new UpdateChecker(StubClient("v2.2.0-alpha.1", "https://example.com/releases/2.2.0-alpha.1"));
 
         var result = await checker.CheckForUpdateAsync("2.2.0-alpha.1", TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.Null(result);
     }
 
-    private static HttpClient StubClient(HttpStatusCode status, string body) =>
-        new(new StubHandler(status, body));
-
-    private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
+    /// <summary>
+    /// Verifies that an unparseable running version is treated as no update, rather than
+    /// throwing or hitting the network.
+    /// </summary>
+    [Fact]
+    public async Task CheckForUpdateAsync_UnparseableCurrentVersion_ReturnsNull()
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(status)
-            {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-            });
+        var checker = new UpdateChecker(new ThrowingClient());
+
+        var result = await checker.CheckForUpdateAsync("not-a-version", TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.Null(result);
     }
 
-    private sealed class ThrowingHandler : HttpMessageHandler
+    private static StubGitHubClient StubClient(string tagName, string htmlUrl) =>
+        new(new GitHubRelease { TagName = tagName, HtmlUrl = htmlUrl });
+
+    private sealed class StubGitHubClient(GitHubRelease? release) : IGitHubReleaseClient
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        public Task<GitHubRelease?> GetLatestReleaseAsync(string owner, string repo, CancellationToken cancellationToken = default) =>
+            Task.FromResult(release);
+
+        public Task<GitHubRelease?> GetReleaseByTagAsync(string owner, string repo, string tag, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<GitHubRelease>> ListReleasesAsync(string owner, string repo, int perPage = 30, int page = 1, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AssetStream> OpenAssetStreamAsync(GitHubAsset asset, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> ReadAssetTextAsync(GitHubAsset asset, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingClient : IGitHubReleaseClient
+    {
+        public Task<GitHubRelease?> GetLatestReleaseAsync(string owner, string repo, CancellationToken cancellationToken = default) =>
             throw new HttpRequestException("network unreachable");
+
+        public Task<GitHubRelease?> GetReleaseByTagAsync(string owner, string repo, string tag, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<GitHubRelease>> ListReleasesAsync(string owner, string repo, int perPage = 30, int page = 1, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AssetStream> OpenAssetStreamAsync(GitHubAsset asset, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> ReadAssetTextAsync(GitHubAsset asset, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
