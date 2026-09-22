@@ -24,6 +24,7 @@ public sealed class LineClassifier
     private StringLiteral? _activeString;
     private bool _activeStringIsDoc;
     private int _blockDepth;
+    private string _codeText = string.Empty;
 
     /// <summary>
     /// Creates a classifier for the supplied language.
@@ -48,6 +49,15 @@ public sealed class LineClassifier
     public bool InMultilineString => _activeString is not null;
 
     /// <summary>
+    /// Gets the portion of the most recently classified line that is actual source code —
+    /// i.e. with block comments, line comments, and string-literal content (delimiters
+    /// included) blanked out to spaces so token boundaries and positions are preserved.
+    /// Used to compute cyclomatic complexity without matching keywords that merely appear
+    /// inside a string or comment.
+    /// </summary>
+    internal string CodeText => _codeText;
+
+    /// <summary>
     /// Classifies a single physical line, advancing any block-comment or
     /// multi-line-string state.
     /// </summary>
@@ -62,6 +72,8 @@ public sealed class LineClassifier
         var sawCode = false;
         var sawComment = false;
         var index = 0;
+        var codeChars = new char[line.Length];
+        Array.Fill(codeChars, ' ');
 
         while (index < line.Length)
         {
@@ -108,8 +120,11 @@ public sealed class LineClassifier
                 sawCode = true;
             }
 
+            codeChars[index] = line[index];
             index++;
         }
+
+        _codeText = new string(codeChars);
 
         // A single-line string that never closed does not carry over to the next line.
         if (_activeString is { Multiline: false })
