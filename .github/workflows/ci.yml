@@ -51,7 +51,13 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/**/*.cobertura.xml
+          # A directory (rather than a `files` glob) lets Codecov's own file search find
+          # both test projects' *.cobertura.xml reports. A `files` glob is expanded by the
+          # shell before Codecov sees it, and that expansion is inconsistent across
+          # platforms (e.g. Windows' Git Bash expands `**` where Ubuntu's non-interactive
+          # bash does not), which on Windows produced two separate paths after a single
+          # `--file` flag and made the underlying CLI reject the extra argument.
+          directory: ./coverage
           flags: ${{ matrix.os }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
