@@ -48,16 +48,24 @@ jobs:
           path: ./coverage/**/*.cobertura.xml
           if-no-files-found: warn
 
+      # Resolves the exact report paths (one per test project) into a comma-separated,
+      # glob-free list before handing them to Codecov. A `files` glob is expanded by the
+      # shell before Codecov sees it, and that expansion is inconsistent across platforms
+      # (Windows' Git Bash expands `**` where Ubuntu's non-interactive bash does not),
+      # which broke uploads on Windows; a `directory` input instead relies on Codecov's
+      # own report-discovery heuristics, which failed to recognize these GUID-named
+      # files at all on every platform. Listing the literal paths sidesteps both.
+      - name: Locate coverage reports
+        id: coverage
+        shell: bash
+        run: |
+          files=$(find ./coverage -name '*.cobertura.xml' -print0 | xargs -0 | tr ' ' ',')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          # A directory (rather than a `files` glob) lets Codecov's own file search find
-          # both test projects' *.cobertura.xml reports. A `files` glob is expanded by the
-          # shell before Codecov sees it, and that expansion is inconsistent across
-          # platforms (e.g. Windows' Git Bash expands `**` where Ubuntu's non-interactive
-          # bash does not), which on Windows produced two separate paths after a single
-          # `--file` flag and made the underlying CLI reject the extra argument.
-          directory: ./coverage
+          files: ${{ steps.coverage.outputs.files }}
           flags: ${{ matrix.os }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
