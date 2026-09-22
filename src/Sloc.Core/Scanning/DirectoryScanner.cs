@@ -173,6 +173,19 @@ public sealed class DirectoryScanner
                 }
             }
 
+            if (options.Includes.Count > 0 || options.Excludes.Count > 0)
+            {
+                var fileMatcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+                fileMatcher.AddIncludePatterns(options.Includes.Count > 0 ? options.Includes : ["**/*"]);
+                fileMatcher.AddExcludePatterns(options.Excludes);
+                var pathRoot = Path.GetPathRoot(fullPath) ?? string.Empty;
+                var matchTarget = fullPath[pathRoot.Length..].Replace('\\', '/');
+                if (!fileMatcher.Match(matchTarget).HasMatches)
+                {
+                    return new ScanResult([], []);
+                }
+            }
+
             var single = Resolve(fullPath, options.IncludeUnknown);
             return single is null || !MatchesLanguageFilter(single.Language, options)
                 ? new ScanResult([], [])
