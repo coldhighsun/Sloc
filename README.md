@@ -3,10 +3,10 @@
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/coldhighsun/Sloc/branch/main/graph/badge.svg)](https://codecov.io/gh/coldhighsun/Sloc)
-![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
+![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![NuGet Version](https://img.shields.io/nuget/v/Sloc)](https://www.nuget.org/packages/Sloc)
-![NuGet Pre Release](https://img.shields.io/nuget/vpre/Sloc)
+[![NuGet Version](https://img.shields.io/nuget/v/Sloc?label=nuget%20stable)](https://www.nuget.org/packages/Sloc)
+![NuGet Pre Release](https://img.shields.io/nuget/vpre/Sloc?label=nuget%20pre-release)
 ![Winget](https://img.shields.io/winget/v/coldhighsun.sloc)
 
 [![GitHub release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
