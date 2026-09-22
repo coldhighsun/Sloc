@@ -156,6 +156,49 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--top</c> does not truncate the current-side summary when diffing
+    /// against a baseline: a language that still exists but falls outside the top-N must
+    /// not be reported as fully removed just because it was cut from the current summary.
+    /// </summary>
+    [Fact]
+    public void Execute_TopWithBaselineDiff_DoesNotReportOutOfTopLanguageAsRemoved()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\nint y = 2;\nint z = 3;\n");
+        File.WriteAllText(Path.Combine(_root, "b.py"), "x = 1\n");
+        File.WriteAllText(Path.Combine(_root, "c.rb"), "x = 1\n");
+
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        // --top 1 would keep only the largest language in the current-side summary; Ruby
+        // (alphabetically/size-wise the smallest here) must still show up as unchanged in
+        // the diff rather than as removed.
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Top = 1,
+            Quiet = true
+        }));
+
+        var root = JsonSerializer.Deserialize<JsonElement>(diff);
+        var languages = root.GetProperty("byLanguage").EnumerateArray()
+            .Select(l => l.GetProperty("language").GetString())
+            .ToArray();
+        Assert.Contains("Ruby", languages);
+        var ruby = root.GetProperty("byLanguage").EnumerateArray().Single(e => e.GetProperty("language").GetString() == "Ruby");
+        Assert.Equal(0, ruby.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
     /// Verifies that <c>--exclude-lang</c> drops the named language, through the full
     /// handler pipeline rather than just the scanner.
     /// </summary>
