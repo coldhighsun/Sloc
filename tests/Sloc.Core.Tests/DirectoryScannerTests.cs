@@ -474,6 +474,40 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that scanning an explicit single-file path applies
+    /// <see cref="ScanOptions.Excludes"/> glob patterns, including patterns that encode a
+    /// directory segment relative to the current working directory.
+    /// </summary>
+    [Fact]
+    public void Scan_SingleFilePath_AppliesExcludeGlob()
+    {
+        var path = Write("sub/foo.cs", "// foo");
+
+        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/sub/*.cs"] });
+        Assert.Empty(excluded.Files);
+
+        var notExcluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/other/*.cs"] });
+        Assert.Single(notExcluded.Files);
+    }
+
+    /// <summary>
+    /// Verifies that scanning an explicit single-file path applies
+    /// <see cref="ScanOptions.Includes"/> glob patterns, dropping the file when it does not
+    /// match any include pattern.
+    /// </summary>
+    [Fact]
+    public void Scan_SingleFilePath_AppliesIncludeGlob()
+    {
+        var path = Write("foo.cs", "// foo");
+
+        var notMatched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.py"] });
+        Assert.Empty(notMatched.Files);
+
+        var matched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.cs"] });
+        Assert.Single(matched.Files);
+    }
+
+    /// <summary>
     /// Verifies that a self-referential directory symlink does not make the scan recurse
     /// forever, and that files behind the loop are not walked through the symlink.
     /// </summary>
