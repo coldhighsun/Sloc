@@ -170,6 +170,19 @@ public class LineClassifierLanguageTests
     }
 
     /// <summary>
+    /// Verifies that an underscore right after a whole-word line-comment token (e.g.
+    /// BASIC's <c>REM</c>) is treated as part of a longer identifier, not a word boundary,
+    /// so <c>REM_VALUE</c> is code rather than a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_BasicRemFollowedByUnderscore_IsTreatedAsIdentifier()
+    {
+        var classifier = new LineClassifier(Resolve(".bas"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("REM_VALUE = 1"));
+    }
+
+    /// <summary>
     /// Verifies that Pascal's <c>{ }</c> and <c>(* *)</c> block comments are both
     /// recognized, alongside its <c>//</c> line comment.
     /// </summary>
