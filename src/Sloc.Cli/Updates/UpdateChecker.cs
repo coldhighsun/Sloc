@@ -63,31 +63,22 @@ public sealed class UpdateChecker
             return null;
         }
 
-        try
+        var options = new UpdaterOptions
         {
-            using var timeoutCts = new CancellationTokenSource(timeout);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            Owner = Owner,
+            Repo = Repo,
+            CurrentVersion = current,
+            Timeout = timeout
+        };
 
-            var options = new UpdaterOptions
-            {
-                Owner = Owner,
-                Repo = Repo,
-                CurrentVersion = current
-            };
+        using var updater = _client is null ? new ReleaseUpdater(options) : new ReleaseUpdater(options, _client);
+        var check = await updater.CheckForUpdateAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            using var updater = _client is null ? new ReleaseUpdater(options) : new ReleaseUpdater(options, _client);
-            var check = await updater.CheckForUpdateAsync(cancellationToken: linkedCts.Token).ConfigureAwait(false);
-
-            if (check.Update is not { } update || update.Release.HtmlUrl is not { } releaseUrl)
-            {
-                return null;
-            }
-
-            return new UpdateCheckResult(update.Version.ToString(), releaseUrl);
-        }
-        catch
+        if (!check.Success || check.Update is not { } update || update.Release.HtmlUrl is not { } releaseUrl)
         {
             return null;
         }
+
+        return new UpdateCheckResult(update.Version.ToString(), releaseUrl);
     }
 }
