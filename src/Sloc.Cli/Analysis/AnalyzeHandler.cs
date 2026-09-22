@@ -522,8 +522,8 @@ public sealed class AnalyzeHandler
         {
             var relativePrefix = snapshot.RelativePrefix;
             bool InScope(string gitPath) =>
-                gitPath.Equals(relativePrefix, StringComparison.OrdinalIgnoreCase)
-                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.OrdinalIgnoreCase);
+                gitPath.Equals(relativePrefix, StringComparison.Ordinal)
+                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.Ordinal);
 
             filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
             skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
