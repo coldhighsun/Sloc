@@ -247,12 +247,17 @@ public sealed class AnalyzeHandler
                 skipped.AddRange(gitSnapshot.Skipped);
             }
 
+            // Diffing needs every language present in either side to compare correctly, so
+            // --top must not truncate the current-side summary when a diff is requested
+            // (matches AnalyzeGitRef's baseline-side summary, which is never top-limited
+            // either); --top is applied here only for a normal (non-diff) render.
+            var isDiffing = options.BaselinePath is not null || options.CompareTo is not null;
             var summary = new AnalysisSummary(
                 results,
                 skipped,
                 options.Sort,
                 descending: options.Sort != LanguageSort.Name,
-                top: options.Top);
+                top: isDiffing ? null : options.Top);
 
             if (options.BaselinePath is { } baselinePath)
             {
