@@ -103,7 +103,10 @@ public sealed class FileAnalyzer
                     code++;
                     if (supportsComplexity)
                     {
-                        complexity += language.ComplexityRegex.Count(line);
+                        // Match against the code-only portion of the line (string/comment
+                        // content blanked out) so a branch keyword inside a string literal
+                        // or trailing comment doesn't inflate the complexity count.
+                        complexity += language.ComplexityRegex.Count(classifier.CodeText);
                     }
                     break;
 

@@ -59,6 +59,21 @@ public class FileAnalyzerComplexityTests
     }
 
     /// <summary>
+    /// Verifies that branch-point tokens appearing inside a string literal or a trailing
+    /// line comment are not counted, since they aren't real branches — only tokens in the
+    /// actual code portion of the line should contribute.
+    /// </summary>
+    [Fact]
+    public void AnalyzeText_BranchTokenInStringLiteralOrTrailingComment_IsNotCounted()
+    {
+        const string content = "Console.WriteLine(\"if or while\"); // for testing\n";
+
+        var result = new FileAnalyzer().AnalyzeText(content, CSharp);
+
+        Assert.Equal(1, result.Complexity);
+    }
+
+    /// <summary>
     /// Verifies that a language which does not support complexity analysis (e.g. YAML)
     /// always yields a <see langword="null"/> complexity, regardless of content.
     /// </summary>
