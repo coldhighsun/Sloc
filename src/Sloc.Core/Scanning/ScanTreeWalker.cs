@@ -159,7 +159,21 @@ internal static class ScanTreeWalker
                 continue;
             }
 
-            if (!new DirectoryInfo(subdirectory).Attributes.HasFlag(FileAttributes.ReparsePoint))
+            FileAttributes attributes;
+            try
+            {
+                attributes = new DirectoryInfo(subdirectory).Attributes;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The subdirectory vanished or became inaccessible between GetDirectories
+                // and this check (a TOCTOU race with a concurrent delete/permission change).
+                // Record it as skipped rather than letting the exception abort the whole walk.
+                skipped.Add(new SkippedEntry(subdirectory, ex.Message));
+                continue;
+            }
+
+            if (!attributes.HasFlag(FileAttributes.ReparsePoint))
             {
                 ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 Collect(
