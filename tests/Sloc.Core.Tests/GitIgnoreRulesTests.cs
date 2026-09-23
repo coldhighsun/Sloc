@@ -161,6 +161,20 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that a negation cannot re-include a path whose parent directory is
+    /// already excluded by a directory-only pattern, matching git's documented rule that
+    /// an excluded directory is never scanned for re-inclusion patterns.
+    /// </summary>
+    [Fact]
+    public void IsIgnored_Negation_CannotReincludePathUnderExcludedDirectory()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["build/", "!build/keep.txt"]);
+
+        Assert.True(rules.IsIgnored("build/keep.txt"));
+        Assert.True(rules.IsIgnored("build/other.txt"));
+    }
+
+    /// <summary>
     /// Verifies that pattern matching is case-insensitive, consistent with the
     /// <c>--include</c>/<c>--exclude</c> glob matching used elsewhere in the scanner.
     /// </summary>
