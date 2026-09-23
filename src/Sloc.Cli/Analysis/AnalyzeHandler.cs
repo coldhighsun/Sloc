@@ -11,18 +11,15 @@ namespace Sloc.Cli.Analysis;
 
 /// <summary>
 /// Orchestrates an analysis run: scan files, analyze each one, aggregate the
-/// results, and render them.
+/// results, and render them. The stateless scan/analyze/render plumbing this class
+/// delegates to lives in the other half of this partial class, <c>AnalyzeHandler.Support.cs</c>.
 /// </summary>
-public sealed class AnalyzeHandler
+public sealed partial class AnalyzeHandler
 {
-    private const string StdoutToken = "-";
     private static readonly TimeSpan LiveTableRefreshInterval = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan ScanStatusRefreshInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan WatchDebounceInterval = TimeSpan.FromMilliseconds(400);
-    // Mirrors DirectoryScanner's default-excluded directory names (kept separately since
-    // that set is private to DirectoryScanner); see IsInIgnoredDirectory.
-    private static readonly string[] WatchIgnoredDirectoryNames =
-        ["bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"];
+
     private readonly FileAnalyzer _analyzer = new();
     private readonly DirectoryScanner _scanner = new();
 
@@ -37,64 +34,11 @@ public sealed class AnalyzeHandler
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var version = typeof(AnalyzeHandler).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion;
-
-        // The path/list-file/git-hash the current run analyzed, surfaced in report
-        // metadata (Table banner, Json/Html/Markdown) so a saved or shared report can be
-        // traced back to its source. The scanned directory/file is always resolved to a
-        // full absolute path so the report is unambiguous regardless of the working
-        // directory it was generated from (e.g. "." becomes "C:\repo").
-        var resolvedPath = ResolveFullPath(options.Path);
-        var sourcePath = options.GitHash is { } gitHashForDisplay
-            ? $"{resolvedPath} @ {gitHashForDisplay}"
-            : options.ListFile is { } listFileForDisplay
-                ? $"list: {ResolveFullPath(listFileForDisplay)}"
-                : resolvedPath;
-
-        if (options.Format == OutputFormat.Table && !Console.IsOutputRedirected && !options.Quiet && !options.Watch)
-        {
-            if (!string.IsNullOrEmpty(version))
-            {
-                AnsiConsole.MarkupLine($"[grey]sloc {Markup.Escape(version)}[/]");
-            }
-
-            AnsiConsole.MarkupLine($"[grey]Analyzing: {Markup.Escape(sourcePath)}[/]");
-        }
-
-        // Start the update check concurrently with the scan/analysis so a slow network
-        // never delays the actual work. It is awaited and reported at the end of the run.
-        Task<UpdateCheckResult?>? updateCheck = null;
-        if (!options.NoUpdateCheck && !options.Quiet && !string.IsNullOrEmpty(version))
-        {
-            updateCheck = new UpdateChecker()
-                .CheckForUpdateAsync(version, TimeSpan.FromSeconds(2), CancellationToken.None);
-        }
-
-        // Spectre's live table / progress bar drive the console cursor, which throws when
-        // stdout is redirected (pipes, CI, files). Suppress it there and when the caller
-        // asked for a quiet / no-progress run.
-        var showProgress = !Console.IsOutputRedirected && !options.Quiet && !options.NoProgress;
-
-        var tableRenderer = new TableRenderer();
-
-        var scanOptions = new ScanOptions
-        {
-            Includes = options.Includes,
-            Excludes = options.Excludes,
-            IncludeLangs = options.IncludeLangs,
-            ExcludeLangs = options.ExcludeLangs,
-            Recursive = !options.NoRecursive,
-            IncludeUnknown = options.IncludeUnknown,
-            RespectGitignore = options.RespectGitignore,
-            RespectGitAttributes = options.RespectGitAttributes,
-            FollowSymlinks = options.FollowSymlinks
-        };
+        var ctx = BuildRunContext(options);
 
         if (options.Watch)
         {
-            return ExecuteWatch(options, scanOptions, tableRenderer, sourcePath);
+            return ExecuteWatch(options, ctx.ScanOptions, ctx.TableRenderer, ctx.SourcePath);
         }
 
         GitSnapshot? gitSnapshot = null;
@@ -118,60 +62,7 @@ public sealed class AnalyzeHandler
             ScanResult scanResult;
             try
             {
-                if (gitSnapshot is not null)
-                {
-                    scanResult = _scanner.ScanFiles(gitSnapshot.Files.Select(f => f.TempPath), scanOptions);
-                }
-                else if (options.ListFile is { } listFile)
-                {
-                    scanResult = _scanner.ScanFiles(ReadListFile(listFile), scanOptions);
-                }
-                else if (showProgress)
-                {
-                    ScanResult? result = null;
-                    var refreshTimer = Stopwatch.StartNew();
-                    var gitignoreScanLabel = (scanOptions.RespectGitignore, scanOptions.RespectGitAttributes) switch
-                    {
-                        (true, true) => "checking .gitignore/.gitattributes",
-                        (true, false) => "checking .gitignore",
-                        (false, true) => "checking .gitattributes",
-                        (false, false) => "walking directories",
-                    };
-
-                    AnsiConsole.Status()
-                        .Spinner(Spinner.Known.Dots)
-                        .Start("Scanning files...", ctx =>
-                        {
-                            result = _scanner.Scan(
-                                options.Path,
-                                scanOptions,
-                                onFileFound: (count, path) =>
-                                {
-                                    if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
-                                    {
-                                        return;
-                                    }
-
-                                    refreshTimer.Restart();
-                                    ctx.Status($"Scanning... [green]{count:N0}[/] files ([grey]{Markup.Escape(Path.GetFileName(path))}[/])");
-                                },
-                                onGitignoreScan: (count, path) =>
-                                {
-                                    if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
-                                    {
-                                        return;
-                                    }
-
-                                    refreshTimer.Restart();
-                                    ctx.Status($"Scanning... {gitignoreScanLabel} ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
-                                });
-                        });
-                    scanResult = result ?? throw new InvalidOperationException("Scan did not complete.");
-                }
-                else
-                {
-                    scanResult = _scanner.Scan(options.Path, scanOptions);
-                }
+                scanResult = RunScan(gitSnapshot, options, ctx.ScanOptions, ctx.ShowProgress);
             }
             catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
             {
@@ -181,63 +72,9 @@ public sealed class AnalyzeHandler
 
             var files = scanResult.Files;
             var skipped = new List<SkippedEntry>(scanResult.Skipped);
-            List<FileAnalysis> results;
-
-            if (files.Count == 0)
-            {
-                // Nothing to analyze.
-                results = [];
-            }
-            else if (!showProgress)
-            {
-                results = AnalyzeFiles(files, options, skipped);
-            }
-            else if (options is { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
-            {
-                var aggregator = new LiveAggregator(options.Sort, options.Top);
-                results = [];
-
-                AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
-                    .AutoClear(false)
-                    .Start(ctx =>
-                    {
-                        // Analyze on a background task while this thread refreshes the table
-                        // from the thread-safe aggregator (no per-tick re-aggregation).
-                        var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, analysis) =>
-                        {
-                            if (analysis is not null)
-                            {
-                                aggregator.Add(analysis);
-                            }
-                        }));
-                        while (!work.IsCompleted)
-                        {
-                            ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
-                                aggregator.ToSummary(),
-                                $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
-                                noHealth: options.NoHealth,
-                                noComplexity: options.NoComplexity));
-                            Thread.Sleep(LiveTableRefreshInterval);
-                        }
-
-                        work.GetAwaiter().GetResult();
-                        ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity));
-                    });
-            }
-            else
-            {
-                results = [];
-
-                AnsiConsole.Progress()
-                    .AutoClear(true)
-                    .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
-                    .Start(ctx =>
-                    {
-                        var task = ctx.AddTask("[green]Analyzing[/]", maxValue: files.Count);
-                        var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, _) => task.Increment(1)));
-                        work.GetAwaiter().GetResult();
-                    });
-            }
+            var results = files.Count == 0
+                ? []
+                : AnalyzeWithUi(files, options, skipped, ctx.ShowProgress, ctx.TableRenderer);
 
             if (gitSnapshot is not null)
             {
@@ -273,7 +110,7 @@ public sealed class AnalyzeHandler
                 }
 
                 return RenderDiffAndFinish(
-                    summary, "--baseline", options, updateCheck, version,
+                    summary, "--baseline", options, ctx.UpdateCheck, ctx.Version,
                     writer => DiffRenderer.RenderJson(writer, summary, baseline),
                     () => DiffRenderer.RenderTable(summary, baseline));
             }
@@ -283,7 +120,7 @@ public sealed class AnalyzeHandler
                 AnalysisSummary compareBaseline;
                 try
                 {
-                    compareBaseline = AnalyzeGitRef(options.Path, compareToRef, scanOptions, options);
+                    compareBaseline = AnalyzeGitRef(options.Path, compareToRef, ctx.ScanOptions, options);
                 }
                 catch (Exception ex) when (ex is GitSnapshotException or DirectoryNotFoundException or IOException or UnauthorizedAccessException)
                 {
@@ -292,52 +129,221 @@ public sealed class AnalyzeHandler
                 }
 
                 return RenderDiffAndFinish(
-                    summary, "--compare-to", options, updateCheck, version,
+                    summary, "--compare-to", options, ctx.UpdateCheck, ctx.Version,
                     writer => DiffRenderer.RenderJson(writer, summary, compareBaseline),
                     () => DiffRenderer.RenderTable(summary, compareBaseline));
             }
 
-            if (CreateRenderer(options.Format) is { } createRenderer)
+            var renderExit = RenderNormal(summary, options, ctx.SourcePath, ctx.TableRenderer, ctx.ShowProgress);
+            if (renderExit != ExitCode.Success)
             {
-                // These formats default to stdout (pipeable/pasteable); an explicit path writes a file.
-                if (options.OutputFile is null || options.OutputFile == StdoutToken)
-                {
-                    createRenderer(Console.Out).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity);
-                }
-                else
-                {
-                    if (!WriteToFile(options.OutputFile, writer => createRenderer(writer).Render(summary, options.ByFile, options.NoHealth, options.Detailed, sourcePath, options.NoComplexity), options.Quiet))
-                    {
-                        return ExitCode.Error;
-                    }
-                }
-            }
-            else
-            {
-                if (summary.FileCount == 0)
-                {
-                    AnsiConsole.MarkupLine("[yellow]No files matched.[/]");
-                }
-                else if (options.ByFile)
-                {
-                    tableRenderer.RenderByFile(summary, options.NoHealth, options.Paged, options.NoComplexity);
-                }
-                else if (!showProgress)
-                {
-                    // The live table only renders during progress; render it here otherwise.
-                    AnsiConsole.Write(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth, noComplexity: options.NoComplexity));
-                }
-
-                tableRenderer.RenderSkipped(summary);
+                return renderExit;
             }
 
-            ReportUpdate(updateCheck, version);
+            ReportUpdate(ctx.UpdateCheck, ctx.Version);
             return ThresholdResult(options, summary);
         }
         finally
         {
             gitSnapshot?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Analyzes <paramref name="files"/> in parallel (respecting <see cref="AnalyzeOptions.Jobs"/>),
+    /// merges results in scan order so output is deterministic regardless of the degree of
+    /// parallelism, appends any per-file failures to <paramref name="skipped"/>, and applies
+    /// <see cref="AnalyzeOptions.Unique"/> deduplication. Shared by the one-shot pipeline in
+    /// <see cref="Execute"/> and the repeated passes in <see cref="ExecuteWatch"/> so per-file
+    /// error handling and merge/dedup behavior can't drift between the two.
+    /// </summary>
+    /// <param name="files">The files to analyze, in scan order.</param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="skipped">The skipped-entries list per-file failures are appended to.</param>
+    /// <param name="onFileAnalyzed">
+    /// Optional callback invoked (from a worker thread, once per file) with the file's index
+    /// and its analysis, or <see langword="null"/> if that file was skipped. Used to drive
+    /// progress UI (a live-aggregated table or a progress bar) while analysis runs.
+    /// </param>
+    private List<FileAnalysis> AnalyzeFiles(
+        IReadOnlyList<ScannedFile> files,
+        AnalyzeOptions options,
+        List<SkippedEntry> skipped,
+        Action<int, FileAnalysis?>? onFileAnalyzed = null)
+    {
+        // Analyze into fixed slots so the merged order is deterministic (scan order),
+        // independent of the degree of parallelism.
+        var analyses = new FileAnalysis?[files.Count];
+        var fileSkips = new SkippedEntry?[files.Count];
+
+        void AnalyzeAt(int i)
+        {
+            try
+            {
+                analyses[i] = _analyzer.Analyze(files[i].Path, files[i].Language, computeHash: options.Unique);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BinaryFileException)
+            {
+                fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                // Any other per-file failure (e.g. a decoding error) skips just that file
+                // rather than aborting the whole run; fatal conditions are left to propagate.
+                fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
+            }
+
+            onFileAnalyzed?.Invoke(i, analyses[i]);
+        }
+
+        var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
+        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs }, AnalyzeAt);
+
+        // Merge in scan order so results are deterministic regardless of --jobs.
+        var results = new List<FileAnalysis>(files.Count);
+        foreach (var analysis in analyses)
+        {
+            if (analysis is not null)
+            {
+                results.Add(analysis);
+            }
+        }
+
+        foreach (var fileSkip in fileSkips)
+        {
+            if (fileSkip is not null)
+            {
+                skipped.Add(fileSkip);
+            }
+        }
+
+        return options.Unique ? DeduplicateByHash(results, skipped) : results;
+    }
+
+    /// <summary>
+    /// Extracts <paramref name="repoPath"/>'s repository tree as of <paramref name="gitRef"/>
+    /// via <see cref="GitSnapshotExtractor"/>, then scans and analyzes it with
+    /// <paramref name="scanOptions"/> and remaps results back to git-relative paths. Used by
+    /// <c>--compare-to</c> to build the baseline side of a diff without requiring a previously
+    /// saved report. The temporary extraction directory is always cleaned up before returning.
+    /// </summary>
+    /// <remarks>
+    /// When <see cref="AnalyzeOptions.GitHash"/> is not set, the "current" side being diffed
+    /// against is a normal filesystem scan scoped to <paramref name="repoPath"/>, so the
+    /// baseline is restricted to that same subtree — otherwise the diff would compare a
+    /// scoped current summary against an unscoped (whole-repository) baseline. But when
+    /// <see cref="AnalyzeOptions.GitHash"/> is set, the current side is itself unscoped (per
+    /// <c>--git-hash</c>'s own "<paramref name="repoPath"/> is the repo root" convention, it
+    /// always analyzes the whole repository regardless of <paramref name="repoPath"/>), so the
+    /// baseline must stay unscoped too, to match.
+    /// </remarks>
+    /// <param name="repoPath">The path passed as <c>path</c>; the repo root or one of its subdirectories.</param>
+    /// <param name="gitRef">The commit/tree-ish to extract and analyze.</param>
+    /// <param name="scanOptions">The scan options to apply to the extracted snapshot.</param>
+    /// <param name="options">The parsed options.</param>
+    private AnalysisSummary AnalyzeGitRef(string repoPath, string gitRef, ScanOptions scanOptions, AnalyzeOptions options)
+    {
+        using var snapshot = new GitSnapshotExtractor().Extract(repoPath, gitRef);
+
+        var filesInScope = snapshot.Files;
+        IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
+        if (options.GitHash is null && snapshot.RelativePrefix.Length > 0)
+        {
+            var relativePrefix = snapshot.RelativePrefix;
+            bool InScope(string gitPath) =>
+                gitPath.Equals(relativePrefix, StringComparison.Ordinal)
+                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.Ordinal);
+
+            filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
+            skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
+        }
+
+        var scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
+        var skipped = new List<SkippedEntry>(scanResult.Skipped);
+        var results = AnalyzeFiles(scanResult.Files, options, skipped);
+
+        var gitPathByTempPath = filesInScope.ToDictionary(f => f.TempPath, f => f.GitPath);
+        results = RemapGitPaths(results, gitPathByTempPath);
+        skipped = RemapGitPaths(skipped, gitPathByTempPath);
+        skipped.AddRange(skippedInScope);
+
+        // No --top limit here: the diff needs every language present in either side to
+        // compare correctly, regardless of how the current run's summary was truncated.
+        return new AnalysisSummary(results, skipped, options.Sort, descending: options.Sort != LanguageSort.Name);
+    }
+
+    /// <summary>
+    /// Runs <see cref="AnalyzeFiles"/> for a one-shot run, wrapped in whichever progress UI
+    /// applies: no UI (quiet/redirected/no-progress), a live-refreshed language table (Table
+    /// format, not <c>--by-file</c>, no <c>--baseline</c>) driven by a <see cref="LiveAggregator"/>,
+    /// or a plain progress bar otherwise. <paramref name="files"/> is known non-empty; the
+    /// empty case is handled by the caller.
+    /// </summary>
+    /// <param name="files">The (known non-empty) files to analyze.</param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="skipped">The skipped-entries list per-file failures are appended to.</param>
+    /// <param name="showProgress">Whether progress UI may be drawn.</param>
+    /// <param name="tableRenderer">The table renderer used to build the live-refreshed language table.</param>
+    private List<FileAnalysis> AnalyzeWithUi(
+        IReadOnlyList<ScannedFile> files,
+        AnalyzeOptions options,
+        List<SkippedEntry> skipped,
+        bool showProgress,
+        TableRenderer tableRenderer)
+    {
+        if (!showProgress)
+        {
+            return AnalyzeFiles(files, options, skipped);
+        }
+
+        if (options is not { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
+        {
+            var progressResults = new List<FileAnalysis>();
+
+            AnsiConsole.Progress()
+                .AutoClear(true)
+                .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
+                .Start(ctx =>
+                {
+                    var task = ctx.AddTask("[green]Analyzing[/]", maxValue: files.Count);
+                    var work = Task.Run(() => progressResults = AnalyzeFiles(files, options, skipped, (_, _) => task.Increment(1)));
+                    work.GetAwaiter().GetResult();
+                });
+
+            return progressResults;
+        }
+
+        var aggregator = new LiveAggregator(options.Sort, options.Top);
+        var results = new List<FileAnalysis>();
+
+        AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
+            .AutoClear(false)
+            .Start(ctx =>
+            {
+                // Analyze on a background task while this thread refreshes the table
+                // from the thread-safe aggregator (no per-tick re-aggregation).
+                var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, analysis) =>
+                {
+                    if (analysis is not null)
+                    {
+                        aggregator.Add(analysis);
+                    }
+                }));
+                while (!work.IsCompleted)
+                {
+                    ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
+                        aggregator.ToSummary(),
+                        $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
+                        noHealth: options.NoHealth,
+                        noComplexity: options.NoComplexity));
+                    Thread.Sleep(LiveTableRefreshInterval);
+                }
+
+                work.GetAwaiter().GetResult();
+                ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity));
+            });
+
+        return results;
     }
 
     /// <summary>
@@ -353,6 +359,10 @@ public sealed class AnalyzeHandler
     /// not relevant here (watch is Table-only and excludes --git-hash/--list-file/--baseline)
     /// and would add risk to entangle with a repeatedly-run loop.
     /// </remarks>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="scanOptions">The scan options to apply on every pass.</param>
+    /// <param name="tableRenderer">The table renderer used to build the live-refreshed language table.</param>
+    /// <param name="sourcePath">The resolved source path to surface in the startup banner.</param>
     private int ExecuteWatch(AnalyzeOptions options, ScanOptions scanOptions, TableRenderer tableRenderer, string sourcePath)
     {
         if (!options.Quiet)
@@ -457,103 +467,22 @@ public sealed class AnalyzeHandler
     }
 
     /// <summary>
-    /// Determines <see cref="ExecuteWatch"/>'s exit code once the watch loop ends: the same
-    /// <c>--min-comment-pct</c> threshold gate every other code path applies, evaluated
-    /// against the last summary the watch loop rendered (or a plain success if the loop
-    /// exited before ever completing a pass).
-    /// </summary>
-    internal static int WatchExitCode(AnalyzeOptions options, AnalysisSummary? lastSummary) =>
-        lastSummary is null ? ExitCode.Success : ThresholdResult(options, lastSummary);
-
-    /// <summary>
-    /// Whether <paramref name="path"/> falls under one of the well-known build/VCS/package
-    /// directories that <see cref="DirectoryScanner"/> always excludes by default, used to
-    /// cheaply filter obviously-irrelevant <see cref="FileSystemWatcher"/> events in
-    /// <see cref="ExecuteWatch"/> without replaying the scanner's full glob/gitignore logic.
-    /// </summary>
-    internal static bool IsInIgnoredDirectory(string path) =>
-        path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .Any(segment => WatchIgnoredDirectoryNames.Contains(segment, StringComparer.OrdinalIgnoreCase));
-
-    /// <summary>
-    /// Scans and analyzes once for <see cref="ExecuteWatch"/>: full re-scan (applying the
-    /// same include/exclude/gitignore/gitattributes/language filters as a normal run),
-    /// then <see cref="AnalyzeFiles"/> for the per-file analysis and aggregation into an
-    /// <see cref="AnalysisSummary"/>.
-    /// </summary>
-    private AnalysisSummary RunWatchPass(AnalyzeOptions options, ScanOptions scanOptions)
-    {
-        var scanResult = _scanner.Scan(options.Path, scanOptions);
-        var skipped = new List<SkippedEntry>(scanResult.Skipped);
-        var results = AnalyzeFiles(scanResult.Files, options, skipped);
-
-        return new AnalysisSummary(
-            results,
-            skipped,
-            options.Sort,
-            descending: options.Sort != LanguageSort.Name,
-            top: options.Top);
-    }
-
-    /// <summary>
-    /// Extracts <paramref name="repoPath"/>'s repository tree as of <paramref name="gitRef"/>
-    /// via <see cref="GitSnapshotExtractor"/>, then scans and analyzes it with
-    /// <paramref name="scanOptions"/> and remaps results back to git-relative paths. Used by
-    /// <c>--compare-to</c> to build the baseline side of a diff without requiring a previously
-    /// saved report. The temporary extraction directory is always cleaned up before returning.
-    /// </summary>
-    /// <remarks>
-    /// When <see cref="AnalyzeOptions.GitHash"/> is not set, the "current" side being diffed
-    /// against is a normal filesystem scan scoped to <paramref name="repoPath"/>, so the
-    /// baseline is restricted to that same subtree — otherwise the diff would compare a
-    /// scoped current summary against an unscoped (whole-repository) baseline. But when
-    /// <see cref="AnalyzeOptions.GitHash"/> is set, the current side is itself unscoped (per
-    /// <c>--git-hash</c>'s own "<paramref name="repoPath"/> is the repo root" convention, it
-    /// always analyzes the whole repository regardless of <paramref name="repoPath"/>), so the
-    /// baseline must stay unscoped too, to match.
-    /// </remarks>
-    private AnalysisSummary AnalyzeGitRef(string repoPath, string gitRef, ScanOptions scanOptions, AnalyzeOptions options)
-    {
-        using var snapshot = new GitSnapshotExtractor().Extract(repoPath, gitRef);
-
-        IReadOnlyList<GitSnapshotFile> filesInScope = snapshot.Files;
-        IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
-        if (options.GitHash is null && snapshot.RelativePrefix.Length > 0)
-        {
-            var relativePrefix = snapshot.RelativePrefix;
-            bool InScope(string gitPath) =>
-                gitPath.Equals(relativePrefix, StringComparison.Ordinal)
-                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.Ordinal);
-
-            filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
-            skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
-        }
-
-        var scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
-        var skipped = new List<SkippedEntry>(scanResult.Skipped);
-        var results = AnalyzeFiles(scanResult.Files, options, skipped);
-
-        var gitPathByTempPath = filesInScope.ToDictionary(f => f.TempPath, f => f.GitPath);
-        results = RemapGitPaths(results, gitPathByTempPath);
-        skipped = RemapGitPaths(skipped, gitPathByTempPath);
-        skipped.AddRange(skippedInScope);
-
-        // No --top limit here: the diff needs every language present in either side to
-        // compare correctly, regardless of how the current run's summary was truncated.
-        return new AnalysisSummary(results, skipped, options.Sort, descending: options.Sort != LanguageSort.Name);
-    }
-
-    /// <summary>
     /// Renders a diff (<paramref name="renderJson"/>/<paramref name="renderTable"/>) the same
     /// way regardless of whether the baseline came from <c>--baseline</c> or <c>--compare-to</c>:
     /// diffs only support Table and Json output, so any other requested format (and any
     /// <c>--output</c> for a non-Json diff) is rejected or falls back to Table, then the
     /// threshold/exit-code handling shared with a normal run applies.
     /// </summary>
+    /// <param name="summary">The current-side summary of the diff.</param>
     /// <param name="flagName">
     /// The option name to name in the unsupported-format warning/error (<c>--baseline</c> or
     /// <c>--compare-to</c>).
     /// </param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="updateCheck">The in-flight update-check task, or <see langword="null"/> if it was not started.</param>
+    /// <param name="version">The tool's own informational version, or <see langword="null"/> if unavailable.</param>
+    /// <param name="renderJson">Renders the diff as Json to the given <see cref="TextWriter"/>.</param>
+    /// <param name="renderTable">Renders the diff as a Table to the console.</param>
     private int RenderDiffAndFinish(
         AnalysisSummary summary,
         string flagName,
@@ -597,277 +526,93 @@ public sealed class AnalyzeHandler
     }
 
     /// <summary>
-    /// Analyzes <paramref name="files"/> in parallel (respecting <see cref="AnalyzeOptions.Jobs"/>),
-    /// merges results in scan order so output is deterministic regardless of the degree of
-    /// parallelism, appends any per-file failures to <paramref name="skipped"/>, and applies
-    /// <see cref="AnalyzeOptions.Unique"/> deduplication. Shared by the one-shot pipeline in
-    /// <see cref="Execute"/> and the repeated passes in <see cref="ExecuteWatch"/> so per-file
-    /// error handling and merge/dedup behavior can't drift between the two.
+    /// Produces the <see cref="ScanResult"/> for a one-shot run: a git snapshot's temp files,
+    /// an explicit <c>--list-file</c>, a progress-spinner-driven directory scan, or a plain
+    /// directory scan, in that priority order. Scan-level failures (e.g. a missing directory)
+    /// are left to propagate to <see cref="Execute"/>'s own catch.
     /// </summary>
-    /// <param name="onFileAnalyzed">
-    /// Optional callback invoked (from a worker thread, once per file) with the file's index
-    /// and its analysis, or <see langword="null"/> if that file was skipped. Used to drive
-    /// progress UI (a live-aggregated table or a progress bar) while analysis runs.
-    /// </param>
-    private List<FileAnalysis> AnalyzeFiles(
-        IReadOnlyList<ScannedFile> files,
-        AnalyzeOptions options,
-        List<SkippedEntry> skipped,
-        Action<int, FileAnalysis?>? onFileAnalyzed = null)
+    /// <param name="gitSnapshot">The extracted <c>--git-hash</c> snapshot, or <see langword="null"/> for a normal run.</param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="scanOptions">The scan options to apply.</param>
+    /// <param name="showProgress">Whether a scanning spinner may be drawn.</param>
+    private ScanResult RunScan(GitSnapshot? gitSnapshot, AnalyzeOptions options, ScanOptions scanOptions, bool showProgress)
     {
-        // Analyze into fixed slots so the merged order is deterministic (scan order),
-        // independent of the degree of parallelism.
-        var analyses = new FileAnalysis?[files.Count];
-        var fileSkips = new SkippedEntry?[files.Count];
-
-        void AnalyzeAt(int i)
+        if (gitSnapshot is not null)
         {
-            try
-            {
-                analyses[i] = _analyzer.Analyze(files[i].Path, files[i].Language, computeHash: options.Unique);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BinaryFileException)
-            {
-                fileSkips[i] = new SkippedEntry(files[i].Path, ex.Message);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
-            {
-                // Any other per-file failure (e.g. a decoding error) skips just that file
-                // rather than aborting the whole run; fatal conditions are left to propagate.
-                fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
-            }
-
-            onFileAnalyzed?.Invoke(i, analyses[i]);
+            return _scanner.ScanFiles(gitSnapshot.Files.Select(f => f.TempPath), scanOptions);
         }
 
-        var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
-        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs }, AnalyzeAt);
-
-        // Merge in scan order so results are deterministic regardless of --jobs.
-        var results = new List<FileAnalysis>(files.Count);
-        foreach (var analysis in analyses)
+        if (options.ListFile is { } listFile)
         {
-            if (analysis is not null)
-            {
-                results.Add(analysis);
-            }
+            return _scanner.ScanFiles(ReadListFile(listFile), scanOptions);
         }
 
-        foreach (var fileSkip in fileSkips)
+        if (!showProgress)
         {
-            if (fileSkip is not null)
-            {
-                skipped.Add(fileSkip);
-            }
+            return _scanner.Scan(options.Path, scanOptions);
         }
 
-        return options.Unique ? DeduplicateByHash(results, skipped) : results;
+        ScanResult? result = null;
+        var refreshTimer = Stopwatch.StartNew();
+        var gitignoreScanLabel = (scanOptions.RespectGitignore, scanOptions.RespectGitAttributes) switch
+        {
+            (true, true) => "checking .gitignore/.gitattributes",
+            (true, false) => "checking .gitignore",
+            (false, true) => "checking .gitattributes",
+            (false, false) => "walking directories",
+        };
+
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("Scanning files...", ctx =>
+            {
+                result = _scanner.Scan(
+                    options.Path,
+                    scanOptions,
+                    onFileFound: (count, path) =>
+                    {
+                        if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
+                        {
+                            return;
+                        }
+
+                        refreshTimer.Restart();
+                        ctx.Status($"Scanning... [green]{count:N0}[/] files ([grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                    },
+                    onGitignoreScan: (count, path) =>
+                    {
+                        if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
+                        {
+                            return;
+                        }
+
+                        refreshTimer.Restart();
+                        ctx.Status($"Scanning... {gitignoreScanLabel} ([green]{count:N0}[/] dirs, [grey]{Markup.Escape(Path.GetFileName(path))}[/])");
+                    });
+            });
+
+        return result ?? throw new InvalidOperationException("Scan did not complete.");
     }
 
     /// <summary>
-    /// Returns a factory for the <see cref="IResultRenderer"/> matching <paramref name="format"/>,
-    /// or <see langword="null"/> for <see cref="OutputFormat.Table"/> (rendered separately, since
-    /// it writes directly to the console rather than through a <see cref="TextWriter"/>). A
-    /// factory (rather than a single instance) is returned so the same format can be rendered
-    /// twice with different writers, e.g. once to stdout and once to a file.
+    /// Scans and analyzes once for <see cref="ExecuteWatch"/>: full re-scan (applying the
+    /// same include/exclude/gitignore/gitattributes/language filters as a normal run),
+    /// then <see cref="AnalyzeFiles"/> for the per-file analysis and aggregation into an
+    /// <see cref="AnalysisSummary"/>.
     /// </summary>
-    private static Func<TextWriter, IResultRenderer>? CreateRenderer(OutputFormat format) => format switch
+    /// <param name="options">The parsed options.</param>
+    /// <param name="scanOptions">The scan options to apply for this pass.</param>
+    private AnalysisSummary RunWatchPass(AnalyzeOptions options, ScanOptions scanOptions)
     {
-        OutputFormat.Json => writer => new JsonRenderer(writer),
-        OutputFormat.Html => writer => new HtmlRenderer(writer),
-        OutputFormat.Csv => writer => new CsvRenderer(writer),
-        OutputFormat.Markdown => writer => new MarkdownRenderer(writer),
-        _ => null
-    };
+        var scanResult = _scanner.Scan(options.Path, scanOptions);
+        var skipped = new List<SkippedEntry>(scanResult.Skipped);
+        var results = AnalyzeFiles(scanResult.Files, options, skipped);
 
-    /// <summary>
-    /// Prefix of the <see cref="SkippedEntry.Reason"/> string <see cref="DeduplicateByHash"/>
-    /// produces, so <see cref="RemapGitPaths(List{SkippedEntry}, Dictionary{string, string})"/>
-    /// can find and remap the temp path it embeds after a <c>--git-hash</c>/<c>--compare-to</c> run.
-    /// </summary>
-    private const string DuplicateReasonPrefix = "duplicate of ";
-
-    /// <summary>
-    /// Keeps only the first file (in scan order) for each distinct content hash; every
-    /// later duplicate is removed from <paramref name="results"/> and added to
-    /// <paramref name="skipped"/> so its lines aren't double-counted.
-    /// </summary>
-    private static List<FileAnalysis> DeduplicateByHash(List<FileAnalysis> results, List<SkippedEntry> skipped)
-    {
-        var unique = new List<FileAnalysis>(results.Count);
-        var firstPathByHash = new Dictionary<string, string>();
-
-        foreach (var analysis in results)
-        {
-            if (analysis.Hash is not { } hash || !firstPathByHash.TryGetValue(hash, out var firstPath))
-            {
-                if (analysis.Hash is { } h)
-                {
-                    firstPathByHash[h] = analysis.Path;
-                }
-
-                unique.Add(analysis);
-                continue;
-            }
-
-            skipped.Add(new SkippedEntry(analysis.Path, DuplicateReasonPrefix + firstPath));
-        }
-
-        return unique;
-    }
-
-    private static IEnumerable<string> ReadAllLines(TextReader reader)
-    {
-        while (reader.ReadLine() is { } line)
-        {
-            yield return line;
-        }
-    }
-
-    private static IEnumerable<string> ReadListFile(string listFile)
-    {
-        var lines = listFile == StdoutToken
-            ? ReadAllLines(Console.In)
-            : File.ReadLines(listFile);
-
-        return lines.Where(line => !string.IsNullOrWhiteSpace(line));
-    }
-
-    /// <summary>
-    /// Replaces each analysis's temporary extraction path with its original git-relative
-    /// path, so downstream rendering and <c>--baseline</c> diffing never see a temp path.
-    /// </summary>
-    private static List<FileAnalysis> RemapGitPaths(List<FileAnalysis> analyses, Dictionary<string, string> gitPathByTempPath)
-    {
-        for (var i = 0; i < analyses.Count; i++)
-        {
-            if (gitPathByTempPath.TryGetValue(analyses[i].Path, out var gitPath))
-            {
-                var analysis = analyses[i];
-                analyses[i] = new FileAnalysis
-                {
-                    Path = gitPath,
-                    Language = analysis.Language,
-                    Code = analysis.Code,
-                    Comment = analysis.Comment,
-                    Blank = analysis.Blank,
-                    Complexity = analysis.Complexity,
-                    Hash = analysis.Hash
-                };
-            }
-        }
-
-        return analyses;
-    }
-
-    /// <summary>
-    /// Replaces each skipped entry's temporary extraction path with its original
-    /// git-relative path, including the path embedded in a <see cref="DeduplicateByHash"/>
-    /// "duplicate of" reason, so no temporary path survives into the rendered output.
-    /// </summary>
-    private static List<SkippedEntry> RemapGitPaths(List<SkippedEntry> skipped, Dictionary<string, string> gitPathByTempPath)
-    {
-        for (var i = 0; i < skipped.Count; i++)
-        {
-            var entry = skipped[i];
-
-            if (gitPathByTempPath.TryGetValue(entry.Path, out var gitPath))
-            {
-                entry = entry with { Path = gitPath };
-            }
-
-            if (entry.Reason.StartsWith(DuplicateReasonPrefix, StringComparison.Ordinal)
-                && gitPathByTempPath.TryGetValue(entry.Reason[DuplicateReasonPrefix.Length..], out var duplicateGitPath))
-            {
-                entry = entry with { Reason = DuplicateReasonPrefix + duplicateGitPath };
-            }
-
-            skipped[i] = entry;
-        }
-
-        return skipped;
-    }
-
-    private static void ReportUpdate(Task<UpdateCheckResult?>? updateCheck, string? currentVersion)
-    {
-        if (updateCheck is null || string.IsNullOrEmpty(currentVersion))
-        {
-            return;
-        }
-
-        try
-        {
-            var result = updateCheck.GetAwaiter().GetResult();
-            if (result is not null)
-            {
-                Console.Error.WriteLine(
-                    $"A new version of sloc is available: {result.LatestVersion} (current: {currentVersion})");
-                Console.Error.WriteLine($"Download: {result.ReleaseUrl}");
-            }
-        }
-        catch
-        {
-            // An update check must never break a normal analysis run.
-        }
-    }
-
-    /// <summary>
-    /// Resolves <paramref name="path"/> to a full absolute path for display purposes (e.g.
-    /// the "Analyzing:" banner and report metadata), so a relative input like "." is shown
-    /// unambiguously. The stdin sentinel ("-") is returned unchanged since it isn't a
-    /// filesystem path. Falls back to the original value if it cannot be resolved (e.g.
-    /// invalid path characters), since this is display-only and must never fail the run.
-    /// </summary>
-    private static string ResolveFullPath(string path)
-    {
-        if (path == StdoutToken)
-        {
-            return path;
-        }
-
-        try
-        {
-            return Path.GetFullPath(path);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return path;
-        }
-    }
-
-    private static int ThresholdResult(AnalyzeOptions options, AnalysisSummary summary)
-    {
-        if (options.MinCommentPct is { } min && summary.FileCount > 0 && summary.CommentPct < min)
-        {
-            Console.Error.WriteLine(
-                $"sloc: comment percentage {summary.CommentPct:F1}% is below the required {min:F1}%.");
-            return ExitCode.ThresholdNotMet;
-        }
-
-        return ExitCode.Success;
-    }
-
-    private static bool WriteToFile(string path, Action<TextWriter> render, bool quiet)
-    {
-        try
-        {
-            // UTF-8 without a BOM so piped/consumed files (e.g. via jq) parse cleanly.
-            using (var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
-            {
-                render(writer);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
-        {
-            Console.Error.WriteLine($"sloc: could not write to '{path}': {ex.Message}");
-            return false;
-        }
-
-        if (!quiet)
-        {
-            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(path)}");
-        }
-
-        return true;
+        return new AnalysisSummary(
+            results,
+            skipped,
+            options.Sort,
+            descending: options.Sort != LanguageSort.Name,
+            top: options.Top);
     }
 }
