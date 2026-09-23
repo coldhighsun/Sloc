@@ -11,6 +11,7 @@ public class LineClassifierTests
     private static readonly LanguageDefinition CSharp = Resolve(".cs");
     private static readonly LanguageDefinition Python = Resolve(".py");
     private static readonly LanguageDefinition Batch = Resolve(".bat");
+    private static readonly LanguageDefinition Swift = Resolve(".swift");
 
     /// <summary>
     /// Verifies that a single-line block comment is classified as
@@ -140,6 +141,27 @@ public class LineClassifierTests
 
         Assert.Equal(LineKind.Comment, classifier.Classify("\"\"\"docstring\"\"\""));
         Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a backslash-escaped triple-quote inside a Swift multi-line string
+    /// does not end the string, so the real closing delimiter (and the string's own
+    /// content) is classified correctly rather than the escaped occurrence prematurely
+    /// closing it.
+    /// </summary>
+    [Fact]
+    public void Classify_SwiftTripleQuoteWithEscapedDelimiter_StaysInsideString()
+    {
+        var classifier = new LineClassifier(Swift);
+
+        Assert.Equal(LineKind.Code, classifier.Classify("let s = \"\"\""));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("abc \\\"\"\""));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("still inside"));
+        Assert.Equal(LineKind.Code, classifier.Classify("\"\"\""));
+        Assert.False(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("let x = 1"));
     }
 
     /// <summary>
