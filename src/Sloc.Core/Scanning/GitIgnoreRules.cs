@@ -12,9 +12,10 @@ namespace Sloc.Core.Scanning;
 /// </summary>
 /// <remarks>
 /// This is a pragmatic implementation of the gitignore format. Character classes
-/// (<c>[a-z]</c>) are matched approximately, and the git optimization that a file under
-/// an already-ignored directory cannot be re-included is applied via last-match-wins
-/// across the path's ancestors.
+/// (<c>[a-z]</c>) are matched approximately. Once an ancestor directory's own cumulative
+/// decision is "ignored", no pattern at a deeper path (including a negation) can
+/// re-include anything under it, matching git's rule that an excluded directory is never
+/// scanned for re-inclusion patterns.
 /// </remarks>
 public sealed class GitIgnoreRules
 {
@@ -131,10 +132,12 @@ public sealed class GitIgnoreRules
         var segments = normalized.Split('/');
         var ignored = false;
 
-        // Evaluate each ancestor directory then the leaf, last match wins. Once a
-        // directory is ignored, its descendants stay ignored unless a later pattern
-        // explicitly re-includes them. Ancestor directories' cumulative state is cached,
-        // since many files typically share the same parent directories.
+        // Evaluate each ancestor directory then the leaf, last match wins within a given
+        // segment. But once an ancestor directory's own cumulative decision is "ignored",
+        // git never descends into it to look for re-inclusion patterns, so no pattern at
+        // any deeper segment (including a negation) can flip it back: the "ignored" state
+        // is locked for every segment below that point. Ancestor directories' cumulative
+        // state is cached, since many files typically share the same parent directories.
         for (var depth = 0; depth < segments.Length; depth++)
         {
             var isDirectory = depth < segments.Length - 1;
@@ -143,6 +146,16 @@ public sealed class GitIgnoreRules
             if (isDirectory && _directoryIgnoreCache.TryGetValue(partial, out var cached))
             {
                 ignored = cached;
+                continue;
+            }
+
+            if (ignored)
+            {
+                if (isDirectory)
+                {
+                    _directoryIgnoreCache[partial] = true;
+                }
+
                 continue;
             }
 
