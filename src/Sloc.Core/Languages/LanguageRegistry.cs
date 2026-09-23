@@ -112,6 +112,11 @@ public static class LanguageRegistry
         var pyTripleSingle = new StringLiteral("'''", Multiline: true, IsDocComment: true);
         var rawTripleDouble = new StringLiteral("\"\"\"", Multiline: true, AllowEscape: false);
         var rawTripleSingle = new StringLiteral("'''", Multiline: true, AllowEscape: false);
+        // Unlike rawTripleDouble, these languages' """-strings support a backslash escape
+        // to embed the closing delimiter (e.g. Swift's \""", TOML's \""" before the closing
+        // quotes, GraphQL block strings' documented \""" escape, Elixir heredocs, Dart
+        // triple-quoted strings), so AllowEscape must stay at its default (true).
+        var escapedTripleDouble = rawTripleDouble with { AllowEscape = true };
         var csVerbatimString = new StringLiteral(
             "@\"",
             Multiline: true,
@@ -189,7 +194,7 @@ public static class LanguageRegistry
                 Extensions = [".swift"],
                 LineCommentTokens = ["//"],
                 BlockComments = [nestedCStyleBlock],
-                StringLiterals = [rawTripleDouble, doubleQuote],
+                StringLiterals = [escapedTripleDouble, doubleQuote],
                 ComplexityKeywords = ["if", "for", "while", "case", "catch", "guard", "&&", "||"]
             },
             new()
@@ -351,7 +356,7 @@ public static class LanguageRegistry
                 Extensions = [".dart"],
                 LineCommentTokens = ["//"],
                 BlockComments = [nestedCStyleBlock],
-                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+                StringLiterals = [escapedTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
             },
             new()
             {
@@ -390,7 +395,7 @@ public static class LanguageRegistry
                 Name = "Elixir",
                 Extensions = [".ex", ".exs"],
                 LineCommentTokens = ["#"],
-                StringLiterals = [rawTripleDouble, doubleQuote]
+                StringLiterals = [escapedTripleDouble, doubleQuote]
             },
             new()
             {
@@ -413,7 +418,10 @@ public static class LanguageRegistry
                 Name = "TOML",
                 Extensions = [".toml"],
                 LineCommentTokens = ["#"],
-                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote],
+                // TOML's ''' literal strings truly forbid escaping (rawTripleSingle is
+                // correct there); its """ basic strings support \""" to embed the closing
+                // delimiter, so they need escapedTripleDouble.
+                StringLiterals = [escapedTripleDouble, rawTripleSingle, doubleQuote, singleQuote],
                 ShowHealth = false
             },
             new()
@@ -600,7 +608,7 @@ public static class LanguageRegistry
                 Name = "GraphQL",
                 Extensions = [".graphql", ".gql"],
                 LineCommentTokens = ["#"],
-                StringLiterals = [rawTripleDouble, doubleQuote]
+                StringLiterals = [escapedTripleDouble, doubleQuote]
             },
             new()
             {
