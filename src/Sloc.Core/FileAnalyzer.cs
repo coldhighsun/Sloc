@@ -1,7 +1,9 @@
 using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Unicode;
 
 namespace Sloc.Core;
 
@@ -12,14 +14,29 @@ namespace Sloc.Core;
 public sealed class FileAnalyzer
 {
     /// <summary>
+    /// Files up to this many bytes are read into memory in one pass; larger files are
+    /// streamed. Settable so tests can exercise the streaming path with small files.
+    /// </summary>
+    internal int InMemoryThreshold { get; init; } = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Read size for the <see cref="StreamReader"/> on the streaming path. The underlying
+    /// <see cref="FileStream"/> is unbuffered (the in-memory path reads it in one go), so
+    /// without this each <see cref="StreamReader"/> refill (1 KB by default) would be a
+    /// separate OS read.
+    /// </summary>
+    private const int StreamingBufferSize = 64 * 1024;
+
+    /// <summary>
     /// Reads and analyzes the file at <paramref name="path"/> using the supplied language.
     /// </summary>
     /// <param name="path">The path of the file to analyze.</param>
     /// <param name="language">The language whose comment rules drive classification.</param>
     /// <param name="computeHash">
     /// When <see langword="true"/>, populates <see cref="FileAnalysis.Hash"/> with a
-    /// content hash of the file (used for <c>--unique</c> duplicate detection). Requires a
-    /// second read of the file, so it is opt-in.
+    /// content hash of the file (used for <c>--unique</c> duplicate detection). Computed
+    /// from the bytes already read for classification, but still opt-in since hashing
+    /// isn't free.
     /// </param>
     /// <returns>
     /// The line statistics for the file.
@@ -32,7 +49,24 @@ public sealed class FileAnalyzer
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(language);
 
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 1);
+
+        // Source files are almost always small: read them into memory once and do binary
+        // detection, encoding detection, hashing, and decoding on that buffer, instead of
+        // reading the file twice through the stream path below.
+        if (TryReadAll(stream, InMemoryThreshold, out var rented, out var length))
+        {
+            try
+            {
+                return AnalyzeBytes(path, language, rented.AsSpan(0, length), computeHash);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
+
+        stream.Position = 0;
         var (isBinary, fallbackEncoding) = DetectBinaryAndEncoding(stream);
         if (isBinary)
         {
@@ -43,7 +77,7 @@ public sealed class FileAnalyzer
 
         if (!computeHash)
         {
-            using var reader = new StreamReader(stream, fallbackEncoding, detectEncodingFromByteOrderMarks: true);
+            using var reader = new StreamReader(stream, fallbackEncoding, detectEncodingFromByteOrderMarks: true, StreamingBufferSize);
             return Count(path, language, reader);
         }
 
@@ -51,7 +85,7 @@ public sealed class FileAnalyzer
         // file a second time from scratch.
         using var hashing = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var hashingStream = new HashingStream(stream, hashing);
-        using var hashingReader = new StreamReader(hashingStream, fallbackEncoding, detectEncodingFromByteOrderMarks: true);
+        using var hashingReader = new StreamReader(hashingStream, fallbackEncoding, detectEncodingFromByteOrderMarks: true, StreamingBufferSize);
         var analysis = Count(path, language, hashingReader);
         var hash = Convert.ToHexString(hashing.GetHashAndReset());
 
@@ -82,52 +116,224 @@ public sealed class FileAnalyzer
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(language);
 
-        using var reader = new StringReader(content);
-        return Count(path, language, reader);
+        return Count(path, language, content);
+    }
+
+    private static FileAnalysis AnalyzeBytes(string path, LanguageDefinition language, ReadOnlySpan<byte> bytes, bool computeHash)
+    {
+        var hasTextBom = HasTextBom(bytes);
+        if (!hasTextBom && bytes.Contains((byte)0))
+        {
+            throw new BinaryFileException();
+        }
+
+        // Mirrors StreamReader(detectEncodingFromByteOrderMarks: true): a BOM wins; otherwise
+        // fall back to UTF-8 if the bytes are valid UTF-8, else Latin-1 (see DetectBinaryAndEncoding).
+        var encoding = DetectBomEncoding(bytes, out var bomLength)
+            ?? (Utf8.IsValid(bytes) ? Encoding.UTF8 : Encoding.Latin1);
+        var body = bytes[bomLength..];
+
+        var charCount = encoding.GetMaxCharCount(body.Length);
+        var chars = ArrayPool<char>.Shared.Rent(Math.Max(charCount, 1));
+        try
+        {
+            var decoded = encoding.GetChars(body, chars);
+            var analysis = Count(path, language, chars.AsSpan(0, decoded));
+            if (!computeHash)
+            {
+                return analysis;
+            }
+
+            return new FileAnalysis
+            {
+                Path = analysis.Path,
+                Language = analysis.Language,
+                Code = analysis.Code,
+                Comment = analysis.Comment,
+                Blank = analysis.Blank,
+                Complexity = analysis.Complexity,
+                Hash = Convert.ToHexString(SHA256.HashData(bytes))
+            };
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(chars);
+        }
+    }
+
+    /// <summary>
+    /// Splits <paramref name="text"/> into lines exactly as <see cref="TextReader.ReadLine"/>
+    /// would (on <c>\r\n</c>, <c>\r</c>, or <c>\n</c>, with no trailing empty line after a
+    /// final terminator), without allocating a string per line.
+    /// </summary>
+    private static FileAnalysis Count(string path, LanguageDefinition language, ReadOnlySpan<char> text)
+    {
+        var counter = new LineCounter(language);
+
+        while (!text.IsEmpty)
+        {
+            var end = text.IndexOfAny('\r', '\n');
+            if (end < 0)
+            {
+                counter.Add(text);
+                break;
+            }
+
+            counter.Add(text[..end]);
+            var terminatorLength = text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n' ? 2 : 1;
+            text = text[(end + terminatorLength)..];
+        }
+
+        return counter.ToAnalysis(path);
     }
 
     private static FileAnalysis Count(string path, LanguageDefinition language, TextReader reader)
     {
-        var classifier = new LineClassifier(language);
-        var code = 0;
-        var comment = 0;
-        var blank = 0;
-        var supportsComplexity = language.SupportsComplexity;
-        var complexity = supportsComplexity ? 1 : 0;
+        var counter = new LineCounter(language);
 
         while (reader.ReadLine() is { } line)
         {
-            switch (classifier.Classify(line))
+            counter.Add(line);
+        }
+
+        return counter.ToAnalysis(path);
+    }
+
+    /// <summary>
+    /// Reads the rest of <paramref name="stream"/> into a pooled buffer, as long as it
+    /// holds at most <paramref name="maxBytes"/> bytes. On success the caller owns
+    /// <paramref name="rented"/> and must return it to <see cref="ArrayPool{T}.Shared"/>;
+    /// on failure nothing is rented and the stream position is unspecified.
+    /// </summary>
+    private static bool TryReadAll(Stream stream, int maxBytes, out byte[] rented, out int length)
+    {
+        rented = [];
+        length = 0;
+
+        if (stream.Length > maxBytes)
+        {
+            return false;
+        }
+
+        // One spare byte so a file that grew since Length was read is detected rather
+        // than silently truncated.
+        var buffer = ArrayPool<byte>.Shared.Rent((int)stream.Length + 1);
+        var total = 0;
+        int read;
+        while ((read = stream.Read(buffer, total, buffer.Length - total)) > 0)
+        {
+            total += read;
+            if (total == buffer.Length)
+            {
+                if (total > maxBytes)
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    return false;
+                }
+
+                var larger = ArrayPool<byte>.Shared.Rent(Math.Min(buffer.Length * 2, maxBytes + 1));
+                buffer.AsSpan(0, total).CopyTo(larger);
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = larger;
+            }
+        }
+
+        rented = buffer;
+        length = total;
+        return true;
+    }
+
+    private static Encoding? DetectBomEncoding(ReadOnlySpan<byte> bytes, out int bomLength)
+    {
+        // Same BOMs, in the same precedence, as StreamReader's detection.
+        if (bytes is [0xFE, 0xFF, ..])
+        {
+            bomLength = 2;
+            return Encoding.BigEndianUnicode;
+        }
+
+        if (bytes is [0xFF, 0xFE, ..])
+        {
+            if (bytes is [_, _, 0x00, 0x00, ..])
+            {
+                bomLength = 4;
+                return Encoding.UTF32;
+            }
+
+            bomLength = 2;
+            return Encoding.Unicode;
+        }
+
+        if (bytes is [0xEF, 0xBB, 0xBF, ..])
+        {
+            bomLength = 3;
+            return Encoding.UTF8;
+        }
+
+        if (bytes is [0x00, 0x00, 0xFE, 0xFF, ..])
+        {
+            bomLength = 4;
+            return new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+        }
+
+        bomLength = 0;
+        return null;
+    }
+
+    /// <summary>
+    /// Accumulates per-line classification (and complexity) counts for one file.
+    /// </summary>
+    private struct LineCounter
+    {
+        private readonly LanguageDefinition _language;
+        private readonly LineClassifier _classifier;
+        private readonly bool _supportsComplexity;
+        private int _code;
+        private int _comment;
+        private int _blank;
+        private int _complexity;
+
+        public LineCounter(LanguageDefinition language)
+        {
+            _language = language;
+            _classifier = new LineClassifier(language);
+            _supportsComplexity = language.SupportsComplexity;
+            _complexity = _supportsComplexity ? 1 : 0;
+        }
+
+        public void Add(ReadOnlySpan<char> line)
+        {
+            switch (_classifier.Classify(line))
             {
                 case LineKind.Code:
-                    code++;
-                    if (supportsComplexity)
+                    _code++;
+                    if (_supportsComplexity)
                     {
                         // Match against the code-only portion of the line (string/comment
                         // content blanked out) so a branch keyword inside a string literal
                         // or trailing comment doesn't inflate the complexity count.
-                        complexity += language.ComplexityRegex.Count(classifier.CodeText);
+                        _complexity += _language.ComplexityRegex.Count(_classifier.CodeText);
                     }
                     break;
 
                 case LineKind.Comment:
-                    comment++;
+                    _comment++;
                     break;
 
                 default:
-                    blank++;
+                    _blank++;
                     break;
             }
         }
 
-        return new FileAnalysis
+        public readonly FileAnalysis ToAnalysis(string path) => new()
         {
             Path = path,
-            Language = language.Name,
-            Code = code,
-            Comment = comment,
-            Blank = blank,
-            Complexity = supportsComplexity ? complexity : null
+            Language = _language.Name,
+            Code = _code,
+            Comment = _comment,
+            Blank = _blank,
+            Complexity = _supportsComplexity ? _complexity : null
         };
     }
 

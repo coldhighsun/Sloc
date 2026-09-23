@@ -10,9 +10,9 @@ namespace Sloc.Core;
 /// </summary>
 /// <remarks>
 /// A classifier is stateful: it tracks open block comments and multi-line string
-/// literals across calls to <see cref="Classify"/>, so a single instance must be used
-/// for the lines of a single file, in order. Comment tokens appearing inside string
-/// literals are skipped for languages that declare their string delimiters, including
+/// literals across calls to <see cref="Classify(ReadOnlySpan{char})"/>, so a single instance
+/// must be used for the lines of a single file, in order. Comment tokens appearing inside
+/// string literals are skipped for languages that declare their string delimiters, including
 /// literals whose open and close tokens differ (see <see cref="StringLiteral.CloseDelimiter"/>)
 /// and doubled-closing-delimiter escaping (see <see cref="StringLiteral.DoubledClosingEscape"/>,
 /// e.g. C# <c>@"…""…"</c>).
@@ -24,7 +24,12 @@ public sealed class LineClassifier
     private StringLiteral? _activeString;
     private bool _activeStringIsDoc;
     private int _blockDepth;
-    private string _codeText = string.Empty;
+
+    // Reused across lines so tracking code text doesn't allocate per line. Only
+    // maintained for languages that compute complexity (its sole consumer).
+    private readonly bool _trackCodeText;
+    private char[] _codeBuffer = [];
+    private int _codeLength;
 
     /// <summary>
     /// Creates a classifier for the supplied language.
@@ -34,6 +39,7 @@ public sealed class LineClassifier
     {
         ArgumentNullException.ThrowIfNull(language);
         _language = language;
+        _trackCodeText = language.SupportsComplexity;
     }
 
     /// <summary>
@@ -53,9 +59,11 @@ public sealed class LineClassifier
     /// i.e. with block comments, line comments, and string-literal content (delimiters
     /// included) blanked out to spaces so token boundaries and positions are preserved.
     /// Used to compute cyclomatic complexity without matching keywords that merely appear
-    /// inside a string or comment.
+    /// inside a string or comment. Only populated for languages that
+    /// <see cref="LanguageDefinition.SupportsComplexity">support complexity</see>, and only
+    /// valid until the next call to <see cref="Classify(ReadOnlySpan{char})"/>.
     /// </summary>
-    internal string CodeText => _codeText;
+    internal ReadOnlySpan<char> CodeText => _codeBuffer.AsSpan(0, _codeLength);
 
     /// <summary>
     /// Classifies a single physical line, advancing any block-comment or
@@ -68,12 +76,34 @@ public sealed class LineClassifier
     public LineKind Classify(string line)
     {
         ArgumentNullException.ThrowIfNull(line);
+        return Classify(line.AsSpan());
+    }
 
+    /// <summary>
+    /// Classifies a single physical line, advancing any block-comment or
+    /// multi-line-string state.
+    /// </summary>
+    /// <param name="line">The raw line content, without its line terminator.</param>
+    /// <returns>
+    /// The classification of the line.
+    /// </returns>
+    public LineKind Classify(ReadOnlySpan<char> line)
+    {
         var sawCode = false;
         var sawComment = false;
         var index = 0;
-        var codeChars = new char[line.Length];
-        Array.Fill(codeChars, ' ');
+        var codeChars = Span<char>.Empty;
+        if (_trackCodeText)
+        {
+            if (_codeBuffer.Length < line.Length)
+            {
+                _codeBuffer = new char[Math.Max(line.Length, _codeBuffer.Length * 2)];
+            }
+
+            _codeLength = line.Length;
+            codeChars = _codeBuffer.AsSpan(0, line.Length);
+            codeChars.Fill(' ');
+        }
 
         while (index < line.Length)
         {
@@ -88,6 +118,27 @@ public sealed class LineClassifier
                 index = ConsumeString(line, index, ref sawCode, ref sawComment);
                 continue;
             }
+
+            // Skip straight to the next character that could start a comment or string;
+            // everything before it is plain code (or whitespace).
+            var next = line[index..].IndexOfAny(_language.TokenStartChars);
+            var run = next < 0 ? line[index..] : line.Slice(index, next);
+            if (!sawCode && !run.IsWhiteSpace())
+            {
+                sawCode = true;
+            }
+
+            if (_trackCodeText)
+            {
+                run.CopyTo(codeChars[index..]);
+            }
+
+            if (next < 0)
+            {
+                break;
+            }
+
+            index += next;
 
             if (TryMatchBlockOpen(line, index, out var block))
             {
@@ -120,11 +171,13 @@ public sealed class LineClassifier
                 sawCode = true;
             }
 
-            codeChars[index] = line[index];
+            if (_trackCodeText)
+            {
+                codeChars[index] = line[index];
+            }
+
             index++;
         }
-
-        _codeText = new string(codeChars);
 
         // A single-line string that never closed does not carry over to the next line.
         if (_activeString is { Multiline: false })
@@ -161,7 +214,7 @@ public sealed class LineClassifier
     private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static bool MatchesAt(
-        string line,
+        ReadOnlySpan<char> line,
         int index,
         string token,
         StringComparison comparison = StringComparison.Ordinal)
@@ -176,10 +229,10 @@ public sealed class LineClassifier
             return false;
         }
 
-        return line.AsSpan(index, token.Length).Equals(token, comparison);
+        return line.Slice(index, token.Length).Equals(token, comparison);
     }
 
-    private static bool MatchesBlockToken(string line, int index, string token, BlockComment block)
+    private static bool MatchesBlockToken(ReadOnlySpan<char> line, int index, string token, BlockComment block)
     {
         if (block.RequireLineStart && index != 0)
         {
@@ -189,9 +242,44 @@ public sealed class LineClassifier
         return MatchesAt(line, index, token);
     }
 
-    private int ConsumeBlock(string line, int index, ref bool sawComment)
+    /// <summary>
+    /// Returns the offset within <paramref name="rest"/> of the next occurrence of either
+    /// <paramref name="first"/> or <paramref name="second"/> (a token's first character,
+    /// or <see langword="null"/> when that token can't occur), or -1 if neither occurs.
+    /// </summary>
+    private static int IndexOfCandidate(ReadOnlySpan<char> rest, char? first, char? second) =>
+        (first, second) switch
+        {
+            ({ } a, { } b) => rest.IndexOfAny(a, b),
+            ({ } a, null) => rest.IndexOf(a),
+            (null, { } b) => rest.IndexOf(b),
+            _ => -1
+        };
+
+    private static char? FirstChar(string token) => token.Length > 0 ? token[0] : null;
+
+    private int ConsumeBlock(ReadOnlySpan<char> line, int index, ref bool sawComment)
     {
         var block = _activeBlock!;
+
+        // Only a block's own open (when nestable) or close token can change state, so skip
+        // straight to the next character that could start one. Tokens restricted to the
+        // start of a line can't occur anywhere past column 0.
+        var next = block.RequireLineStart && index != 0
+            ? -1
+            : IndexOfCandidate(line[index..], block.AllowNested ? FirstChar(block.Open) : null, FirstChar(block.Close));
+        var run = next < 0 ? line[index..] : line.Slice(index, next);
+        if (!run.IsWhiteSpace())
+        {
+            sawComment = true;
+        }
+
+        if (next < 0)
+        {
+            return line.Length;
+        }
+
+        index += next;
 
         if (block.AllowNested && MatchesBlockToken(line, index, block.Open, block))
         {
@@ -220,9 +308,25 @@ public sealed class LineClassifier
         return index + 1;
     }
 
-    private int ConsumeString(string line, int index, ref bool sawCode, ref bool sawComment)
+    private int ConsumeString(ReadOnlySpan<char> line, int index, ref bool sawCode, ref bool sawComment)
     {
         var literal = _activeString!;
+
+        // Only an escape character or the closing delimiter can change state, so skip
+        // straight to the next character that could start one.
+        var next = IndexOfCandidate(line[index..], literal.AllowEscape ? literal.EscapeChar : null, FirstChar(literal.Closing));
+        var run = next < 0 ? line[index..] : line.Slice(index, next);
+        if (!run.IsWhiteSpace())
+        {
+            MarkString(ref sawCode, ref sawComment);
+        }
+
+        if (next < 0)
+        {
+            return line.Length;
+        }
+
+        index += next;
 
         if (literal.AllowEscape && line[index] == literal.EscapeChar && index + 1 < line.Length)
         {
@@ -265,7 +369,7 @@ public sealed class LineClassifier
         }
     }
 
-    private bool MatchesLineComment(string line, int index)
+    private bool MatchesLineComment(ReadOnlySpan<char> line, int index)
     {
         var key = _language.CaseInsensitiveLineComments
             ? char.ToUpperInvariant(line[index])
@@ -304,7 +408,7 @@ public sealed class LineClassifier
         return false;
     }
 
-    private bool TryMatchBlockOpen(string line, int index, [NotNullWhen(true)] out BlockComment? block)
+    private bool TryMatchBlockOpen(ReadOnlySpan<char> line, int index, [NotNullWhen(true)] out BlockComment? block)
     {
         if (_language.BlockCommentsByFirstChar.TryGetValue(line[index], out var candidates))
         {
@@ -322,7 +426,7 @@ public sealed class LineClassifier
         return false;
     }
 
-    private bool TryMatchStringOpen(string line, int index, [NotNullWhen(true)] out StringLiteral? literal)
+    private bool TryMatchStringOpen(ReadOnlySpan<char> line, int index, [NotNullWhen(true)] out StringLiteral? literal)
     {
         if (_language.StringLiteralsByFirstChar.TryGetValue(line[index], out var candidates))
         {

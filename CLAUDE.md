@@ -14,6 +14,9 @@ dotnet test Sloc.slnx
 # Run a single test class
 dotnet test tests/Sloc.Core.Tests --filter "FullyQualifiedName~LineClassifierTests"
 
+# Run performance benchmarks (BenchmarkDotNet; pass --filter '*Classifier*' etc. to narrow)
+dotnet run -c Release --project benchmarks/Sloc.Benchmarks -- --filter '*'
+
 # Pack as NuGet tool
 dotnet pack src/Sloc.Cli/Sloc.Cli.csproj -c Release -o ./nupkg
 
@@ -37,6 +40,8 @@ The solution has three projects:
 **`src/Sloc.Cli`** — Console entry point. `Program.cs` uses `System.CommandLine` for argument parsing. `AnalyzeHandler` orchestrates scanning → analysis → rendering. Renderers in `Output/` implement `IResultRenderer`: `TableRenderer` (Spectre.Console ANSI table, static), `JsonRenderer`, `HtmlRenderer`, `CsvRenderer`, `MarkdownRenderer`. All user-visible strings are plain English literals inline (no localization/resources layer).
 
 **`tests/Sloc.Core.Tests`** — xUnit tests covering `LineClassifier`, `FileAnalyzer`, and `LanguageRegistry`.
+
+**`benchmarks/Sloc.Benchmarks`** — BenchmarkDotNet benchmarks for the analysis hot path (`LineClassifier` over in-memory text, and `FileAnalyzer.Analyze` over files on disk with/without hashing). `FileAnalyzer` reads files up to `InMemoryThreshold` (4 MB) into a pooled buffer once and classifies lines as spans; larger files use the streaming path. Run before and after changes to either.
 
 ## CLI Options
 
