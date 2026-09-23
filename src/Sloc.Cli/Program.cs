@@ -6,7 +6,10 @@ using System.CommandLine;
 using System.CommandLine.Help;
 using System.Globalization;
 
-Console.OutputEncoding = System.Text.Encoding.UTF8;
+// No BOM: matches the encoding AnalyzeHandler.WriteToFile uses for "-o <path>", so piped or
+// redirected stdout output (the default, or "-o -") parses the same way file output does for
+// a strict JSON/CSV consumer (e.g. jq).
+Console.OutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 // Render all numbers with the invariant culture so report output (thousands separators,
 // percentages) is deterministic regardless of the host's regional settings.
