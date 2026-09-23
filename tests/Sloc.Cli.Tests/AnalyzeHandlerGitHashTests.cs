@@ -102,6 +102,44 @@ public sealed class AnalyzeHandlerGitHashTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that combining <c>--unique</c> with <c>--git-hash</c> reports a duplicate's
+    /// "duplicate of" reason using the original's git-relative path, not the extraction
+    /// temp directory path (which is deleted before the report is even written).
+    /// </summary>
+    [Fact]
+    public void Execute_UniqueWithGitHash_ReportsDuplicateReasonWithGitRelativePath()
+    {
+        // Alphabetically first, so git ls-tree (and hence scan order) reports it before
+        // b.cs, making it the "first" file DeduplicateByHash keeps.
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "b.cs"), "int x = 1;\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+        var outputFile = Path.Combine(Path.GetTempPath(), "sloc-report-" + Guid.NewGuid().ToString("N") + ".json");
+
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            GitHash = "HEAD",
+            Unique = true,
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        });
+
+        Assert.Equal(ExitCode.Success, exitCode);
+
+        using var document = JsonDocument.Parse(File.ReadAllText(outputFile));
+        var skipped = document.RootElement.GetProperty("skipped").EnumerateArray().Single();
+
+        Assert.Equal("b.cs", skipped.GetProperty("path").GetString());
+        Assert.Equal("duplicate of a.cs", skipped.GetProperty("reason").GetString());
+
+        File.Delete(outputFile);
+    }
+
+    /// <summary>
     /// Verifies that an invalid commit-ish returns <see cref="ExitCode.Error"/> rather
     /// than throwing.
     /// </summary>
