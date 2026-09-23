@@ -681,6 +681,13 @@ public sealed class AnalyzeHandler
     };
 
     /// <summary>
+    /// Prefix of the <see cref="SkippedEntry.Reason"/> string <see cref="DeduplicateByHash"/>
+    /// produces, so <see cref="RemapGitPaths(List{SkippedEntry}, Dictionary{string, string})"/>
+    /// can find and remap the temp path it embeds after a <c>--git-hash</c>/<c>--compare-to</c> run.
+    /// </summary>
+    private const string DuplicateReasonPrefix = "duplicate of ";
+
+    /// <summary>
     /// Keeps only the first file (in scan order) for each distinct content hash; every
     /// later duplicate is removed from <paramref name="results"/> and added to
     /// <paramref name="skipped"/> so its lines aren't double-counted.
@@ -703,7 +710,7 @@ public sealed class AnalyzeHandler
                 continue;
             }
 
-            skipped.Add(new SkippedEntry(analysis.Path, $"duplicate of {firstPath}"));
+            skipped.Add(new SkippedEntry(analysis.Path, DuplicateReasonPrefix + firstPath));
         }
 
         return unique;
@@ -755,19 +762,27 @@ public sealed class AnalyzeHandler
 
     /// <summary>
     /// Replaces each skipped entry's temporary extraction path with its original
-    /// git-relative path.
+    /// git-relative path, including the path embedded in a <see cref="DeduplicateByHash"/>
+    /// "duplicate of" reason, so no temporary path survives into the rendered output.
     /// </summary>
     private static List<SkippedEntry> RemapGitPaths(List<SkippedEntry> skipped, Dictionary<string, string> gitPathByTempPath)
     {
         for (var i = 0; i < skipped.Count; i++)
         {
-            if (gitPathByTempPath.TryGetValue(skipped[i].Path, out var gitPath))
+            var entry = skipped[i];
+
+            if (gitPathByTempPath.TryGetValue(entry.Path, out var gitPath))
             {
-                skipped[i] = skipped[i] with
-                {
-                    Path = gitPath
-                };
+                entry = entry with { Path = gitPath };
             }
+
+            if (entry.Reason.StartsWith(DuplicateReasonPrefix, StringComparison.Ordinal)
+                && gitPathByTempPath.TryGetValue(entry.Reason[DuplicateReasonPrefix.Length..], out var duplicateGitPath))
+            {
+                entry = entry with { Reason = DuplicateReasonPrefix + duplicateGitPath };
+            }
+
+            skipped[i] = entry;
         }
 
         return skipped;
