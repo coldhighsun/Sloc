@@ -215,11 +215,17 @@ public sealed class DirectoryScanner
 
         var fullRoot = Path.GetFullPath(root);
 
+        // Recursive is ignored when explicit includes are supplied (see ScanOptions.Recursive):
+        // the Matcher above already scopes candidates to exactly those patterns, but the tree
+        // walk itself must still descend into subdirectories to find files an include pattern
+        // like "**/*.cs" could match below the root.
+        var walkRecursive = options.Recursive || options.Includes.Count > 0;
+
         // A single tree walk discovers .gitignore files, .gitattributes files, candidate
         // file paths, and symlink/junction loop protection all at once, instead of walking
         // the same directory tree separately for each concern.
         var walk = ScanTreeWalker.Walk(
-            root, DefaultExcludeDirectoryNames, options.Recursive, options.FollowSymlinks,
+            root, DefaultExcludeDirectoryNames, walkRecursive, options.FollowSymlinks,
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
 
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles) : null;

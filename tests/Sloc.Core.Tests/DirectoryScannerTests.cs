@@ -346,6 +346,23 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <see cref="ScanOptions.Recursive"/> is ignored when explicit
+    /// <see cref="ScanOptions.Includes"/> are supplied, per its documented contract: the
+    /// tree walk must still descend into subdirectories for a pattern like <c>**/*.cs</c>
+    /// to find files below the root.
+    /// </summary>
+    [Fact]
+    public void Scan_NonRecursiveWithIncludes_StillFindsNestedMatches()
+    {
+        Write("a.cs", "// code");
+        Write("sub/b.cs", "// nested");
+
+        var result = _scanner.Scan(_root, new ScanOptions { Recursive = false, Includes = ["**/*.cs"] });
+
+        Assert.Equal(2, result.Files.Count);
+    }
+
+    /// <summary>
     /// Verifies that a recursive scan discovers known-language files in nested directories.
     /// </summary>
     [Fact]
