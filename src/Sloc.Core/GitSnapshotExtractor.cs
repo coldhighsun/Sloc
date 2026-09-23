@@ -91,6 +91,16 @@ public sealed class GitSnapshotExtractor
         ArgumentNullException.ThrowIfNull(commitHash);
 
         var repoRoot = RunGit(repoPathHint, ["rev-parse", "--show-toplevel"]).Trim();
+        // A "--" separator would stop git from resolving this as a revision at all (rev-parse
+        // then treats it as a pathspec, and "--verify" fails outright), so reject a leading
+        // "-" up front instead: no valid commit-ish (SHA, branch, or tag) can start with one
+        // per git-check-ref-format, so this only ever rejects something that would otherwise
+        // be misparsed as an option (e.g. "--upload-pack=...") by the "rev-parse" call below.
+        if (commitHash.Length > 0 && commitHash[0] == '-')
+        {
+            throw new GitSnapshotException($"Invalid commit-ish: {commitHash}");
+        }
+
         var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{commitHash}^{{tree}}"]).Trim();
         // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
         // "prefix/" (an empty result means repoPathHint was the repo root itself).

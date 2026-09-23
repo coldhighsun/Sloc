@@ -94,6 +94,20 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a commit-ish starting with "-" is rejected before being passed to
+    /// <c>git rev-parse</c>, where it would otherwise be misparsed as an option (e.g.
+    /// <c>--upload-pack=...</c>) instead of a revision.
+    /// </summary>
+    [Fact]
+    public void Extract_CommitHashStartingWithDash_ThrowsGitSnapshotException()
+    {
+        Write("a.cs", "// hello");
+        Commit("first");
+
+        Assert.Throws<GitSnapshotException>(() => _extractor.Extract(_root, "--upload-pack=x", TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// Verifies that a path outside any git repository throws <see cref="GitSnapshotException"/>.
     /// </summary>
     [Fact]
