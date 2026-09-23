@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.RegularExpressions;
 
 namespace Sloc.Core.Languages;
@@ -80,6 +81,8 @@ public sealed class LanguageDefinition
     private Dictionary<char, StringLiteral[]>? _stringLiteralsByFirstChar;
 
     private Regex? _complexityRegex;
+
+    private SearchValues<char>? _tokenStartChars;
 
     /// <summary>
     /// The delimiter pairs that start and end block comments (e.g. <c>/*</c> … <c>*/</c>).
@@ -207,6 +210,41 @@ public sealed class LanguageDefinition
     /// </summary>
     internal Dictionary<char, StringLiteral[]> StringLiteralsByFirstChar =>
         _stringLiteralsByFirstChar ??= GroupByFirstChar(StringLiterals, s => s.Delimiter, c => c);
+
+    /// <summary>
+    /// Every character that could begin a block-comment opener, line-comment token, or
+    /// string-literal delimiter, so <see cref="LineClassifier"/> can skip (vectorized) over
+    /// runs of ordinary code characters instead of probing each one. For
+    /// <see cref="CaseInsensitiveLineComments"/> this includes every character that
+    /// case-folds to a line-comment key; a superset is always safe, since candidates are
+    /// still verified by an exact token match.
+    /// </summary>
+    internal SearchValues<char> TokenStartChars => _tokenStartChars ??= BuildTokenStartChars();
+
+    private SearchValues<char> BuildTokenStartChars()
+    {
+        var chars = new HashSet<char>();
+        chars.UnionWith(BlockCommentsByFirstChar.Keys);
+        chars.UnionWith(StringLiteralsByFirstChar.Keys);
+
+        if (CaseInsensitiveLineComments)
+        {
+            var keys = LineCommentsByFirstChar;
+            for (var c = char.MinValue; c < char.MaxValue; c++)
+            {
+                if (keys.ContainsKey(char.ToUpperInvariant(c)))
+                {
+                    chars.Add(c);
+                }
+            }
+        }
+        else
+        {
+            chars.UnionWith(LineCommentsByFirstChar.Keys);
+        }
+
+        return SearchValues.Create([.. chars]);
+    }
 
     private static Regex BuildComplexityRegex(IReadOnlyList<string> keywords)
     {

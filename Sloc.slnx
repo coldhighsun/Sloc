@@ -13,6 +13,9 @@
     <File Path="NuGet.Config" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Sloc.Benchmarks/Sloc.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Sloc.Cli/Sloc.Cli.csproj" />
     <Project Path="src/Sloc.Core/Sloc.Core.csproj" />

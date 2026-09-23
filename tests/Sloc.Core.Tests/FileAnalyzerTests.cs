@@ -220,6 +220,79 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Byte contents covering every line-terminator style, each supported byte-order mark,
+    /// a non-UTF-8 fallback, and multi-line block comments/strings, for comparing the
+    /// in-memory and streaming read paths.
+    /// </summary>
+    public static TheoryData<string, byte[]> ReadPathCases()
+    {
+        const string text = "using System;\r\n\r\n/* block\r   still */\nvar s = @\"a\"\"b\"; // c\n\n// last";
+        byte[] Encode(Encoding encoding) => [.. encoding.GetPreamble(), .. encoding.GetBytes(text)];
+
+        return new TheoryData<string, byte[]>
+        {
+            { "utf8 no bom", Encode(new UTF8Encoding(false)) },
+            { "utf8 bom", Encode(new UTF8Encoding(true)) },
+            { "utf16 le", Encode(new UnicodeEncoding(bigEndian: false, byteOrderMark: true)) },
+            { "utf16 be", Encode(new UnicodeEncoding(bigEndian: true, byteOrderMark: true)) },
+            { "utf32 le", Encode(new UTF32Encoding(bigEndian: false, byteOrderMark: true)) },
+            { "utf32 be", Encode(new UTF32Encoding(bigEndian: true, byteOrderMark: true)) },
+            { "latin1", [(byte)'/', (byte)'/', 0xE9, (byte)'\r', (byte)'x', (byte)';', (byte)'\r', (byte)'\n'] },
+            { "trailing newline", Encoding.UTF8.GetBytes("a();\n\n") },
+            { "lone cr at end", Encoding.UTF8.GetBytes("a();\r") },
+            { "empty", [] },
+        };
+    }
+
+    /// <summary>
+    /// Verifies that the in-memory fast path (used for typical file sizes) and the streaming
+    /// path (used for very large files) produce identical counts and hashes.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ReadPathCases))]
+    public void Analyze_InMemoryAndStreamingPaths_Agree(string name, byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-paths-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllBytes(path, bytes);
+        try
+        {
+            var inMemory = new FileAnalyzer().Analyze(path, CSharp, computeHash: true);
+            var streamed = new FileAnalyzer { InMemoryThreshold = 0 }.Analyze(path, CSharp, computeHash: true);
+
+            Assert.True(
+                inMemory.Code == streamed.Code
+                    && inMemory.Comment == streamed.Comment
+                    && inMemory.Blank == streamed.Blank
+                    && inMemory.Complexity == streamed.Complexity
+                    && inMemory.Hash == streamed.Hash,
+                $"{name}: in-memory {inMemory} vs streamed {streamed}");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the streaming path (forced via a zero in-memory threshold) still
+    /// detects binary files.
+    /// </summary>
+    [Fact]
+    public void Analyze_StreamingPath_BinaryFile_ThrowsBinaryFileException()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-bin-stream-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllBytes(path, [0x01, 0x02, 0x00, 0x03, 0x04]);
+        try
+        {
+            Assert.Throws<BinaryFileException>(() => new FileAnalyzer { InMemoryThreshold = 0 }.Analyze(path, CSharp));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that analyzing an empty string returns zero for all line counts.
     /// </summary>
     [Fact]
