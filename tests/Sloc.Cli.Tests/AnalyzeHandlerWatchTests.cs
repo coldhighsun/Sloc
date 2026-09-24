@@ -57,19 +57,36 @@ public class AnalyzeHandlerWatchTests
     }
 
     /// <summary>
+    /// Verifies that when the watch loop's last rescan failed (e.g. the watched directory
+    /// was removed), the exit code reports the error instead of judging the threshold
+    /// against the stale pre-failure summary.
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_LastPassFailed_ReturnsError()
+    {
+        var summary = new AnalysisSummary([
+            new FileAnalysis { Path = "a.cs", Language = "C#", Code = 1, Comment = 1, Blank = 0 }
+        ]);
+
+        var exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, summary, lastPassFailed: true);
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
     /// A path with no well-known build/VCS/package directory segment is not ignored.
     /// </summary>
     [Theory]
     [MemberData(nameof(OrdinaryPaths))]
     public void IsInIgnoredDirectory_ReturnsFalse_ForOrdinaryPaths(string path)
     {
-        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(path));
+        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(WatchRoot, path));
     }
 
     public static IEnumerable<object[]> OrdinaryPaths()
     {
-        yield return [Combine("repo", "src", "Program.cs")];
-        yield return [Combine("repo", "README.md")];
+        yield return [Combine(WatchRoot, "src", "Program.cs")];
+        yield return [Combine(WatchRoot, "README.md")];
     }
 
     /// <summary>
@@ -80,17 +97,17 @@ public class AnalyzeHandlerWatchTests
     [MemberData(nameof(ExcludedDirectoryPaths))]
     public void IsInIgnoredDirectory_ReturnsTrue_ForKnownExcludedDirectories(string path)
     {
-        Assert.True(AnalyzeHandler.IsInIgnoredDirectory(path));
+        Assert.True(AnalyzeHandler.IsInIgnoredDirectory(WatchRoot, path));
     }
 
     public static IEnumerable<object[]> ExcludedDirectoryPaths()
     {
-        yield return [Combine("repo", "bin", "Debug", "net8.0", "sloc.dll")];
-        yield return [Combine("repo", "obj", "Debug", "Sloc.csproj.nuget.g.props")];
-        yield return [Combine("repo", ".git", "index")];
-        yield return [Combine("repo", "node_modules", "typescript", "lib", "tsc.js")];
-        yield return [Combine("repo", "src", "NODE_MODULES", "pkg", "index.js")];
-        yield return [Combine("repo", "artifacts", "bin", "Sloc.Cli", "debug", "sloc.dll")];
+        yield return [Combine(WatchRoot, "bin", "Debug", "net8.0", "sloc.dll")];
+        yield return [Combine(WatchRoot, "obj", "Debug", "Sloc.csproj.nuget.g.props")];
+        yield return [Combine(WatchRoot, ".git", "index")];
+        yield return [Combine(WatchRoot, "node_modules", "typescript", "lib", "tsc.js")];
+        yield return [Combine(WatchRoot, "src", "NODE_MODULES", "pkg", "index.js")];
+        yield return [Combine(WatchRoot, "artifacts", "bin", "Sloc.Cli", "debug", "sloc.dll")];
     }
 
     /// <summary>
@@ -100,8 +117,24 @@ public class AnalyzeHandlerWatchTests
     [Fact]
     public void IsInIgnoredDirectory_DoesNotMatchSubstringOfASegment()
     {
-        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(Combine("repo", "src", "binary_search.cs")));
+        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(WatchRoot, Combine(WatchRoot, "src", "binary_search.cs")));
     }
+
+    /// <summary>
+    /// An excluded directory name above the watched root (e.g. watching <c>~/bin/project</c>)
+    /// does not make every event under the root look ignored; only segments below the root
+    /// count, matching how the scanner applies its default excludes relative to the scan root.
+    /// </summary>
+    [Fact]
+    public void IsInIgnoredDirectory_IgnoresSegmentsAboveTheWatchRoot()
+    {
+        var root = Combine(WatchRoot, "bin", "project");
+
+        Assert.False(AnalyzeHandler.IsInIgnoredDirectory(root, Combine(root, "src", "Program.cs")));
+        Assert.True(AnalyzeHandler.IsInIgnoredDirectory(root, Combine(root, "obj", "project.assets.json")));
+    }
+
+    private static readonly string WatchRoot = Path.Combine(Path.GetTempPath(), "repo");
 
     // IsInIgnoredDirectory splits on the platform's own directory separators, so test paths
     // must be built with Path.Combine rather than hardcoded Windows-style backslashes to
