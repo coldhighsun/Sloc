@@ -230,8 +230,9 @@ public sealed class LanguageDefinition
         if (CaseInsensitiveLineComments)
         {
             var keys = LineCommentsByFirstChar;
-            for (var c = char.MinValue; c < char.MaxValue; c++)
+            for (var i = 0; i <= char.MaxValue; i++)
             {
+                var c = (char)i;
                 if (keys.ContainsKey(char.ToUpperInvariant(c)))
                 {
                     chars.Add(c);
