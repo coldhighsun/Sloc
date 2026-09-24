@@ -218,6 +218,7 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                RegexLiterals = true,
                 ComplexityKeywords = cStyleComplexity
             },
             new()
@@ -227,6 +228,7 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                RegexLiterals = true,
                 ComplexityKeywords = cStyleComplexity
             },
             new()
@@ -262,6 +264,8 @@ public static class LanguageRegistry
                 Name = "PHP",
                 Extensions = [".php"],
                 LineCommentTokens = ["//", "#"],
+                // PHP 8 attributes (#[Route("/")]) start with the "#" comment token.
+                LineCommentExceptions = ["#["],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote],
                 ComplexityKeywords = phpComplexity
@@ -506,7 +510,8 @@ public static class LanguageRegistry
                 Extensions = [".vue"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock, htmlBlock],
-                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                RegexLiterals = true
             },
             new()
             {
@@ -514,7 +519,8 @@ public static class LanguageRegistry
                 Extensions = [".svelte"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock, htmlBlock],
-                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                RegexLiterals = true
             },
             new()
             {
@@ -650,7 +656,8 @@ public static class LanguageRegistry
                 Extensions = [".astro"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock, htmlBlock],
-                StringLiterals = [backtickTemplate, doubleQuote, singleQuote]
+                StringLiterals = [backtickTemplate, doubleQuote, singleQuote],
+                RegexLiterals = true
             },
             new()
             {

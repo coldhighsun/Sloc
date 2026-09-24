@@ -255,4 +255,105 @@ public class SymlinkGuardTests
         Assert.True(SymlinkGuard.IsAncestorOrSelf(root, nested));
         Assert.True(SymlinkGuard.IsAncestorOrSelf(root, root));
     }
+
+    /// <summary>
+    /// Verifies that a reparse point with no link target (e.g. a OneDrive Files-On-Demand
+    /// folder or cloud file, whose attributes include <see cref="FileAttributes.ReparsePoint"/>)
+    /// is not a link, so the scan treats it as an ordinary file or directory instead of
+    /// silently skipping it.
+    /// </summary>
+    [Fact]
+    public void IsLink_ReparsePointWithoutLinkTarget_ReturnsFalse()
+    {
+        // The attributes of a OneDrive folder: Directory | ReparsePoint | Unpinned.
+        const FileAttributes oneDriveFolder = FileAttributes.Directory | FileAttributes.ReparsePoint | (FileAttributes)0x100000;
+
+        Assert.False(SymlinkGuard.IsLink(oneDriveFolder, () => null));
+    }
+
+    /// <summary>
+    /// Verifies that a reparse point with a link target (a symlink or junction) is a link.
+    /// </summary>
+    [Fact]
+    public void IsLink_ReparsePointWithLinkTarget_ReturnsTrue()
+    {
+        Assert.True(SymlinkGuard.IsLink(FileAttributes.Directory | FileAttributes.ReparsePoint, () => "C:\\target"));
+    }
+
+    /// <summary>
+    /// Verifies that an entry without the reparse-point attribute is not a link, without
+    /// paying for a link-target lookup.
+    /// </summary>
+    [Fact]
+    public void IsLink_NotAReparsePoint_ReturnsFalseWithoutReadingLinkTarget()
+    {
+        Assert.False(SymlinkGuard.IsLink(FileAttributes.Directory, () => throw new InvalidOperationException("should not be read")));
+    }
+
+    /// <summary>
+    /// Verifies that online-only placeholders (offline or recall-on-open/data-access) are
+    /// recognized as cloud-only, while a hydrated OneDrive file is not.
+    /// </summary>
+    /// <param name="attributes">The file attributes, as their raw value.</param>
+    /// <param name="expected">Whether the file is cloud-only.</param>
+    [Theory]
+    [InlineData(0x00400420, true)] // Archive | ReparsePoint | RecallOnDataAccess (online-only)
+    [InlineData(0x00041020, true)] // Archive | Offline | RecallOnOpen
+    [InlineData(0x00080420, false)] // Archive | ReparsePoint | Pinned (available locally)
+    [InlineData(0x00000020, false)] // Archive
+    public void IsCloudOnly_ReflectsRecallAttributes(int attributes, bool expected)
+    {
+        Assert.Equal(expected, SymlinkGuard.IsCloudOnly((FileAttributes)attributes));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="SymlinkGuard.CanEnumerate"/> is true for a listable directory
+    /// and false (without throwing) for one that can't be listed.
+    /// </summary>
+    [Fact]
+    public void CanEnumerate_DistinguishesListableDirectory()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            Assert.True(SymlinkGuard.CanEnumerate(directory.FullName));
+            Assert.False(SymlinkGuard.CanEnumerate(Path.Combine(directory.FullName, "missing")));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies <see cref="SymlinkGuard.IsLink(FileSystemInfo)"/> against the real filesystem:
+    /// a plain directory is not a link, a directory symlink is.
+    /// </summary>
+    [Fact]
+    public void IsLink_RealDirectoryAndSymlink_AreDistinguished()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var target = directory.CreateSubdirectory("target");
+            Assert.False(SymlinkGuard.IsLink(target));
+
+            var linkPath = Path.Combine(directory.FullName, "link");
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, target.FullName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Directory symlinks require a privilege this environment may not grant.
+                return;
+            }
+
+            Assert.True(SymlinkGuard.IsLink(new DirectoryInfo(linkPath)));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
 }
