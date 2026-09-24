@@ -205,6 +205,114 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
         Assert.False(File.Exists(reportPath));
     }
 
+    /// <summary>
+    /// Verifies that the baseline side of a <c>--compare-to</c> diff applies the same file
+    /// filters as the current (working tree) side, so an unchanged tree diffs to zero:
+    /// <c>--exclude</c>, <c>--include</c>, <c>--no-recursive</c>, the built-in excluded
+    /// directories, and <c>.gitignore</c>/<c>.gitattributes</c> rules (at the root and in a
+    /// subdirectory) that exclude a tracked file.
+    /// </summary>
+    /// <param name="filter">Which filter the unchanged tree is analyzed with.</param>
+    [Theory]
+    [InlineData("exclude")]
+    [InlineData("include")]
+    [InlineData("no-recursive")]
+    [InlineData("include-no-recursive")]
+    [InlineData("default-excluded-dir")]
+    [InlineData("gitignore")]
+    [InlineData("gitattributes")]
+    public void Execute_CompareToUnchangedTree_AppliesSameFiltersToBaseline(string filter)
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int a = 1;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "b.cs"), "int b = 1;\nint c = 2;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "bin"));
+        File.WriteAllText(Path.Combine(_root, "bin", "out.cs"), "int d = 1;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "vendor"));
+        File.WriteAllText(Path.Combine(_root, "vendor", "lib.cs"), "int e = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "generated.cs"), "int f = 1;\n");
+        File.WriteAllText(Path.Combine(_root, ".gitattributes"), "vendor/** linguist-vendored\n");
+        // Nested rule files: relative to their own directory, not the scan root.
+        File.WriteAllText(Path.Combine(_root, "sub", "nested-ignored.cs"), "int g = 1;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "sub", "gen"));
+        File.WriteAllText(Path.Combine(_root, "sub", "gen", "g.cs"), "int h = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "sub", ".gitattributes"), "gen/** linguist-generated\n");
+        // A rule file inside a built-in excluded directory is never read by the directory
+        // walk, so it must not affect the baseline either.
+        File.WriteAllText(Path.Combine(_root, "bin", ".gitignore"), "!out.cs\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        // Ignored only after being committed, so the files are tracked but gitignored.
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "generated.cs\n");
+        File.WriteAllText(Path.Combine(_root, "sub", ".gitignore"), "nested-ignored.cs\n");
+        RunGit("add", ".gitignore", "sub/.gitignore");
+        RunGit("commit", "-q", "-m", "ignore generated files");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = _root,
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true,
+            Excludes = filter == "exclude" ? ["**/sub/**"] : [],
+            Includes = filter is "include" or "include-no-recursive" ? ["sub/**"] : [],
+            NoRecursive = filter is "no-recursive" or "include-no-recursive"
+        }).GetProperty("total");
+
+        Assert.Equal(0, total.GetProperty("code").GetInt32());
+        Assert.Equal(0, total.GetProperty("total").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that <c>--compare-to</c> accepts a path to a single file, diffing just that
+    /// file against its content at the given commit.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToWithFilePath_DiffsJustThatFile()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "other.cs"), "int y = 1;\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        File.WriteAllText(Path.Combine(_root, "sub", "a.cs"), "int x = 1;\nint z = 2;\n");
+        File.WriteAllText(Path.Combine(_root, "other.cs"), "int y = 1;\nint w = 2;\nint v = 3;\n");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "sub", "a.cs"),
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        }).GetProperty("total");
+
+        Assert.Equal(1, total.GetProperty("code").GetInt32());
+        Assert.Equal(1, total.GetProperty("total").GetInt32());
+    }
+
+    private static JsonElement RunCompareToJson(Func<string, AnalyzeOptions> buildOptions)
+    {
+        var outputFile = Path.Combine(Path.GetTempPath(), "sloc-diff-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var exitCode = new AnalyzeHandler().Execute(buildOptions(outputFile));
+
+            Assert.Equal(ExitCode.Success, exitCode);
+            using var document = JsonDocument.Parse(File.ReadAllText(outputFile));
+            return document.RootElement.Clone();
+        }
+        finally
+        {
+            File.Delete(outputFile);
+        }
+    }
+
     private void RunGit(params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("git")

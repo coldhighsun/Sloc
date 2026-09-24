@@ -317,4 +317,51 @@ public class LineClassifierLanguageTests
         Assert.NotNull(language);
         return language;
     }
+
+    /// <summary>
+    /// Verifies that a C# 11 raw string literal (<c>"""</c>) is tracked as a multi-line
+    /// string: a <c>/*</c> or <c>//</c> inside it neither opens a block comment nor makes
+    /// the line a comment, and the code after it is still counted as code.
+    /// </summary>
+    [Fact]
+    public void Classify_CSharpRawStringLiteral_IgnoresCommentTokensInside()
+    {
+        var classifier = new LineClassifier(Resolve(".cs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("var sql = \"\"\""));
+        Assert.Equal(LineKind.Code, classifier.Classify("    /* not a comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    // not a comment either"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\";"));
+        Assert.Equal(LineKind.Code, classifier.Classify("int y = 1;"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a real comment"));
+    }
+
+    /// <summary>
+    /// Verifies that an interpolated verbatim string written with the <c>@$</c> prefix order
+    /// and starting with an escaped quote (<c>@$"""…</c>) is a single-line verbatim string,
+    /// not the opening of a multi-line raw string literal.
+    /// </summary>
+    [Fact]
+    public void Classify_CSharpInterpolatedVerbatimStringStartingWithEscapedQuote_IsNotRawString()
+    {
+        var classifier = new LineClassifier(Resolve(".cs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("var s = @$\"\"\"quoted\"\" {x}\";"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a real comment"));
+    }
+
+    /// <summary>
+    /// Verifies that a Java text block (<c>"""</c>) is tracked as a multi-line string, the
+    /// same way as a C# raw string literal.
+    /// </summary>
+    [Fact]
+    public void Classify_JavaTextBlock_IgnoresCommentTokensInside()
+    {
+        var classifier = new LineClassifier(Resolve(".java"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("String sql = \"\"\""));
+        Assert.Equal(LineKind.Code, classifier.Classify("    /* not a comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\";"));
+        Assert.Equal(LineKind.Code, classifier.Classify("int y = 1;"));
+    }
 }

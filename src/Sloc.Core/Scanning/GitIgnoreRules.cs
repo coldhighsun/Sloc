@@ -731,9 +731,21 @@ internal sealed class GitIgnorePattern
 
         var body = Translate(line);
         var prefix = anchored ? "^" : "(?:^|.*/)";
-        regex = new Regex(
-            prefix + body + "$",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        try
+        {
+            regex = new Regex(
+                prefix + body + "$",
+                RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            // A character class with no regex equivalent (e.g. "[]", "[!]", or a reversed
+            // range like "[z-a]"): skip just this pattern, as git tolerates a malformed
+            // line, rather than letting one bad line abort the whole scan.
+            regex = null!;
+            return false;
+        }
+
         return true;
     }
 }

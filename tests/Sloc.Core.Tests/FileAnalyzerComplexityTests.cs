@@ -92,4 +92,37 @@ public class FileAnalyzerComplexityTests
         LanguageRegistry.TryGetByExtension(extension, out var language);
         return language!;
     }
+
+    /// <summary>
+    /// Verifies that C#'s <c>foreach</c> counts as a branch point: the whole-word match
+    /// for <c>for</c> alone does not match inside it.
+    /// </summary>
+    [Fact]
+    public void AnalyzeText_CSharpForeach_CountsAsBranch()
+    {
+        const string content = "foreach (var x in xs) { }\n";
+
+        var result = new FileAnalyzer().AnalyzeText(content, CSharp);
+
+        Assert.Equal(2, result.Complexity);
+    }
+
+    /// <summary>
+    /// Verifies that PHP's <c>foreach</c> and <c>elseif</c> count as branch points: the
+    /// whole-word matches for <c>for</c>/<c>if</c> alone do not match inside them.
+    /// </summary>
+    [Fact]
+    public void AnalyzeText_PhpForeachAndElseif_CountAsBranches()
+    {
+        const string content =
+            "foreach ($xs as $x) {\n" +   // +1 (foreach)
+            "if ($a) {\n" +               // +1 (if)
+            "} elseif ($b) {\n" +         // +1 (elseif)
+            "}\n" +
+            "}\n";
+
+        var result = new FileAnalyzer().AnalyzeText(content, Resolve(".php"));
+
+        Assert.Equal(4, result.Complexity);
+    }
 }

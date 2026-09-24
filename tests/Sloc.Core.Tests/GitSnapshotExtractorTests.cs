@@ -128,6 +128,56 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a path to a file inside the repository (rather than a directory) is
+    /// accepted: git runs from the file's directory, and <see cref="GitSnapshot.RelativePrefix"/>
+    /// is the file's own repo-relative path.
+    /// </summary>
+    [Fact]
+    public void Extract_FilePath_ResolvesRepoAndUsesFileAsRelativePrefix()
+    {
+        Write("sub/a.cs", "// hello");
+        Write("b.cs", "// other");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(Path.Combine(_root, "sub", "a.cs"), "HEAD", TestContext.Current.CancellationToken);
+
+        Assert.Equal("sub/a.cs", snapshot.RelativePrefix);
+        Assert.Equal(2, snapshot.Files.Count);
+    }
+
+    /// <summary>
+    /// Verifies that on a case-insensitive filesystem, a file hint whose name differs in
+    /// case from the tracked path still yields git's own spelling as
+    /// <see cref="GitSnapshot.RelativePrefix"/>, so it matches the extracted file's git path.
+    /// </summary>
+    [Fact]
+    public void Extract_FilePathWithDifferentCasing_UsesTrackedCasingAsRelativePrefix()
+    {
+        Write("sub/MixedCase.cs", "// hello");
+        Commit("first");
+
+        var hint = Path.Combine(_root, "sub", "mixedcase.cs");
+        Assert.SkipUnless(File.Exists(hint), "Requires a case-insensitive filesystem.");
+
+        using var snapshot = _extractor.Extract(hint, "HEAD", TestContext.Current.CancellationToken);
+
+        Assert.Equal("sub/MixedCase.cs", snapshot.RelativePrefix);
+    }
+
+    /// <summary>
+    /// Verifies that a path that doesn't exist is reported as such, rather than surfacing
+    /// as a failure to start git (which, on some platforms, reads as git itself missing).
+    /// </summary>
+    [Fact]
+    public void Extract_MissingPath_ThrowsPathNotFound()
+    {
+        var missing = Path.Combine(_root, "does-not-exist");
+
+        var ex = Assert.Throws<GitSnapshotException>(() => _extractor.Extract(missing, "HEAD", TestContext.Current.CancellationToken));
+        Assert.Contains("Path not found", ex.Message);
+    }
+
+    /// <summary>
     /// Verifies that extracting an older commit reflects the file state at that commit,
     /// not the current working tree.
     /// </summary>
