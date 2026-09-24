@@ -15,7 +15,8 @@ namespace Sloc.Core;
 /// string literals are skipped for languages that declare their string delimiters, including
 /// literals whose open and close tokens differ (see <see cref="StringLiteral.CloseDelimiter"/>)
 /// and doubled-closing-delimiter escaping (see <see cref="StringLiteral.DoubledClosingEscape"/>,
-/// e.g. C# <c>@"…""…"</c>).
+/// e.g. C# <c>@"…""…"</c>). For languages with <see cref="LanguageDefinition.RegexLiterals"/>,
+/// comment tokens inside a regex literal (e.g. <c>/\/*$/</c>) are likewise skipped.
 /// </remarks>
 public sealed class LineClassifier
 {
@@ -31,6 +32,28 @@ public sealed class LineClassifier
     private char[] _codeBuffer = [];
     private int _codeLength;
 
+    // For RegexLiterals languages: the last significant code character seen (possibly on an
+    // earlier line; '\0' before any), and its index when it is on the current line (else -1),
+    // used to tell a regex-literal "/" from a division "/".
+    private readonly bool _trackRegex;
+    private char _lastSignificant;
+    private int _lastSignificantIndex = -1;
+
+    // Whether the previous line ended with a keyword like "return" (see RegexPrecedingKeywords),
+    // so a regex literal may start at the beginning of this line.
+    private bool _previousLineEndedWithRegexKeyword;
+
+    // Stands in for _lastSignificant after a string or regex literal: a value, so a "/" after it is division.
+    private const char ValueMarker = '"';
+
+    // Keywords after which a "/" starts a regex literal rather than dividing.
+    private static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> RegexPrecedingKeywords =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
+            "case", "do", "else", "yield", "await"
+        }.GetAlternateLookup<ReadOnlySpan<char>>();
+
     /// <summary>
     /// Creates a classifier for the supplied language.
     /// </summary>
@@ -40,6 +63,7 @@ public sealed class LineClassifier
         ArgumentNullException.ThrowIfNull(language);
         _language = language;
         _trackCodeText = language.SupportsComplexity;
+        _trackRegex = language.RegexLiterals;
     }
 
     /// <summary>
@@ -92,6 +116,7 @@ public sealed class LineClassifier
         var sawCode = false;
         var sawComment = false;
         var index = 0;
+        _lastSignificantIndex = -1;
         var codeChars = Span<char>.Empty;
         if (_trackCodeText)
         {
@@ -133,12 +158,32 @@ public sealed class LineClassifier
                 run.CopyTo(codeChars[index..]);
             }
 
+            if (_trackRegex)
+            {
+                var trimmed = run.TrimEnd();
+                if (!trimmed.IsEmpty)
+                {
+                    _lastSignificant = trimmed[^1];
+                    _lastSignificantIndex = index + trimmed.Length - 1;
+                }
+            }
+
             if (next < 0)
             {
                 break;
             }
 
             index += next;
+
+            if (_trackRegex && line[index] == '/' && TryMatchRegexLiteral(line, index, out var regexEnd))
+            {
+                // The literal is code; its content is blanked from CodeText like a string's.
+                sawCode = true;
+                _lastSignificant = ValueMarker;
+                _lastSignificantIndex = -1;
+                index = regexEnd;
+                continue;
+            }
 
             if (TryMatchBlockOpen(line, index, out var block))
             {
@@ -163,12 +208,23 @@ public sealed class LineClassifier
                 MarkString(ref sawCode, ref sawComment);
                 index += literal.Delimiter.Length;
                 _activeString = literal;
+                if (_trackRegex)
+                {
+                    _lastSignificant = ValueMarker;
+                    _lastSignificantIndex = -1;
+                }
+
                 continue;
             }
 
             if (!char.IsWhiteSpace(line[index]))
             {
                 sawCode = true;
+                if (_trackRegex)
+                {
+                    _lastSignificant = line[index];
+                    _lastSignificantIndex = index;
+                }
             }
 
             if (_trackCodeText)
@@ -177,6 +233,11 @@ public sealed class LineClassifier
             }
 
             index++;
+        }
+
+        if (_trackRegex && _lastSignificantIndex >= 0)
+        {
+            _previousLineEndedWithRegexKeyword = EndsWithRegexKeyword(line, _lastSignificantIndex);
         }
 
         // A single-line string that never closed does not carry over to the next line.
@@ -369,8 +430,115 @@ public sealed class LineClassifier
         }
     }
 
+    /// <summary>
+    /// Whether a <c>/</c> at this point starts a regex literal rather than dividing: true
+    /// where an operand is expected, i.e. at the start of the file, after an operator or
+    /// opening bracket, or after a keyword like <c>return</c>; false after an operand (an
+    /// identifier, number, <c>)</c>, <c>]</c>, or string/regex literal).
+    /// </summary>
+    private bool RegexMayStartHere(ReadOnlySpan<char> line)
+    {
+        var previous = _lastSignificant;
+        if (previous is ')' or ']' or ValueMarker or '\'' or '`' or '<')
+        {
+            // '<' is not an operand, but excluding it keeps markup such as "</div>" (Vue,
+            // Svelte, Astro, JSX) from being read as the start of a regex.
+            return false;
+        }
+
+        if (!IsIdentifierChar(previous) && previous != '$')
+        {
+            return true;
+        }
+
+        // An identifier or number divides, unless it is a keyword (on this line, or ending
+        // the previous one).
+        return _lastSignificantIndex < 0
+            ? _previousLineEndedWithRegexKeyword
+            : EndsWithRegexKeyword(line, _lastSignificantIndex);
+    }
+
+    /// <summary>
+    /// Whether the identifier ending at <paramref name="last"/> in <paramref name="line"/> is
+    /// one of <see cref="RegexPrecedingKeywords"/> (and not a property of that name).
+    /// </summary>
+    private static bool EndsWithRegexKeyword(ReadOnlySpan<char> line, int last)
+    {
+        var end = last + 1;
+        var start = end;
+        while (start > 0 && IsIdentifierChar(line[start - 1]))
+        {
+            start--;
+        }
+
+        // A property named like a keyword (e.g. "obj.return") is still an operand.
+        return (start == 0 || line[start - 1] is not ('.' or '$'))
+            && RegexPrecedingKeywords.Contains(line[start..end]);
+    }
+
+    /// <summary>
+    /// Matches a regex literal (<c>/…/flags</c>) opening at <paramref name="index"/>, skipping
+    /// escapes and <c>[…]</c> classes (inside which <c>/</c> doesn't close it). Not a match
+    /// (so the <c>/</c> is division or a comment) when an operand precedes it, when it is
+    /// <c>//</c> or <c>/*</c>, when it doesn't close on this line, or when its closing
+    /// <c>/</c> is followed by another <c>/</c> or <c>*</c>: that is far more likely a
+    /// division followed by a comment than a regex, so the comment is kept.
+    /// </summary>
+    private bool TryMatchRegexLiteral(ReadOnlySpan<char> line, int index, out int end)
+    {
+        end = index;
+        if (index + 1 >= line.Length || line[index + 1] is '/' or '*' || !RegexMayStartHere(line))
+        {
+            return false;
+        }
+
+        var inClass = false;
+        for (var i = index + 1; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (c == '\\')
+            {
+                i++;
+            }
+            else if (inClass)
+            {
+                inClass = c != ']';
+            }
+            else if (c == '[')
+            {
+                inClass = true;
+            }
+            else if (c == '/')
+            {
+                if (i + 1 < line.Length && line[i + 1] is '/' or '*')
+                {
+                    return false;
+                }
+
+                end = i + 1;
+                while (end < line.Length && char.IsAsciiLetter(line[end]))
+                {
+                    end++;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool MatchesLineComment(ReadOnlySpan<char> line, int index)
     {
+        var exceptions = _language.LineCommentExceptions;
+        for (var i = 0; i < exceptions.Count; i++)
+        {
+            if (MatchesAt(line, index, exceptions[i]))
+            {
+                return false;
+            }
+        }
+
         var key = _language.CaseInsensitiveLineComments
             ? char.ToUpperInvariant(line[index])
             : line[index];

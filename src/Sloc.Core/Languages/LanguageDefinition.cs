@@ -150,6 +150,26 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
 
     /// <summary>
+    /// Tokens that start with a <see cref="LineCommentTokens">line-comment token</see> but are
+    /// not comments, such as PHP 8's <c>#[</c> attribute syntax (PHP's <c>#</c> is otherwise a
+    /// line comment).
+    /// </summary>
+    public IReadOnlyList<string> LineCommentExceptions { get; init; } = [];
+
+    /// <summary>
+    /// Whether the language has JavaScript-style <c>/…/flags</c> regular-expression literals,
+    /// so that a <c>/*</c> or <c>//</c> inside one (e.g. <c>/\/*$/</c>) is not mistaken for a
+    /// comment. A <c>/</c> is taken to start a regex only where an operand is expected (at the
+    /// start of the file, after an operator or opening bracket, or after a keyword such as
+    /// <c>return</c>), not after an identifier, number, <c>)</c>, <c>]</c>, or string, where
+    /// it is division; and only if the literal closes on the same line.
+    /// </summary>
+    public bool RegexLiterals
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// The human-readable name of the language (e.g. "C#").
     /// </summary>
     public required string Name

@@ -364,4 +364,129 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\";"));
         Assert.Equal(LineKind.Code, classifier.Classify("int y = 1;"));
     }
+
+    /// <summary>
+    /// Verifies that a <c>/*</c> inside a regex literal (here, stripping trailing slashes)
+    /// does not open a block comment that swallows the following lines.
+    /// </summary>
+    /// <param name="extension">A language with regex literals.</param>
+    [Theory]
+    [InlineData(".js")]
+    [InlineData(".ts")]
+    [InlineData(".vue")]
+    [InlineData(".svelte")]
+    [InlineData(".astro")]
+    public void Classify_RegexLiteralContainingBlockCommentOpener_IsCode(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("const p = s.replace(/\\/*$/, \"\");"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("const a = 1;"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a real comment"));
+    }
+
+    /// <summary>
+    /// Verifies the contexts in which a <c>/</c> starts a regex literal: at the start of the
+    /// file, after an operator or opening bracket, and after a keyword like <c>return</c>.
+    /// </summary>
+    /// <param name="line">A line whose regex contains a <c>/*</c>.</param>
+    [Theory]
+    [InlineData("/\\/*/.test(s);")]
+    [InlineData("return /\\/*/.test(s);")]
+    [InlineData("x = cond ? /a\\/*/ : /b/;")]
+    [InlineData("f(a, /[/*]/g);")]
+    [InlineData("if (!/\\/*/.test(s)) {")]
+    [InlineData("const f = s => /\\/*/.test(s);")]
+    public void Classify_RegexLiteralAfterOperandPosition_DoesNotOpenBlockComment(string line)
+    {
+        var classifier = new LineClassifier(Resolve(".js"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(line));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a <c>/</c> after an operand is division, so a block comment later on
+    /// the same line still opens (including when a second division on the line could
+    /// otherwise pair up with the first as a regex).
+    /// </summary>
+    /// <param name="line">A line with a division followed by a block-comment opener.</param>
+    [Theory]
+    [InlineData("const half = total / 2; /* start")]
+    [InlineData("const r = (a + b) / c; /* start")]
+    [InlineData("const r = arr[0] / 2; /* start")]
+    [InlineData("const r = obj.return / 2; /* start")]
+    [InlineData("const r = x++ / 2; /* start")]
+    [InlineData("const r = \"s\".length / 2; /* start")]
+    public void Classify_DivisionFollowedByBlockComment_OpensBlockComment(string line)
+    {
+        var classifier = new LineClassifier(Resolve(".js"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(line));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("   still a comment */"));
+    }
+
+    /// <summary>
+    /// Verifies that quotes and backticks inside a regex literal (or inside its character
+    /// class) don't open a string that would hide a following comment.
+    /// </summary>
+    [Fact]
+    public void Classify_RegexLiteralContainingQuotes_DoesNotOpenString()
+    {
+        var classifier = new LineClassifier(Resolve(".js"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("const re = /[^`'\"]/;"));
+        Assert.False(classifier.InMultilineString);
+        Assert.Equal(LineKind.Comment, classifier.Classify("/* a real comment */"));
+    }
+
+    /// <summary>
+    /// Verifies that a regex literal on a line after a keyword or operator ending the
+    /// previous line is recognized, since the operand position carries across lines.
+    /// </summary>
+    [Fact]
+    public void Classify_RegexLiteralAfterOperatorOnPreviousLine_IsCode()
+    {
+        var classifier = new LineClassifier(Resolve(".ts"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("const re ="));
+        Assert.Equal(LineKind.Code, classifier.Classify("    /\\/*$/;"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a regex literal starting a line is recognized when the previous line
+    /// ended with a keyword such as <c>yield</c>, while one after an identifier ending the
+    /// previous line is still division.
+    /// </summary>
+    [Fact]
+    public void Classify_RegexLiteralAfterKeywordOnPreviousLine_IsCode()
+    {
+        var classifier = new LineClassifier(Resolve(".js"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("yield"));
+        Assert.Equal(LineKind.Code, classifier.Classify("  /\\/*/g;"));
+        Assert.False(classifier.InBlockComment);
+
+        Assert.Equal(LineKind.Code, classifier.Classify("const r = total"));
+        Assert.Equal(LineKind.Code, classifier.Classify("  / 2; /* start"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a PHP 8 attribute (<c>#[…]</c>) is code, while a <c>#</c> line comment
+    /// is still a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PhpAttribute_IsCodeNotComment()
+    {
+        var classifier = new LineClassifier(Resolve(".php"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("#[Route(\"/home\")]"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    #[IsGranted('ROLE_USER')]"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("# a comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("#comment [not an attribute]"));
+    }
 }

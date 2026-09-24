@@ -74,6 +74,17 @@ public class FileAnalyzerComplexityTests
     }
 
     /// <summary>
+    /// Verifies that branch-point tokens inside a JavaScript regex literal are not counted.
+    /// </summary>
+    [Fact]
+    public void AnalyzeText_BranchTokenInRegexLiteral_IsNotCounted()
+    {
+        var result = new FileAnalyzer().AnalyzeText("const re = /if|for|&&|while/;\n", Resolve(".js"));
+
+        Assert.Equal(1, result.Complexity);
+    }
+
+    /// <summary>
     /// Verifies that a language which does not support complexity analysis (e.g. YAML)
     /// always yields a <see langword="null"/> complexity, regardless of content.
     /// </summary>

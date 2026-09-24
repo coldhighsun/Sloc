@@ -187,7 +187,7 @@ public sealed class DirectoryScanner
         var pathByRelative = new Dictionary<string, string>(walk.FilePaths.Count);
         foreach (var fullPath in walk.FilePaths)
         {
-            if (!options.FollowSymlinks && walk.ReparsePointFilePaths.Contains(fullPath))
+            if (!options.FollowSymlinks && walk.SymlinkedFilePaths.Contains(fullPath))
             {
                 continue;
             }

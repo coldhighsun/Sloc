@@ -13,7 +13,7 @@ internal sealed record ScanTreeWalkResult(
     IReadOnlyList<GitAttributesRules.AttributesFile> AttributesFiles,
     IReadOnlyList<string> SymlinkedDirectories,
     IReadOnlyList<string> FilePaths,
-    IReadOnlySet<string> ReparsePointFilePaths,
+    IReadOnlySet<string> SymlinkedFilePaths,
     IReadOnlyList<SkippedEntry> Skipped);
 
 /// <summary>
@@ -47,7 +47,7 @@ internal static class ScanTreeWalker
         var attributesFiles = new List<GitAttributesRules.AttributesFile>();
         var symlinkedDirectories = new List<string>();
         var filePaths = new List<string>();
-        var reparsePointFilePaths = new HashSet<string>();
+        var symlinkedFilePaths = new HashSet<string>();
         var skipped = new List<SkippedEntry>();
         var visited = 0;
         var ancestors = new List<string> { normalizedRoot };
@@ -56,11 +56,11 @@ internal static class ScanTreeWalker
         Collect(
             fullRoot, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
             collectGitignore, collectGitattributes, collectFiles,
-            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
+            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
             onDirectoryVisited, ref visited, ancestors, followedTargets);
 
         return new ScanTreeWalkResult(
-            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped);
+            gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ internal static class ScanTreeWalker
         List<GitAttributesRules.AttributesFile> attributesFiles,
         List<string> symlinkedDirectories,
         List<string> filePaths,
-        HashSet<string> reparsePointFilePaths,
+        HashSet<string> symlinkedFilePaths,
         List<SkippedEntry> skipped,
         Action<int, string>? onDirectoryVisited,
         ref int visited,
@@ -134,15 +134,22 @@ internal static class ScanTreeWalker
             if (collectFiles)
             {
                 // Enumerating via DirectoryInfo yields FileInfo entries whose Attributes are
-                // already populated from this same directory read, so the reparse-point check
-                // below needs no separate per-file stat call.
+                // already populated from this same directory read, so the link check below
+                // needs no separate per-file stat call except for reparse points.
                 foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
                 {
                     try
                     {
-                        if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                        if (SymlinkGuard.IsLink(file))
                         {
-                            reparsePointFilePaths.Add(file.FullName);
+                            symlinkedFilePaths.Add(file.FullName);
+                        }
+                        else if (SymlinkGuard.IsCloudOnly(file.Attributes))
+                        {
+                            // Reading an online-only placeholder (e.g. OneDrive Files-On-Demand)
+                            // would make the sync client download it; report it instead.
+                            skipped.Add(new SkippedEntry(file.FullName, "cloud-only file (not downloaded)"));
+                            continue;
                         }
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -175,10 +182,13 @@ internal static class ScanTreeWalker
                 continue;
             }
 
-            FileAttributes attributes;
+            bool isLink;
+            bool isReparsePoint;
             try
             {
-                attributes = new DirectoryInfo(subdirectory).Attributes;
+                var info = new DirectoryInfo(subdirectory);
+                isReparsePoint = info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+                isLink = SymlinkGuard.IsLink(info);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -189,13 +199,23 @@ internal static class ScanTreeWalker
                 continue;
             }
 
-            if (!attributes.HasFlag(FileAttributes.ReparsePoint))
+            // A reparse point that isn't a link (e.g. a OneDrive cloud folder) is an
+            // ordinary directory as far as the scan is concerned, provided it can actually be
+            // listed. One that can't (e.g. a WSL LX symlink, which .NET reports without a link
+            // target) is excluded like any other unfollowable link.
+            if (!isLink && isReparsePoint && !SymlinkGuard.CanEnumerate(subdirectory))
+            {
+                symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            if (!isLink)
             {
                 ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 Collect(
                     subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
                     collectGitignore, collectGitattributes, collectFiles,
-                    gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
+                    gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
                     onDirectoryVisited, ref visited, ancestors, followedTargets);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
@@ -224,7 +244,7 @@ internal static class ScanTreeWalker
             Collect(
                 subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
                 collectGitignore, collectGitattributes, collectFiles,
-                gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped,
+                gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
                 onDirectoryVisited, ref visited, ancestors, followedTargets);
             ancestors.RemoveAt(ancestors.Count - 1);
         }

@@ -12,8 +12,9 @@ namespace Sloc.Core.Scanning;
 /// </summary>
 /// <remarks>
 /// This is a pragmatic implementation of the gitignore format. Character classes
-/// (<c>[a-z]</c>) are matched approximately. Once an ancestor directory's own cumulative
-/// decision is "ignored", no pattern at a deeper path (including a negation) can
+/// (<c>[a-z]</c>, negated with <c>!</c> or <c>^</c>) and backslash escapes are supported;
+/// POSIX bracket expressions (<c>[[:alpha:]]</c>) are not. Once an ancestor directory's own
+/// cumulative decision is "ignored", no pattern at a deeper path (including a negation) can
 /// re-include anything under it, matching git's rule that an excluded directory is never
 /// scanned for re-inclusion patterns.
 /// </remarks>
@@ -582,14 +583,30 @@ internal sealed class GitIgnorePattern
     internal static bool TryCompilePattern(string rawPattern, out Regex regex, out bool directoryOnly) =>
         TryCompileBody(rawPattern, out regex, out directoryOnly);
 
-    private static string Translate(string pattern)
+    /// <summary>
+    /// Translates a gitignore glob to a regex body, or returns <see langword="null"/> for a
+    /// pattern git never matches (one ending in an unescaped backslash, or with an
+    /// unterminated character class).
+    /// </summary>
+    private static string? Translate(string pattern)
     {
         var sb = new StringBuilder();
         var i = 0;
         while (i < pattern.Length)
         {
             var c = pattern[i];
-            if (c == '*')
+            if (c == '\\')
+            {
+                // A backslash makes the next character literal (e.g. "\*", "\ ", "\#").
+                if (i + 1 == pattern.Length)
+                {
+                    return null;
+                }
+
+                sb.Append(Regex.Escape(pattern[i + 1].ToString()));
+                i += 2;
+            }
+            else if (c == '*')
             {
                 if (i + 1 < pattern.Length && pattern[i + 1] == '*')
                 {
@@ -624,41 +641,13 @@ internal sealed class GitIgnorePattern
             }
             else if (c == '[')
             {
-                var end = pattern.IndexOf(']', i + 1);
-                if (end < 0)
+                // No closing "]": git's wildmatch aborts, so the pattern matches nothing.
+                if (!TryTranslateClass(pattern, i, sb, out var next))
                 {
-                    sb.Append("\\[");
-                    i++;
+                    return null;
                 }
-                else
-                {
-                    var inner = pattern[(i + 1)..end];
-                    var negate = inner.StartsWith('!');
-                    sb.Append('[');
-                    if (negate)
-                    {
-                        sb.Append('^');
-                        inner = inner[1..];
-                    }
 
-                    // Escape backslashes and literal carets: gitignore character classes
-                    // have no regex escape sequences (\d, \b, etc. are just two literal
-                    // characters) and no negation marker other than a leading "!" (handled
-                    // above), so an un-escaped "\" or "^" here would change the regex's
-                    // meaning instead of matching the literal character.
-                    foreach (var ch in inner)
-                    {
-                        if (ch is '\\' or '^')
-                        {
-                            sb.Append('\\');
-                        }
-
-                        sb.Append(ch);
-                    }
-
-                    sb.Append(']');
-                    i = end + 1;
-                }
+                i = next;
             }
             else
             {
@@ -669,13 +658,74 @@ internal sealed class GitIgnorePattern
                 {
                     i++;
                 }
-                while (i < pattern.Length && pattern[i] is not ('*' or '?' or '['));
+                while (i < pattern.Length && pattern[i] is not ('*' or '?' or '[' or '\\'));
 
                 sb.Append(Regex.Escape(pattern[start..i]));
             }
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Translates the character class starting at <paramref name="open"/> (a <c>[</c>) the way
+    /// git's wildmatch reads it: a leading <c>!</c> or <c>^</c> negates the class, a <c>]</c>
+    /// right after the opening bracket (or negation marker) is a member rather than the end,
+    /// a backslash makes the next character a literal member, and <c>a-z</c> is a range.
+    /// </summary>
+    /// <returns><see langword="false"/> when the class has no closing <c>]</c>.</returns>
+    private static bool TryTranslateClass(string pattern, int open, StringBuilder sb, out int next)
+    {
+        var members = new StringBuilder();
+        var j = open + 1;
+        var negate = j < pattern.Length && pattern[j] is ('!' or '^');
+        if (negate)
+        {
+            j++;
+        }
+
+        var first = true;
+        while (j < pattern.Length)
+        {
+            var ch = pattern[j];
+            if (ch == ']' && !first)
+            {
+                // A class never matches "/" in a path (git's wildmatch, WM_PATHNAME), negated or not.
+                sb.Append(negate ? "(?!/)[^" : "(?!/)[").Append(members).Append(']');
+                next = j + 1;
+                return true;
+            }
+
+            if (ch == '\\' && j + 1 < pattern.Length)
+            {
+                // An escaped member is always literal, including "-", "]", and "^". Letters and
+                // digits need no regex escape, and must not get one ("\b" in a regex class
+                // is a backspace, "\d" a digit class).
+                ch = pattern[j + 1];
+                j += 2;
+                if (!char.IsLetterOrDigit(ch))
+                {
+                    members.Append('\\');
+                }
+            }
+            else
+            {
+                j++;
+
+                // "-" stays unescaped so ranges keep working; the characters that are
+                // special inside a regex class are escaped to match themselves.
+                if (ch is '\\' or '^' or '[' or ']')
+                {
+                    members.Append('\\');
+                }
+            }
+
+            members.Append(ch);
+            first = false;
+        }
+
+        next = open;
+        return false;
     }
 
     private static string TrimTrailingUnescapedWhitespace(string line)
@@ -730,6 +780,11 @@ internal sealed class GitIgnorePattern
         }
 
         var body = Translate(line);
+        if (body is null)
+        {
+            return false;
+        }
+
         var prefix = anchored ? "^" : "(?:^|.*/)";
         try
         {
@@ -739,8 +794,8 @@ internal sealed class GitIgnorePattern
         }
         catch (ArgumentException)
         {
-            // A character class with no regex equivalent (e.g. "[]", "[!]", or a reversed
-            // range like "[z-a]"): skip just this pattern, as git tolerates a malformed
+            // A character class with no regex equivalent (e.g. a reversed range like
+            // "[z-a]"): skip just this pattern, as git tolerates a malformed
             // line, rather than letting one bad line abort the whole scan.
             regex = null!;
             return false;

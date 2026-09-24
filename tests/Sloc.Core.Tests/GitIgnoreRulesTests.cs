@@ -63,19 +63,116 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
-    /// Verifies that a literal <c>^</c> inside a character class matches the caret
-    /// character itself rather than being interpreted as a regex negation, since
-    /// gitignore character classes only support <c>!</c> for negation.
+    /// Verifies that a leading <c>^</c> negates a character class exactly like <c>!</c>, as in
+    /// git's wildmatch, while a <c>^</c> anywhere else in the class is a literal member.
+    /// Expectations checked against <c>git check-ignore</c>.
     /// </summary>
     [Theory]
     [InlineData("file[^12].txt", "file^.txt", true)]
-    [InlineData("file[^12].txt", "file1.txt", true)]
-    [InlineData("file[^12].txt", "file3.txt", false)]
-    public void IsIgnored_CaretInCharacterClass_IsTreatedAsLiteral(string pattern, string path, bool expected)
+    [InlineData("file[^12].txt", "file1.txt", false)]
+    [InlineData("file[^12].txt", "file3.txt", true)]
+    [InlineData("[^a].c", "a.c", false)]
+    [InlineData("[^a].c", "b.c", true)]
+    [InlineData("file[1^].txt", "file^.txt", true)]
+    [InlineData("file[1^].txt", "file2.txt", false)]
+    public void IsIgnored_LeadingCaretInCharacterClass_NegatesClass(string pattern, string path, bool expected)
     {
         var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
 
         Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a <c>]</c> right after the opening bracket (or negation marker) is a
+    /// class member rather than the end of the class, and that a backslash inside a class
+    /// makes the next character a literal member. Expectations checked against
+    /// <c>git check-ignore</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("file[]a].txt", "file].txt", true)]
+    [InlineData("file[]a].txt", "filea.txt", true)]
+    [InlineData("file[]a].txt", "fileb.txt", false)]
+    [InlineData("file[!]a].txt", "fileb.txt", true)]
+    [InlineData("file[!]a].txt", "file].txt", false)]
+    [InlineData(@"f[\]]", "f]", true)]
+    [InlineData(@"f[\]]", @"f\", false)]
+    [InlineData(@"f[a\-z]", "f-", true)]
+    [InlineData(@"f[a\-z]", "fm", false)]
+    public void IsIgnored_CharacterClassEdgeCases_MatchGit(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a backslash outside a character class makes the next character literal:
+    /// an escaped wildcard matches only itself, and an escaped trailing space is kept.
+    /// Expectations checked against <c>git check-ignore</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(@"a\?c", "a?c", true)]
+    [InlineData(@"a\?c", "abc", false)]
+    [InlineData(@"a\*c", "a*c", true)]
+    [InlineData(@"a\*c", "abc", false)]
+    [InlineData(@"a\[b]", "a[b]", true)]
+    [InlineData(@"a\[b]", "ab", false)]
+    [InlineData(@"tr\ ", "tr ", true)]
+    [InlineData(@"tr\ ", "tr", false)]
+    [InlineData(@"tr\ .c", "tr .c", true)]
+    [InlineData(@"\#x", "#x", true)]
+    [InlineData(@"\!x", "!x", true)]
+    public void IsIgnored_BackslashEscape_MatchesLiteralCharacter(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a character class, negated or not, never matches the <c>/</c> between
+    /// path segments, as in git's wildmatch. Expectations checked against <c>git check-ignore</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("foo[!x]bar", "foo/bar", false)]
+    [InlineData("foo[^x]bar", "foo/bar", false)]
+    [InlineData("foo[!x]bar", "fooybar", true)]
+    [InlineData("foo[/x]bar", "foo/bar", false)]
+    [InlineData("foo[/x]bar", "fooxbar", true)]
+    public void IsIgnored_CharacterClass_NeverMatchesSlash(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a pattern with an unterminated character class matches nothing, as in
+    /// git, rather than matching a literal <c>[</c>.
+    /// </summary>
+    /// <param name="pattern">A pattern whose <c>[</c> never closes.</param>
+    /// <param name="path">The path the pattern would match if <c>[</c> were literal.</param>
+    [Theory]
+    [InlineData("build[", "build[")]
+    [InlineData("a[]", "a[]")]
+    public void IsIgnored_UnterminatedCharacterClass_MatchesNothing(string pattern, string path)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.False(rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a pattern ending in an unescaped backslash matches nothing, as in git,
+    /// rather than a literal backslash.
+    /// </summary>
+    [Fact]
+    public void IsIgnored_TrailingBackslash_MatchesNothing()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [@"x\"]);
+
+        Assert.False(rules.IsIgnored("x"));
+        Assert.False(rules.IsIgnored(@"x\"));
     }
 
     /// <summary>
