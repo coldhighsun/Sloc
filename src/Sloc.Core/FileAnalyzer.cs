@@ -366,7 +366,10 @@ public sealed class FileAnalyzer
     {
         var decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetDecoder();
         Span<byte> buffer = stackalloc byte[4096];
-        Span<char> chars = stackalloc char[4096];
+        // Sized for the worst case, not buffer.Length: bytes of a multi-byte sequence left
+        // over from the previous window decode together with this one, so a 4-byte sequence
+        // split 3+1 across windows yields one char more than the window holds.
+        Span<char> chars = stackalloc char[Encoding.UTF8.GetMaxCharCount(buffer.Length)];
 
         var isValidUtf8 = true;
         var first = true;

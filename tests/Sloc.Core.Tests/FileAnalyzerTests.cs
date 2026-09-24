@@ -241,6 +241,14 @@ public class FileAnalyzerTests
             { "trailing newline", Encoding.UTF8.GetBytes("a();\n\n") },
             { "lone cr at end", Encoding.UTF8.GetBytes("a();\r") },
             { "empty", [] },
+            // A 4-byte UTF-8 sequence split 3+1 across the streaming path's 4096-byte read
+            // window, followed by a full window of ASCII: the decoder's carried-over bytes
+            // plus the new window decode to 4097 chars, one more than the window size.
+            {
+                "4-byte char split across read window",
+                [.. Encoding.UTF8.GetBytes("// " + new string('a', 4090) + "\U0001F600\n"),
+                 .. Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("x();\n", 1000)))]
+            },
         };
     }
 
