@@ -400,7 +400,9 @@ public sealed class GitSnapshotExtractorTests : IDisposable
         // A file where chunk directory "0" needs to go makes creating it fail.
         File.WriteAllText(Path.Combine(tempRoot, "0"), "blocker");
 
-        Assert.Throws<IOException>(() => new SnapshotFileAllocator(tempRoot).Create("a.c", out _).Dispose());
+        // The exact type is platform-specific: Windows throws IOException, Unix throws its
+        // DirectoryNotFoundException subclass. Callers catch IOException, so either propagates.
+        Assert.ThrowsAny<IOException>(() => new SnapshotFileAllocator(tempRoot).Create("a.c", out _).Dispose());
     }
 
     /// <summary>
