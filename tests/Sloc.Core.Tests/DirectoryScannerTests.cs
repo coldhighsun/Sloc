@@ -525,6 +525,57 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that scanning an explicit single-file path matches a bare file-name glob
+    /// (e.g. <c>*.cs</c>) the same way scanning its parent directory would, for both
+    /// <see cref="ScanOptions.Includes"/> and <see cref="ScanOptions.Excludes"/>.
+    /// </summary>
+    [Fact]
+    public void Scan_SingleFilePath_MatchesFileNameGlob()
+    {
+        var path = Write("sub/foo.cs", "// foo");
+
+        var included = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"] });
+        Assert.Single(included.Files);
+
+        var notIncluded = _scanner.Scan(path, new ScanOptions { Includes = ["*.py"] });
+        Assert.Empty(notIncluded.Files);
+
+        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["*.cs"] });
+        Assert.Empty(excluded.Files);
+
+        var excludedByDirectory = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"], Excludes = ["**/sub/**"] });
+        Assert.Empty(excludedByDirectory.Files);
+    }
+
+    /// <summary>
+    /// Verifies that for a single-file path under the current directory, globs match its
+    /// path relative to the current directory (as a scan of "." would): a directory
+    /// segment written relative to it matches, and a directory above it does not.
+    /// </summary>
+    [Fact]
+    public void Scan_SingleFilePathUnderCwd_MatchesRelativeToCwd()
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        var dirName = "sloc-cwd-" + Guid.NewGuid().ToString("N");
+        var path = Path.Combine(cwd, dirName, "sub", "foo.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "// foo");
+        try
+        {
+            var included = _scanner.Scan(path, new ScanOptions { Includes = [$"{dirName}/sub/*.cs"] });
+            Assert.Single(included.Files);
+
+            // The current directory's own name only appears above it, so it must not exclude.
+            var aboveCwd = _scanner.Scan(path, new ScanOptions { Excludes = [$"**/{Path.GetFileName(cwd)}/**"] });
+            Assert.Single(aboveCwd.Files);
+        }
+        finally
+        {
+            Directory.Delete(Path.Combine(cwd, dirName), recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Verifies that a self-referential directory symlink does not make the scan recurse
     /// forever, and that files behind the loop are not walked through the symlink.
     /// </summary>
