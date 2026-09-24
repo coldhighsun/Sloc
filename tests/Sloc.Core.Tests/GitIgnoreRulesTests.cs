@@ -291,17 +291,20 @@ public class GitIgnoreRulesTests
 
     /// <summary>
     /// Verifies that a leading <c>~</c> in <c>core.excludesFile</c> expands to the user's
-    /// home directory.
+    /// home directory as git resolves it.
     /// </summary>
     [Fact]
     public void TryParseExcludesFile_ExpandsHomeDirectoryTilde()
     {
         var found = GitIgnoreRules.TryParseExcludesFile("[core]\nexcludesFile = ~/.gitignore_global\n", out var path);
 
+        // Git's home directory: $HOME when set, otherwise the user profile.
+        var home = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } envHome
+            ? envHome
+            : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
         Assert.True(found);
-        Assert.Equal(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitignore_global"),
-            path);
+        Assert.Equal(Path.Combine(home, ".gitignore_global"), path);
     }
 
     /// <summary>
@@ -315,11 +318,115 @@ public class GitIgnoreRulesTests
     [InlineData("[core]\nautocrlf = true\n", null)]
     [InlineData("[user]\nexcludesFile = /etc/gitignore\n", null)]
     [InlineData("", null)]
+    [InlineData("[core]\nexcludesFile = \"/etc/git ignore\"\n", "/etc/git ignore")]
+    [InlineData("[core]\nexcludesFile = /etc/gitignore # global ignores\n", "/etc/gitignore")]
+    [InlineData("[core]\nexcludesFile = /etc/gitignore ; global ignores\n", "/etc/gitignore")]
+    [InlineData("[core]\nexcludesFile = \"/etc/a#b\"\n", "/etc/a#b")]
+    [InlineData("[core]\r\nexcludesFile = \"C:\\\\git\\\\ignore\"\r\n", "C:\\git\\ignore")]
+    [InlineData("[core]\nexcludesFile = C:\\Users\\me\\ignore\n", "C:\\Users\\me\\ignore")]
+    [InlineData("[core]\nexcludesFile = C:\\tools\\new\\build\\.gitignore\n", "C:\\tools\\new\\build\\.gitignore")]
+    [InlineData("[core]\nexcludesFile = /a\n[core]\nexcludesFile = /b\n", "/b")]
+    [InlineData("[core] excludesFile = /etc/gitignore\n", "/etc/gitignore")]
+    [InlineData("[core \"sub\"]\nexcludesFile = /etc/gitignore\n", null)]
     public void TryParseExcludesFile_ExtractsCoreSectionSetting(string config, string? expected)
     {
         var found = GitIgnoreRules.TryParseExcludesFile(config, out var path);
 
         Assert.Equal(expected is not null, found);
         Assert.Equal(expected, path);
+    }
+
+    /// <summary>
+    /// Verifies that with no <c>core.excludesFile</c> configured anywhere, the global
+    /// ignore file falls back to git's default, <c>$XDG_CONFIG_HOME/git/ignore</c> (or
+    /// <c>~/.config/git/ignore</c> when <c>XDG_CONFIG_HOME</c> is unset).
+    /// </summary>
+    [Fact]
+    public void ResolveGlobalExcludesFilePath_NothingConfigured_UsesXdgDefault()
+    {
+        var home = CreateTempHome();
+        try
+        {
+            Assert.Equal(
+                Path.Combine(home, ".config", "git", "ignore"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdgConfigHome: null));
+
+            var xdg = Path.Combine(home, "xdg");
+            Assert.Equal(
+                Path.Combine(xdg, "git", "ignore"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdg));
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <c>core.excludesFile</c> is read from the XDG git config, and that
+    /// <c>~/.gitconfig</c>, which git reads after it, overrides it.
+    /// </summary>
+    [Fact]
+    public void ResolveGlobalExcludesFilePath_ReadsXdgConfigThenGitconfig()
+    {
+        var home = CreateTempHome();
+        try
+        {
+            var xdgGit = Path.Combine(home, ".config", "git");
+            Directory.CreateDirectory(xdgGit);
+            File.WriteAllText(Path.Combine(xdgGit, "config"), "[core]\n\texcludesFile = ~/from-xdg\n");
+
+            Assert.Equal(
+                Path.Combine(home, "from-xdg"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdgConfigHome: null));
+
+            File.WriteAllText(Path.Combine(home, ".gitconfig"), "[core]\n\texcludesFile = ~/from-gitconfig\n");
+
+            Assert.Equal(
+                Path.Combine(home, "from-gitconfig"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdgConfigHome: null));
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <c>GIT_CONFIG_GLOBAL</c> replaces both user-level config files, and that
+    /// the repository's own <c>.git/config</c>, which git reads last, overrides them all.
+    /// </summary>
+    [Fact]
+    public void ResolveGlobalExcludesFilePath_HonorsGitConfigGlobalAndRepoConfig()
+    {
+        var home = CreateTempHome();
+        try
+        {
+            File.WriteAllText(Path.Combine(home, ".gitconfig"), "[core]\n\texcludesFile = ~/from-gitconfig\n");
+            var globalConfig = Path.Combine(home, "global-config");
+            File.WriteAllText(globalConfig, "[core]\n\texcludesFile = ~/from-global-env\n");
+
+            Assert.Equal(
+                Path.Combine(home, "from-global-env"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdgConfigHome: null, gitConfigGlobal: globalConfig));
+
+            var repoConfig = Path.Combine(home, "repo-config");
+            File.WriteAllText(repoConfig, "[core]\n\texcludesFile = ~/from-repo\n");
+
+            Assert.Equal(
+                Path.Combine(home, "from-repo"),
+                GitIgnoreRules.ResolveGlobalExcludesFilePath(home, xdgConfigHome: null, gitConfigGlobal: globalConfig, repoConfig));
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    private static string CreateTempHome()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "sloc-home-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(home);
+        return home;
     }
 }

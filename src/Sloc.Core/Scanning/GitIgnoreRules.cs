@@ -204,7 +204,7 @@ public sealed class GitIgnoreRules
         // stable sort (not List<T>.Sort, which isn't stable) is required to preserve this
         // relative order.
         var files = new List<GitIgnoreFile>();
-        AddIfPresent(files, LoadGlobalExcludesFile());
+        AddIfPresent(files, LoadGlobalExcludesFile(fullRoot));
         AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
         files.AddRange(walkedFiles);
 
@@ -230,6 +230,19 @@ public sealed class GitIgnoreRules
     /// <returns><see langword="true"/> if an <c>excludesFile</c> setting was found.</returns>
     internal static bool TryParseExcludesFile(
         string gitConfigContents,
+        [NotNullWhen(true)] out string? excludesFilePath) =>
+        TryParseExcludesFile(gitConfigContents, UserHomeDirectory, out excludesFilePath);
+
+    /// <inheritdoc cref="TryParseExcludesFile(string, out string?)"/>
+    /// <param name="gitConfigContents">The raw contents of a git config file.</param>
+    /// <param name="homeDirectory">The directory a leading <c>~</c> expands to.</param>
+    /// <param name="excludesFilePath">
+    /// The resolved path (with a leading <c>~</c> expanded to <paramref name="homeDirectory"/>),
+    /// if the setting was found. When it is set more than once, the last value wins, as in git.
+    /// </param>
+    internal static bool TryParseExcludesFile(
+        string gitConfigContents,
+        string homeDirectory,
         [NotNullWhen(true)] out string? excludesFilePath)
     {
         excludesFilePath = null;
@@ -237,7 +250,7 @@ public sealed class GitIgnoreRules
 
         foreach (var rawLine in gitConfigContents.Split('\n'))
         {
-            var line = rawLine.Trim().TrimEnd('\r');
+            var line = rawLine.Trim();
             if (line.Length == 0 || line[0] == '#' || line[0] == ';')
             {
                 continue;
@@ -245,9 +258,16 @@ public sealed class GitIgnoreRules
 
             if (line[0] == '[')
             {
-                inCoreSection = line.Equals("[core]", StringComparison.OrdinalIgnoreCase)
-                    || line.StartsWith("[core ", StringComparison.OrdinalIgnoreCase);
-                continue;
+                // Only the plain [core] section; [core "name"] is a different (sub)section.
+                var close = line.IndexOf(']');
+                inCoreSection = close > 0 && line[1..close].Trim().Equals("core", StringComparison.OrdinalIgnoreCase);
+
+                // A setting may follow the section header on the same line.
+                line = close < 0 ? string.Empty : line[(close + 1)..].TrimStart();
+                if (line.Length == 0 || line[0] == '#' || line[0] == ';')
+                {
+                    continue;
+                }
             }
 
             if (!inCoreSection)
@@ -267,19 +287,147 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
-            var value = line[(separator + 1)..].Trim();
+            var value = ParseConfigValue(line[(separator + 1)..]);
             if (value.Length == 0)
             {
                 continue;
             }
 
-            excludesFilePath = value[0] == '~'
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), value[1..].TrimStart('/', '\\'))
+            excludesFilePath = value == "~" || value.StartsWith("~/", StringComparison.Ordinal) || value.StartsWith("~\\", StringComparison.Ordinal)
+                ? Path.Combine(homeDirectory, value[1..].TrimStart('/', '\\'))
                 : value;
-            return true;
         }
 
-        return false;
+        return excludesFilePath is not null;
+    }
+
+    /// <summary>
+    /// Resolves the global ignore file git would use: <c>core.excludesFile</c> from the
+    /// config files git reads, in its order, the last one that sets it winning:
+    /// <c>$XDG_CONFIG_HOME/git/config</c> (default <c>~/.config/git/config</c>) and
+    /// <c>~/.gitconfig</c> (both replaced by <c>$GIT_CONFIG_GLOBAL</c> when that is set),
+    /// then the repository's own <c>.git/config</c>. When none sets it, git's default of
+    /// <c>$XDG_CONFIG_HOME/git/ignore</c> (default <c>~/.config/git/ignore</c>).
+    /// </summary>
+    /// <param name="homeDirectory">The user's home directory, as git resolves it (<c>$HOME</c>).</param>
+    /// <param name="xdgConfigHome">The value of <c>XDG_CONFIG_HOME</c>, if set.</param>
+    /// <param name="gitConfigGlobal">The value of <c>GIT_CONFIG_GLOBAL</c>, if set.</param>
+    /// <param name="repoConfigPath">The repository's <c>.git/config</c> path, if any.</param>
+    /// <returns>The path of the global ignore file, which may not exist.</returns>
+    internal static string ResolveGlobalExcludesFilePath(
+        string homeDirectory,
+        string? xdgConfigHome,
+        string? gitConfigGlobal = null,
+        string? repoConfigPath = null)
+    {
+        var xdgGitDirectory = string.IsNullOrEmpty(xdgConfigHome)
+            ? Path.Combine(homeDirectory, ".config", "git")
+            : Path.Combine(xdgConfigHome, "git");
+
+        List<string> configPaths = string.IsNullOrEmpty(gitConfigGlobal)
+            ? [Path.Combine(xdgGitDirectory, "config"), Path.Combine(homeDirectory, ".gitconfig")]
+            : [gitConfigGlobal];
+        if (repoConfigPath is not null)
+        {
+            configPaths.Add(repoConfigPath);
+        }
+
+        string? excludesFilePath = null;
+        foreach (var configPath in configPaths)
+        {
+            string contents;
+            try
+            {
+                contents = File.ReadAllText(configPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            if (TryParseExcludesFile(contents, homeDirectory, out var configured))
+            {
+                excludesFilePath = configured;
+            }
+        }
+
+        return excludesFilePath ?? Path.Combine(xdgGitDirectory, "ignore");
+    }
+
+    /// <summary>
+    /// The home directory git uses: <c>$HOME</c> when set (Git for Windows honors it too),
+    /// otherwise the user profile directory.
+    /// </summary>
+    private static string UserHomeDirectory =>
+        Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? home
+            : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>
+    /// Decodes a git config value: double quotes are removed (whitespace, <c>#</c>, and
+    /// <c>;</c> inside them are kept), an unquoted <c>#</c> or <c>;</c> starts a comment,
+    /// unquoted leading/trailing whitespace is dropped, and <c>\"</c> and <c>\\</c> are
+    /// unescaped. <c>\n</c>, <c>\t</c>, <c>\b</c> are unescaped only inside quotes; outside
+    /// them, like any other backslash (which git would reject), they are kept as-is, so an
+    /// unquoted Windows path like <c>C:\tools\new\.gitignore</c> still works.
+    /// </summary>
+    private static string ParseConfigValue(string raw)
+    {
+        var sb = new StringBuilder(raw.Length);
+        var inQuotes = false;
+        var keepLength = 0;
+
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+                keepLength = sb.Length;
+                continue;
+            }
+
+            if (!inQuotes && c is '#' or ';')
+            {
+                break;
+            }
+
+            if (c == '\\' && i + 1 < raw.Length)
+            {
+                var next = raw[i + 1];
+                var unescaped = next switch
+                {
+                    '"' or '\\' => next,
+                    'n' when inQuotes => '\n',
+                    't' when inQuotes => '\t',
+                    'b' when inQuotes => '\b',
+                    _ => (char?)null
+                };
+
+                if (unescaped is { } u)
+                {
+                    sb.Append(u);
+                    keepLength = sb.Length;
+                    i++;
+                    continue;
+                }
+            }
+
+            if (!inQuotes && char.IsWhiteSpace(c))
+            {
+                if (sb.Length > 0)
+                {
+                    sb.Append(c);
+                }
+
+                continue;
+            }
+
+            sb.Append(c);
+            keepLength = sb.Length;
+        }
+
+        return sb.ToString(0, keepLength);
     }
 
     private static void AddIfPresent(List<GitIgnoreFile> files, GitIgnoreFile? file)
@@ -291,28 +439,16 @@ public sealed class GitIgnoreRules
     }
 
     /// <summary>
-    /// Loads the user's global <c>core.excludesFile</c>, if <c>~/.gitconfig</c> sets one
-    /// and it exists.
+    /// Loads the user's global ignore file (see <see cref="ResolveGlobalExcludesFilePath"/>),
+    /// if it exists. Like <see cref="LoadRepoExcludeFile"/>, only a <c>.git/config</c> at
+    /// the scan root is consulted.
     /// </summary>
-    private static GitIgnoreFile? LoadGlobalExcludesFile()
-    {
-        var gitConfigPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitconfig");
-
-        string configContents;
-        try
-        {
-            configContents = File.ReadAllText(gitConfigPath);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        return TryParseExcludesFile(configContents, out var excludesFilePath)
-            ? TryLoadIgnoreFile(excludesFilePath)
-            : null;
-    }
+    private static GitIgnoreFile? LoadGlobalExcludesFile(string scanRoot) =>
+        TryLoadIgnoreFile(ResolveGlobalExcludesFilePath(
+            UserHomeDirectory,
+            Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
+            Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL"),
+            Path.Combine(scanRoot, ".git", "config")));
 
     /// <summary>
     /// Loads the repo-local <c>.git/info/exclude</c> file at the scan root, if present.
