@@ -175,12 +175,23 @@ public sealed class DirectoryScanner
 
             if (options.Includes.Count > 0 || options.Excludes.Count > 0)
             {
-                var fileMatcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-                fileMatcher.AddIncludePatterns(options.Includes.Count > 0 ? options.Includes : ["**/*"]);
-                fileMatcher.AddExcludePatterns(options.Excludes);
-                var pathRoot = Path.GetPathRoot(fullPath) ?? string.Empty;
-                var matchTarget = fullPath[pathRoot.Length..].Replace('\\', '/');
-                if (!fileMatcher.Match(matchTarget).HasMatches)
+                // Match both the file name (its path relative to its parent directory, as a
+                // scan of that directory would, so "*.cs" works) and its path relative to the
+                // current directory (as a scan of "." would, so "src/*.cs" works, and a
+                // directory above the current one can't trigger e.g. "**/bin/**"). A file
+                // outside the current directory has no such relative path, so it falls back
+                // to its path with the drive/UNC root stripped, which still lets
+                // directory-segment patterns like "**/sub/*.cs" match it.
+                var relativeToCwd = Path.GetRelativePath(Directory.GetCurrentDirectory(), fullPath);
+                var outsideCwd = Path.IsPathRooted(relativeToCwd)
+                    || relativeToCwd == ".."
+                    || relativeToCwd.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+                var directoryTarget = outsideCwd
+                    ? fullPath[(Path.GetPathRoot(fullPath) ?? string.Empty).Length..]
+                    : relativeToCwd;
+                string[] matchTargets = [fileName, directoryTarget.Replace('\\', '/')];
+                if ((options.Includes.Count > 0 && !AnyGlobMatches(options.Includes, matchTargets))
+                    || (options.Excludes.Count > 0 && AnyGlobMatches(options.Excludes, matchTargets)))
                 {
                     return new ScanResult([], []);
                 }
@@ -324,6 +335,13 @@ public sealed class DirectoryScanner
         }
 
         return new ScanResult(files, skipped);
+    }
+
+    private static bool AnyGlobMatches(IReadOnlyList<string> patterns, IEnumerable<string> paths)
+    {
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        matcher.AddIncludePatterns(patterns);
+        return matcher.Match(paths).HasMatches;
     }
 
     private static bool MatchesLanguageFilter(LanguageDefinition language, ScanOptions options)
