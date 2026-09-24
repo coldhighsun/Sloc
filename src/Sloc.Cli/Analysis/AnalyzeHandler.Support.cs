@@ -54,22 +54,32 @@ public sealed partial class AnalyzeHandler
     /// directories that <see cref="DirectoryScanner"/> always excludes by default, used to
     /// cheaply filter obviously-irrelevant <see cref="FileSystemWatcher"/> events in
     /// <see cref="ExecuteWatch"/> without replaying the scanner's full glob/gitignore logic.
+    /// Only segments below <paramref name="watchRoot"/> are considered, matching how the
+    /// scanner applies those excludes relative to the scan root (so watching e.g.
+    /// <c>~/bin/project</c> still reacts to changes).
     /// </summary>
+    /// <param name="watchRoot">The directory being watched.</param>
     /// <param name="path">The filesystem path reported by a <see cref="FileSystemWatcher"/> event.</param>
-    internal static bool IsInIgnoredDirectory(string path) =>
-        path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+    internal static bool IsInIgnoredDirectory(string watchRoot, string path) =>
+        Path.GetRelativePath(watchRoot, path)
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             .Any(segment => WatchIgnoredDirectoryNames.Contains(segment, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>
     /// Determines <see cref="ExecuteWatch"/>'s exit code once the watch loop ends: the same
     /// <c>--min-comment-pct</c> threshold gate every other code path applies, evaluated
     /// against the last summary the watch loop rendered (or a plain success if the loop
-    /// exited before ever completing a pass).
+    /// exited before ever completing a pass). If the loop's last rescan failed (e.g. the
+    /// watched directory was removed), the last summary is stale, so it reports
+    /// <see cref="ExitCode.Error"/> instead of judging the threshold against it.
     /// </summary>
     /// <param name="options">The parsed options, used for <see cref="AnalyzeOptions.MinCommentPct"/>.</param>
     /// <param name="lastSummary">The last summary the watch loop rendered, or <see langword="null"/> if none.</param>
-    internal static int WatchExitCode(AnalyzeOptions options, AnalysisSummary? lastSummary) =>
-        lastSummary is null ? ExitCode.Success : ThresholdResult(options, lastSummary);
+    /// <param name="lastPassFailed">Whether the watch loop's most recent rescan failed.</param>
+    internal static int WatchExitCode(AnalyzeOptions options, AnalysisSummary? lastSummary, bool lastPassFailed = false) =>
+        lastPassFailed ? ExitCode.Error
+        : lastSummary is null ? ExitCode.Success
+        : ThresholdResult(options, lastSummary);
 
     /// <summary>
     /// Resolves the tool version and display source path, prints the startup banner (Table

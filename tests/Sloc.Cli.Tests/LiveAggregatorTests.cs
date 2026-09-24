@@ -90,6 +90,50 @@ public class LiveAggregatorTests
     }
 
     /// <summary>
+    /// Verifies that <c>top</c> only trims the displayed rows: the overall totals still cover
+    /// every language, matching the final (non-live) summary, whose totals are never
+    /// top-limited either.
+    /// </summary>
+    [Fact]
+    public void ToSummary_TopDoesNotTrimTotals()
+    {
+        var aggregator = new LiveAggregator(LanguageSort.Code, top: 1);
+
+        aggregator.Add(new FileAnalysis { Language = "A", Path = "a", Code = 1, Comment = 2, Blank = 3, Complexity = 4 });
+        aggregator.Add(new FileAnalysis { Language = "B", Path = "b", Code = 10, Comment = 0, Blank = 0, Complexity = 1 });
+
+        var summary = aggregator.ToSummary();
+
+        Assert.Single(summary.ByLanguage);
+        Assert.Equal(2, summary.FileCount);
+        Assert.Equal(11, summary.Code);
+        Assert.Equal(2, summary.Comment);
+        Assert.Equal(3, summary.Blank);
+        Assert.Equal(5, summary.ComplexityTotal);
+    }
+
+    /// <summary>
+    /// Verifies that with <c>unique</c>, a file whose content hash was already added counts
+    /// toward progress but not toward the running totals, matching <c>--unique</c>'s final
+    /// deduplication.
+    /// </summary>
+    [Fact]
+    public void Add_UniqueSkipsDuplicateHashes()
+    {
+        var aggregator = new LiveAggregator(LanguageSort.Total, top: null, unique: true);
+
+        aggregator.Add(new FileAnalysis { Language = "C#", Path = "a.cs", Code = 10, Comment = 0, Blank = 0, Hash = "H1" });
+        aggregator.Add(new FileAnalysis { Language = "C#", Path = "copy.cs", Code = 10, Comment = 0, Blank = 0, Hash = "H1" });
+        aggregator.Add(new FileAnalysis { Language = "C#", Path = "b.cs", Code = 5, Comment = 0, Blank = 0, Hash = "H2" });
+
+        var summary = aggregator.ToSummary();
+
+        Assert.Equal(3, aggregator.FilesProcessed);
+        Assert.Equal(2, summary.FileCount);
+        Assert.Equal(15, summary.Code);
+    }
+
+    /// <summary>
     /// Verifies that an aggregator with no added files reports zero files and no languages.
     /// </summary>
     [Fact]

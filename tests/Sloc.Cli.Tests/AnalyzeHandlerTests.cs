@@ -348,6 +348,25 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--watch</c> on a path that doesn't exist reports a path error
+    /// (<c>ExitCode.Error</c>), the same as a one-shot run, instead of failing with an
+    /// unexpected exception while setting up the file-system watcher.
+    /// </summary>
+    [Fact]
+    public void Execute_Watch_MissingPathReturnsError()
+    {
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "does-not-exist"),
+            Watch = true,
+            Quiet = true,
+            NoUpdateCheck = true
+        });
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
     /// Verifies that a report write failure (e.g. an output directory that doesn't exist)
     /// is reported as <c>ExitCode.Error</c> rather than propagating an unhandled exception.
     /// </summary>

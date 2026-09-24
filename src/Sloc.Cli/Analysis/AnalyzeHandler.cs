@@ -72,29 +72,33 @@ public sealed partial class AnalyzeHandler
 
             var files = scanResult.Files;
             var skipped = new List<SkippedEntry>(scanResult.Skipped);
-            var results = files.Count == 0
-                ? []
-                : AnalyzeWithUi(files, options, skipped, ctx.ShowProgress, ctx.TableRenderer);
 
-            if (gitSnapshot is not null)
+            AnalysisSummary Summarize(List<FileAnalysis> results)
             {
-                var gitPathByTempPath = gitSnapshot.Files.ToDictionary(f => f.TempPath, f => f.GitPath);
-                results = RemapGitPaths(results, gitPathByTempPath);
-                skipped = RemapGitPaths(skipped, gitPathByTempPath);
-                skipped.AddRange(gitSnapshot.Skipped);
+                if (gitSnapshot is not null)
+                {
+                    var gitPathByTempPath = gitSnapshot.Files.ToDictionary(f => f.TempPath, f => f.GitPath);
+                    results = RemapGitPaths(results, gitPathByTempPath);
+                    skipped = RemapGitPaths(skipped, gitPathByTempPath);
+                    skipped.AddRange(gitSnapshot.Skipped);
+                }
+
+                // Diffing needs every language present in either side to compare correctly, so
+                // --top must not truncate the current-side summary when a diff is requested
+                // (matches AnalyzeGitRef's baseline-side summary, which is never top-limited
+                // either); --top is applied here only for a normal (non-diff) render.
+                var isDiffing = options.BaselinePath is not null || options.CompareTo is not null;
+                return new AnalysisSummary(
+                    results,
+                    skipped,
+                    options.Sort,
+                    descending: options.Sort != LanguageSort.Name,
+                    top: isDiffing ? null : options.Top);
             }
 
-            // Diffing needs every language present in either side to compare correctly, so
-            // --top must not truncate the current-side summary when a diff is requested
-            // (matches AnalyzeGitRef's baseline-side summary, which is never top-limited
-            // either); --top is applied here only for a normal (non-diff) render.
-            var isDiffing = options.BaselinePath is not null || options.CompareTo is not null;
-            var summary = new AnalysisSummary(
-                results,
-                skipped,
-                options.Sort,
-                descending: options.Sort != LanguageSort.Name,
-                top: isDiffing ? null : options.Top);
+            var summary = files.Count == 0
+                ? Summarize([])
+                : AnalyzeWithUi(files, options, skipped, ctx.ShowProgress, ctx.TableRenderer, Summarize);
 
             if (options.BaselinePath is { } baselinePath)
             {
@@ -275,7 +279,7 @@ public sealed partial class AnalyzeHandler
     /// <summary>
     /// Runs <see cref="AnalyzeFiles"/> for a one-shot run, wrapped in whichever progress UI
     /// applies: no UI (quiet/redirected/no-progress), a live-refreshed language table (Table
-    /// format, not <c>--by-file</c>, no <c>--baseline</c>) driven by a <see cref="LiveAggregator"/>,
+    /// format, not <c>--by-file</c>, no <c>--baseline</c>/<c>--compare-to</c>) driven by a <see cref="LiveAggregator"/>,
     /// or a plain progress bar otherwise. <paramref name="files"/> is known non-empty; the
     /// empty case is handled by the caller.
     /// </summary>
@@ -284,19 +288,26 @@ public sealed partial class AnalyzeHandler
     /// <param name="skipped">The skipped-entries list per-file failures are appended to.</param>
     /// <param name="showProgress">Whether progress UI may be drawn.</param>
     /// <param name="tableRenderer">The table renderer used to build the live-refreshed language table.</param>
-    private List<FileAnalysis> AnalyzeWithUi(
+    /// <param name="summarize">
+    /// Builds the run's final summary from the analysis results. Called once, before the
+    /// live table's last frame is drawn, so that frame shows exactly that summary.
+    /// </param>
+    private AnalysisSummary AnalyzeWithUi(
         IReadOnlyList<ScannedFile> files,
         AnalyzeOptions options,
         List<SkippedEntry> skipped,
         bool showProgress,
-        TableRenderer tableRenderer)
+        TableRenderer tableRenderer,
+        Func<List<FileAnalysis>, AnalysisSummary> summarize)
     {
         if (!showProgress)
         {
-            return AnalyzeFiles(files, options, skipped);
+            return summarize(AnalyzeFiles(files, options, skipped));
         }
 
-        if (options is not { Format: OutputFormat.Table, ByFile: false, BaselinePath: null })
+        // A diff (--baseline/--compare-to) renders its own table afterwards, so the live
+        // language table would just be left behind above it.
+        if (options is not { Format: OutputFormat.Table, ByFile: false, BaselinePath: null, CompareTo: null })
         {
             var progressResults = new List<FileAnalysis>();
 
@@ -310,11 +321,12 @@ public sealed partial class AnalyzeHandler
                     work.GetAwaiter().GetResult();
                 });
 
-            return progressResults;
+            return summarize(progressResults);
         }
 
-        var aggregator = new LiveAggregator(options.Sort, options.Top);
+        var aggregator = new LiveAggregator(options.Sort, options.Top, unique: options.Unique);
         var results = new List<FileAnalysis>();
+        AnalysisSummary? summary = null;
 
         AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
             .AutoClear(false)
@@ -340,10 +352,16 @@ public sealed partial class AnalyzeHandler
                 }
 
                 work.GetAwaiter().GetResult();
-                ctx.UpdateTarget(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity));
+
+                // The last frame stays on screen as the run's language table (RenderNormal
+                // doesn't draw it again), so draw the run's actual summary rather than the
+                // aggregator's running approximation (e.g. which of --unique's duplicates got
+                // counted can differ, since files finish out of scan order).
+                summary = summarize(results);
+                ctx.UpdateTarget(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth, noComplexity: options.NoComplexity));
             });
 
-        return results;
+        return summary ?? throw new InvalidOperationException("Analysis did not complete.");
     }
 
     /// <summary>
@@ -365,6 +383,13 @@ public sealed partial class AnalyzeHandler
     /// <param name="sourcePath">The resolved source path to surface in the startup banner.</param>
     private int ExecuteWatch(AnalyzeOptions options, ScanOptions scanOptions, TableRenderer tableRenderer, string sourcePath)
     {
+        // Same error a one-shot run reports, before FileSystemWatcher can fail on it instead.
+        if (!Directory.Exists(options.Path) && !File.Exists(options.Path))
+        {
+            Console.Error.WriteLine($"Path not found: {options.Path}");
+            return ExitCode.Error;
+        }
+
         if (!options.Quiet)
         {
             var version = typeof(AnalyzeHandler).Assembly
@@ -389,15 +414,39 @@ public sealed partial class AnalyzeHandler
         Console.CancelKeyPress += OnCancelKeyPress;
 
         AnalysisSummary? lastSummary = null;
+        var lastPassFailed = false;
+        FileSystemWatcher? watcher = null;
 
         try
         {
             var pendingChange = 0;
-            using var watcher = new FileSystemWatcher(watchDir)
+
+            FileSystemWatcher StartWatcher()
             {
-                IncludeSubdirectories = !options.NoRecursive,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
-            };
+                var started = new FileSystemWatcher(watchDir)
+                {
+                    IncludeSubdirectories = !options.NoRecursive,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+                };
+
+                started.Changed += OnChange;
+                started.Created += OnChange;
+                started.Deleted += OnChange;
+                started.Renamed += OnChange;
+                // An internal buffer overflow means events were dropped; rescan to catch up.
+                started.Error += (_, _) => Interlocked.Exchange(ref pendingChange, 1);
+                try
+                {
+                    started.EnableRaisingEvents = true;
+                }
+                catch
+                {
+                    started.Dispose();
+                    throw;
+                }
+
+                return started;
+            }
 
             void OnChange(object sender, FileSystemEventArgs e)
             {
@@ -407,7 +456,7 @@ public sealed partial class AnalyzeHandler
                 // duplicating DirectoryScanner's glob/gitignore matching here); other filtered
                 // files can still trigger a rescan, which is harmless since rescans are
                 // idempotent, just more frequent than the exact watched file set.
-                if (IsInIgnoredDirectory(e.FullPath))
+                if (IsInIgnoredDirectory(watchDir, e.FullPath))
                 {
                     return;
                 }
@@ -415,13 +464,18 @@ public sealed partial class AnalyzeHandler
                 Interlocked.Exchange(ref pendingChange, 1);
             }
 
-            watcher.Changed += OnChange;
-            watcher.Created += OnChange;
-            watcher.Deleted += OnChange;
-            watcher.Renamed += OnChange;
-            watcher.EnableRaisingEvents = true;
+            watcher = StartWatcher();
 
-            lastSummary = RunWatchPass(options, scanOptions);
+            try
+            {
+                lastSummary = RunWatchPass(options, scanOptions);
+            }
+            catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return ExitCode.Error;
+            }
+
             AnsiConsole.Live(tableRenderer.BuildLanguageTable(lastSummary, noHealth: options.NoHealth, noComplexity: options.NoComplexity))
                 .AutoClear(true)
                 .Start(ctx =>
@@ -437,15 +491,60 @@ public sealed partial class AnalyzeHandler
                             break;
                         }
 
+                        // The watched directory was deleted, which leaves its watcher dead:
+                        // poll for it to be recreated, then watch it afresh and rescan.
+                        if (watcher is null)
+                        {
+                            if (!Directory.Exists(watchDir))
+                            {
+                                continue;
+                            }
+
+                            try
+                            {
+                                watcher = StartWatcher();
+                            }
+                            catch (Exception ex) when (ex is ArgumentException or IOException)
+                            {
+                                // Deleted again before it could be watched; keep polling.
+                                continue;
+                            }
+
+                            Interlocked.Exchange(ref pendingChange, 1);
+                        }
+
                         if (Interlocked.Exchange(ref pendingChange, 0) == 0)
                         {
                             continue;
                         }
 
-                        lastSummary = RunWatchPass(options, scanOptions);
+                        string caption;
+                        try
+                        {
+                            lastSummary = RunWatchPass(options, scanOptions);
+                            lastPassFailed = false;
+                            caption = $"[grey]Last update: {DateTime.Now:T}[/]";
+                        }
+                        catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
+                        {
+                            // E.g. the watched directory was deleted or became unreadable:
+                            // keep the last good table on screen instead of ending the watch.
+                            lastPassFailed = true;
+                            if (!Directory.Exists(watchDir))
+                            {
+                                watcher?.Dispose();
+                                watcher = null;
+                                caption = $"[yellow]{Markup.Escape(watchDir)} was removed at {DateTime.Now:T}; waiting for it to reappear.[/]";
+                            }
+                            else
+                            {
+                                caption = $"[yellow]Rescan failed at {DateTime.Now:T}: {Markup.Escape(ex.Message)}[/]";
+                            }
+                        }
+
                         ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
                             lastSummary,
-                            $"[grey]Last update: {DateTime.Now:T}[/]",
+                            caption,
                             noHealth: options.NoHealth,
                             noComplexity: options.NoComplexity));
                     }
@@ -453,10 +552,11 @@ public sealed partial class AnalyzeHandler
         }
         finally
         {
+            watcher?.Dispose();
             Console.CancelKeyPress -= OnCancelKeyPress;
         }
 
-        return WatchExitCode(options, lastSummary);
+        return WatchExitCode(options, lastSummary, lastPassFailed);
 
         void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
         {
