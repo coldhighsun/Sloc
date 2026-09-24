@@ -679,6 +679,57 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(["linked.cs", "real.cs"], followedNames);
     }
 
+    /// <summary>
+    /// Verifies that <see cref="DirectoryScanner.ScanSnapshot"/> given every file of a tree
+    /// (with its root-relative path) keeps exactly the files <see cref="DirectoryScanner.Scan"/>
+    /// keeps for that same tree on disk: root and nested <c>.gitignore</c>/<c>.gitattributes</c>,
+    /// rule files inside a built-in excluded directory, globs, and recursion all agree.
+    /// </summary>
+    /// <param name="variant">Which scan options to compare the two under.</param>
+    [Theory]
+    [InlineData("default")]
+    [InlineData("no-recursive")]
+    [InlineData("include")]
+    [InlineData("include-no-recursive")]
+    [InlineData("exclude")]
+    public void ScanSnapshot_SameTree_KeepsSameFilesAsScan(string variant)
+    {
+        Write("a.cs", "// a");
+        Write("root-ignored.cs", "// ignored by the root .gitignore");
+        Write(".gitignore", "root-ignored.cs\n");
+        Write("sub/b.cs", "// b");
+        Write("sub/nested-ignored.cs", "// ignored by sub/.gitignore");
+        Write("sub/.gitignore", "nested-ignored.cs\n");
+        Write("sub/gen/g.cs", "// generated");
+        Write("sub/.gitattributes", "gen/** linguist-generated\n");
+        Write("bin/c.cs", "// bin");
+        Write("bin/.gitignore", "*\n");
+        Write("vendor/v.cs", "// vendored");
+        Write(".gitattributes", "vendor/** linguist-vendored\n");
+
+        var options = new ScanOptions
+        {
+            RespectGitignore = true,
+            Recursive = variant is not ("no-recursive" or "include-no-recursive"),
+            Includes = variant is "include" or "include-no-recursive" ? ["sub/**"] : [],
+            Excludes = variant == "exclude" ? ["**/gen/**"] : []
+        };
+
+        var scanned = _scanner.Scan(_root, options).Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal);
+
+        SnapshotEntry[] entries =
+        [
+            .. Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories)
+                .Select(path => new SnapshotEntry(path, Relative(path)))
+        ];
+        var snapshot = _scanner.ScanSnapshot(_root, entries, options).Files.Select(f => Relative(f.Path));
+
+        Assert.Equal(scanned, snapshot);
+    }
+
+    private string Relative(string path) =>
+        Path.GetRelativePath(_root, path).Replace('\\', '/');
+
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));

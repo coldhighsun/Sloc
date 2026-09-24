@@ -39,7 +39,9 @@ internal static class ScanTreeWalker
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
         var fullRoot = Path.GetFullPath(root);
-        var normalizedRoot = fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        // Keeps a filesystem root's own separator: trimming "C:\" to "C:" would make it
+        // drive-relative (resolving to the current directory), and "/" would become "".
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(fullRoot);
 
         var gitignoreFiles = new List<GitIgnoreRules.GitIgnoreFile>();
         var attributesFiles = new List<GitAttributesRules.AttributesFile>();
@@ -60,6 +62,20 @@ internal static class ScanTreeWalker
         return new ScanTreeWalkResult(
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, reparsePointFilePaths, skipped);
     }
+
+    /// <summary>
+    /// Whether <see cref="Walk"/> visits the directory at <paramref name="relativeDirectory"/>:
+    /// the root always, and a directory below it only when the walk is recursive and no path
+    /// segment is an excluded directory name. The single source of this policy, used by the
+    /// walk itself and by callers that must apply it to paths not laid out on disk (e.g.
+    /// <see cref="DirectoryScanner.ScanSnapshot"/> choosing which rule files count).
+    /// </summary>
+    /// <param name="relativeDirectory">The <c>/</c>-separated path relative to the walk root, or empty for the root.</param>
+    /// <param name="excludedDirectoryNames">Directory names the walk never descends into.</param>
+    /// <param name="recursive">Whether the walk descends into subdirectories at all.</param>
+    internal static bool Visits(string relativeDirectory, IReadOnlySet<string> excludedDirectoryNames, bool recursive) =>
+        relativeDirectory.Length == 0
+        || (recursive && !relativeDirectory.Split('/').Any(excludedDirectoryNames.Contains));
 
     private static void Collect(
         string directory,
@@ -153,8 +169,8 @@ internal static class ScanTreeWalker
 
         foreach (var subdirectory in subdirectories)
         {
-            var name = Path.GetFileName(subdirectory);
-            if (excludedDirectoryNames.Contains(name))
+            // Each subdirectory is one segment below an already-visited directory.
+            if (!Visits(Path.GetFileName(subdirectory), excludedDirectoryNames, recursive))
             {
                 continue;
             }

@@ -189,18 +189,22 @@ public class LanguageRegistryTests
     }
 
     /// <summary>
-    /// Verifies that extensionless files identified by name (e.g. Makefile, Dockerfile)
-    /// resolve to the correct language, case-insensitively and regardless of directory.
+    /// Verifies that files identified by name (e.g. Makefile, Dockerfile) resolve to the
+    /// correct language regardless of directory, including the alternate spellings the
+    /// owning tool itself accepts (e.g. make's <c>makefile</c>, Docker's <c>dockerfile</c>).
     /// </summary>
     /// <param name="path">A file path to look up.</param>
     /// <param name="expectedName">The expected language name.</param>
     [Theory]
     [InlineData("Makefile", "Makefile")]
+    [InlineData("makefile", "Makefile")]
     [InlineData("src/GNUmakefile", "Makefile")]
     [InlineData("Dockerfile", "Dockerfile")]
+    [InlineData("dockerfile", "Dockerfile")]
     [InlineData("deploy/Containerfile", "Dockerfile")]
     [InlineData("CMakeLists.txt", "CMake")]
     [InlineData("Rakefile", "Ruby")]
+    [InlineData("rakefile", "Ruby")]
     [InlineData("Gemfile", "Ruby")]
     public void TryGetByPath_KnownFilename_ResolvesLanguage(string path, string expectedName)
     {
@@ -208,6 +212,28 @@ public class LanguageRegistryTests
 
         Assert.True(found);
         Assert.Equal(expectedName, language!.Name);
+    }
+
+    /// <summary>
+    /// Verifies that file names match case-insensitively (tools find e.g. <c>DockerFile</c>
+    /// on a case-insensitive filesystem), except Bazel's, which must match exactly: a
+    /// <c>build</c> shell script is not a Bazel <c>BUILD</c> file.
+    /// </summary>
+    /// <param name="path">A file path to look up.</param>
+    /// <param name="expectedName">The expected language name, or <see langword="null"/> if none.</param>
+    [Theory]
+    [InlineData("build", null)]
+    [InlineData("scripts/Build", null)]
+    [InlineData("workspace", null)]
+    [InlineData("DockerFile", "Dockerfile")]
+    [InlineData("gemfile", "Ruby")]
+    [InlineData("CMakelists.txt", "CMake")]
+    public void TryGetByPath_FilenameCasing_OnlyBazelNamesAreCaseSensitive(string path, string? expectedName)
+    {
+        var found = LanguageRegistry.TryGetByPath(path, out var language);
+
+        Assert.Equal(expectedName is not null, found);
+        Assert.Equal(expectedName, language?.Name);
     }
 
     /// <summary>
@@ -263,5 +289,21 @@ public class LanguageRegistryTests
     public void SupportsHealth_MatchesLanguageMetadata(string name, bool expected)
     {
         Assert.Equal(expected, LanguageRegistry.SupportsHealth(name));
+    }
+
+    /// <summary>
+    /// Verifies that every MSBuild project file extension resolves to the same
+    /// "MSBuild script" language, including Visual Basic, F#, and VC++ projects.
+    /// </summary>
+    /// <param name="extension">The project file extension to resolve.</param>
+    [Theory]
+    [InlineData(".csproj")]
+    [InlineData(".vbproj")]
+    [InlineData(".fsproj")]
+    [InlineData(".vcxproj")]
+    public void TryGetByExtension_ProjectFile_ResolvesMsBuildScript(string extension)
+    {
+        Assert.True(LanguageRegistry.TryGetByExtension(extension, out var language));
+        Assert.Equal("MSBuild script", language.Name);
     }
 }

@@ -429,4 +429,21 @@ public class GitIgnoreRulesTests
         Directory.CreateDirectory(home);
         return home;
     }
+
+    /// <summary>
+    /// Verifies that a pattern whose character class can't be translated to a valid regex
+    /// (an empty class, or a reversed range) is skipped rather than throwing, so one
+    /// malformed line doesn't abort the whole scan, and the file's other patterns still apply.
+    /// </summary>
+    [Theory]
+    [InlineData("foo[]")]
+    [InlineData("foo[!]")]
+    [InlineData("foo[z-a]")]
+    public void FromLines_InvalidCharacterClass_SkipsPatternInsteadOfThrowing(string pattern)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern, "*.tmp"]);
+
+        Assert.True(rules.IsIgnored("x.tmp"));
+        Assert.False(rules.IsIgnored("foo.cs"));
+    }
 }

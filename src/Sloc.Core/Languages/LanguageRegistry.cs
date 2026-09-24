@@ -10,7 +10,7 @@ public static class LanguageRegistry
 {
     private static readonly IReadOnlyList<LanguageDefinition> AllLanguages = CreateLanguages();
     private static readonly IReadOnlyDictionary<string, LanguageDefinition> ExtensionLookup = CreateLookup(AllLanguages);
-    private static readonly IReadOnlyDictionary<string, LanguageDefinition> FilenameLookup = CreateFilenameLookup(AllLanguages);
+    private static readonly IReadOnlyDictionary<string, (string Name, LanguageDefinition Language)> FilenameLookup = CreateFilenameLookup(AllLanguages);
     private static readonly IReadOnlyList<(string Suffix, LanguageDefinition Language)> SuffixLookup = CreateSuffixLookup(AllLanguages);
     private static readonly IReadOnlyDictionary<string, bool> HealthSupportByName =
         AllLanguages.ToDictionary(language => language.Name, language => language.SupportsHealth, StringComparer.OrdinalIgnoreCase);
@@ -55,8 +55,10 @@ public static class LanguageRegistry
         var fileName = Path.GetFileName(path);
         if (!string.IsNullOrEmpty(fileName))
         {
-            if (FilenameLookup.TryGetValue(fileName, out language))
+            if (FilenameLookup.TryGetValue(fileName, out var byName)
+                && (!byName.Language.CaseSensitiveFilenames || byName.Name == fileName))
             {
+                language = byName.Language;
                 return true;
             }
 
@@ -123,6 +125,9 @@ public static class LanguageRegistry
             AllowEscape: false,
             CloseDelimiter: "\"",
             DoubledClosingEscape: true);
+        // The "@$" prefix order of an interpolated verbatim string ("$@" already reaches the
+        // "@\"" opener). Without it, "@$\"\"\"…" would open a raw string literal instead.
+        var csInterpolatedVerbatimString = csVerbatimString with { Delimiter = "@$\"" };
         // Rust raw strings (`r"…"` / `r#"…"#`). Delimiters with more than one `#` are not
         // modeled; they are rare in practice and would require a variable-length delimiter.
         var rustRawStringNoHash = new StringLiteral("r\"", Multiline: true, AllowEscape: false);
@@ -133,9 +138,14 @@ public static class LanguageRegistry
             CloseDelimiter: "\"#");
 
         // Shared simplified cyclomatic-complexity keyword sets: branch points that add a
-        // decision point to a function's control flow. "else if"/"elif" are not listed
-        // separately since the shared "if" token already matches inside them.
+        // decision point to a function's control flow. "else if" is not listed separately
+        // since the shared "if" token already matches inside it, but single-word forms such
+        // as "elif", "elsif", "elseif", and "foreach" must be listed on their own: alphabetic
+        // tokens only match as whole words. "?:" only matches that literal token (e.g. PHP's
+        // and Groovy's shorthand/Elvis operator), not a spaced-out "a ? b : c" ternary.
         string[] cStyleComplexity = ["if", "for", "while", "case", "catch", "&&", "||", "?:"];
+        string[] csharpComplexity = [.. cStyleComplexity, "foreach"];
+        string[] phpComplexity = [.. cStyleComplexity, "foreach", "elseif"];
         string[] cComplexity = ["if", "for", "while", "case", "&&", "||", "?:"];
         string[] pythonComplexity = ["if", "elif", "for", "while", "except", "and", "or"];
         string[] rubyComplexity = ["if", "elsif", "for", "while", "case", "rescue", "&&", "||"];
@@ -149,8 +159,11 @@ public static class LanguageRegistry
                 Extensions = [".cs", ".csx"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [csVerbatimString, doubleQuote, singleQuote],
-                ComplexityKeywords = cStyleComplexity
+                // rawTripleDouble covers C# 11 raw string literals ("""…""", also $"""…""").
+                // Delimiters of four or more quotes are not modeled; like Rust's multi-hash
+                // raw strings, they would require a variable-length delimiter.
+                StringLiterals = [csVerbatimString, csInterpolatedVerbatimString, rawTripleDouble, doubleQuote, singleQuote],
+                ComplexityKeywords = csharpComplexity
             },
             new()
             {
@@ -176,7 +189,8 @@ public static class LanguageRegistry
                 Extensions = [".java"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote],
+                // Text blocks ("""…""") support a backslash escape, including \""".
+                StringLiterals = [escapedTripleDouble, doubleQuote, singleQuote],
                 ComplexityKeywords = cStyleComplexity
             },
             new()
@@ -250,7 +264,7 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//", "#"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote],
-                ComplexityKeywords = cStyleComplexity
+                ComplexityKeywords = phpComplexity
             },
             new()
             {
@@ -329,7 +343,7 @@ public static class LanguageRegistry
             new()
             {
                 Name = "XML",
-                Extensions = [".xml", ".xaml", ".vbproj", ".props", ".targets", ".config", ".resx"],
+                Extensions = [".xml", ".xaml", ".props", ".targets", ".config", ".resx"],
                 BlockComments = [htmlBlock],
                 ShowHealth = false
             },
@@ -615,6 +629,8 @@ public static class LanguageRegistry
                 Name = "Bazel/Starlark",
                 Extensions = [".bzl"],
                 Filenames = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel"],
+                // "build"/"workspace" are common names for unrelated scripts and directories.
+                CaseSensitiveFilenames = true,
                 LineCommentTokens = ["#"],
                 StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
             },
@@ -661,7 +677,7 @@ public static class LanguageRegistry
             new()
             {
                 Name = "MSBuild script",
-                Extensions = [".csproj", ".wdproj", ".vcproj", ".wixproj", ".btproj", ".msbuild"],
+                Extensions = [".csproj", ".vbproj", ".fsproj", ".vcxproj", ".wdproj", ".vcproj", ".wixproj", ".btproj", ".msbuild"],
                 BlockComments = [htmlBlock],
                 ShowHealth = false
             },
@@ -671,7 +687,7 @@ public static class LanguageRegistry
                 FilenameSuffixes = [".designer.cs"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [csVerbatimString, doubleQuote, singleQuote],
+                StringLiterals = [csVerbatimString, csInterpolatedVerbatimString, rawTripleDouble, doubleQuote, singleQuote],
                 ShowHealth = false
             },
             new()
@@ -697,14 +713,17 @@ public static class LanguageRegistry
         return lookup;
     }
 
-    private static IReadOnlyDictionary<string, LanguageDefinition> CreateFilenameLookup(IReadOnlyList<LanguageDefinition> languages)
+    private static IReadOnlyDictionary<string, (string Name, LanguageDefinition Language)> CreateFilenameLookup(IReadOnlyList<LanguageDefinition> languages)
     {
-        var lookup = new Dictionary<string, LanguageDefinition>(StringComparer.OrdinalIgnoreCase);
+        // Ignore-case, since tools find e.g. "DockerFile" on a case-insensitive filesystem;
+        // the listed spelling is kept so TryGetByPath can require an exact match for a
+        // language with CaseSensitiveFilenames.
+        var lookup = new Dictionary<string, (string Name, LanguageDefinition Language)>(StringComparer.OrdinalIgnoreCase);
         foreach (var language in languages)
         {
             foreach (var fileName in language.Filenames)
             {
-                lookup[fileName] = language;
+                lookup[fileName] = (fileName, language);
             }
         }
 

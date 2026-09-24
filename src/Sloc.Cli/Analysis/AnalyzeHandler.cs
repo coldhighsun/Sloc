@@ -262,7 +262,31 @@ public sealed partial class AnalyzeHandler
             skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
         }
 
-        var scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
+        ScanResult scanResult;
+        if (options.GitHash is not null)
+        {
+            // Both sides are git snapshots analyzed the same way (no directory filtering).
+            scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
+        }
+        else if (File.Exists(repoPath))
+        {
+            // A single file: filtered by the same single-file rules the current side's Scan applied.
+            scanResult = filesInScope.Count == 0
+                ? new ScanResult([], [])
+                : _scanner.ScanSnapshotFile(repoPath, filesInScope[0].TempPath, scanOptions);
+        }
+        else
+        {
+            // The current side is a filtered directory scan, so the baseline must be filtered
+            // the same way (globs, built-in excludes, .gitignore/.gitattributes, recursion),
+            // or anything those filters exclude would show up as a spurious delta.
+            var prefixLength = snapshot.RelativePrefix.Length == 0 ? 0 : snapshot.RelativePrefix.Length + 1;
+            scanResult = _scanner.ScanSnapshot(
+                repoPath,
+                [.. filesInScope.Select(f => new SnapshotEntry(f.TempPath, f.GitPath[prefixLength..]))],
+                scanOptions);
+        }
+
         var skipped = new List<SkippedEntry>(scanResult.Skipped);
         var results = AnalyzeFiles(scanResult.Files, options, skipped);
 

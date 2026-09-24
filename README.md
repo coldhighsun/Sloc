@@ -178,7 +178,7 @@ sloc . --format markdown --detailed -o -
 | `--git-hash` | | Analyze the repository tree as of this commit/tree-ish, without checking it out; `path` is used as the repo root; requires `git` on `PATH`; symlinked and submodule tree entries are skipped; `--include`/`--exclude`, `--no-recursive`, `--follow-symlinks`, `--no-gitignore`, and `--no-gitattributes` have no effect in this mode; mutually exclusive with `--list-file` |
 | `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors is still skipped |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
-| `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
+| `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; `path` may be a directory or a single file; the commit's files are filtered the same way as the working tree (`--include`/`--exclude`, `.gitignore`, `.gitattributes`, …) so unchanged files diff to zero; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, `Name`, or `CommentPct` |
 | `--top` | | Show only the top N languages in the summary |
 | `--no-update-check` | | Do not check GitHub for a newer release (checked by default, with a 2 second timeout) |
@@ -242,7 +242,7 @@ sloc ./src
 ## Known Limitations
 
 - Line classification is based on text matching of comment symbols, not a full lexer.
-- String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled, including C# verbatim strings (`@"…""…"`) and Rust raw strings (`r"…"`, `r#"…"#`). Rust raw strings with more than one `#` are not modeled, and interpolation expressions inside strings are not analyzed.
+- String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled, including C# verbatim strings (`@"…""…"`), C# raw string literals and Java text blocks (`"""…"""`), and Rust raw strings (`r"…"`, `r#"…"#`). Rust raw strings with more than one `#` and C# raw strings delimited by four or more quotes are not modeled, and interpolation expressions inside strings are not analyzed.
 - Python triple-quoted strings are counted as comments only when they begin a statement (docstrings); used as a value (e.g. `x = """…"""`) they are counted as code.
 
 ## License
@@ -415,7 +415,7 @@ sloc . --format markdown --detailed -o -
 | `--git-hash` | | 分析仓库在该 commit/tree-ish 时的树状态,无需检出;`path` 作为仓库根目录;需要 `git` 在 `PATH` 中;符号链接与子模块条目会被跳过;此模式下 `--include`/`--exclude`、`--no-recursive`、`--follow-symlinks`、`--no-gitignore`、`--no-gitattributes` 均不生效;与 `--list-file` 互斥 |
 | `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录的循环链接目录仍会被跳过 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
-| `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
+| `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;`path` 可以是目录或单个文件;该 commit 的文件会按与工作区相同的规则过滤(`--include`/`--exclude`、`.gitignore`、`.gitattributes` 等),未改动的文件差异为零;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files`、`Name` 或 `CommentPct` |
 | `--top` | | 仅显示汇总中排名前 N 的语言 |
 | `--no-update-check` | | 不检查 GitHub 上是否有新版本(默认检查,超时时间为 2 秒) |
@@ -479,7 +479,7 @@ sloc ./src
 ## 已知限制
 
 - 行的分类基于注释符号的文本匹配，不是完整的词法分析器。
-- 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理，包括 C# 逐字字符串（`@"…""…"`）和 Rust 原始字符串（`r"…"`、`r#"…"#`）。带多个 `#` 的 Rust 原始字符串暂不支持，字符串内的插值表达式也不做分析。
+- 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理，包括 C# 逐字字符串（`@"…""…"`）、C# 原始字符串与 Java 文本块（`"""…"""`）以及 Rust 原始字符串（`r"…"`、`r#"…"#`）。带多个 `#` 的 Rust 原始字符串和以四个及以上引号定界的 C# 原始字符串暂不支持，字符串内的插值表达式也不做分析。
 - Python 三引号字符串仅在作为语句开头（docstring）时计为注释；作为值使用时（例如 `x = """…"""`）计为代码。
 
 ## 许可证

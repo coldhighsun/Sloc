@@ -101,4 +101,21 @@ public class GitAttributesRulesTests
         Assert.True(rules.IsVendoredOrGenerated("vendor/lib.js"));
         Assert.False(rules.IsVendoredOrGenerated("vendor/keep.js"));
     }
+
+    /// <summary>
+    /// Verifies that a pattern whose character class can't be translated to a valid regex
+    /// is skipped rather than throwing, and the file's other patterns still apply.
+    /// </summary>
+    [Fact]
+    public void FromLines_InvalidCharacterClass_SkipsPatternInsteadOfThrowing()
+    {
+        var rules = GitAttributesRules.FromLines(string.Empty,
+        [
+            "gen[z-a].cs linguist-generated",
+            "vendor/** linguist-vendored"
+        ]);
+
+        Assert.True(rules.IsVendoredOrGenerated("vendor/lib.js"));
+        Assert.False(rules.IsVendoredOrGenerated("src/app.cs"));
+    }
 }

@@ -107,11 +107,21 @@ public sealed class LanguageDefinition
     } = [];
 
     /// <summary>
-    /// The exact file names (case-insensitive, no extension) that map to this language,
-    /// for files identified by name rather than extension (e.g. <c>Makefile</c>,
-    /// <c>Dockerfile</c>, <c>CMakeLists.txt</c>).
+    /// The exact file names that map to this language, for files identified by name rather
+    /// than extension (e.g. <c>Makefile</c>, <c>Dockerfile</c>, <c>CMakeLists.txt</c>).
+    /// Matched case-insensitively unless <see cref="CaseSensitiveFilenames"/> is set.
+    /// Checked before <see cref="FilenameSuffixes"/> and <see cref="Extensions"/>.
     /// </summary>
     public IReadOnlyList<string> Filenames { get; init; } = [];
+
+    /// <summary>
+    /// Whether <see cref="Filenames"/> must match exactly, including case, as with Bazel's
+    /// <c>BUILD</c>, whose lower-case spelling is a common name for unrelated build scripts.
+    /// </summary>
+    public bool CaseSensitiveFilenames
+    {
+        get; init;
+    }
 
     /// <summary>
     /// The file name suffixes (case-insensitive, with leading dot, e.g. <c>.designer.cs</c>)

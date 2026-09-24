@@ -241,4 +241,18 @@ public class SymlinkGuardTests
             return false;
         }
     }
+
+    /// <summary>
+    /// Verifies that a filesystem root (which keeps its trailing separator, e.g. <c>C:\</c>
+    /// or <c>/</c>) is recognized as the ancestor of paths below it.
+    /// </summary>
+    [Fact]
+    public void IsAncestorOrSelf_FilesystemRoot_ReturnsTrueForNestedPath()
+    {
+        var root = Path.GetPathRoot(Path.GetTempPath())!;
+        var nested = Path.Combine(root, "repo", "src");
+
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(root, nested));
+        Assert.True(SymlinkGuard.IsAncestorOrSelf(root, root));
+    }
 }

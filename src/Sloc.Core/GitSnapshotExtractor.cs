@@ -19,9 +19,9 @@ public sealed record GitSnapshotFile(string TempPath, string GitPath);
 /// </summary>
 /// <param name="TempRoot">The temporary directory the blobs were dumped into.</param>
 /// <param name="RelativePrefix">
-/// The repo-root-relative, forward-slash path of the directory <c>repoPathHint</c> pointed
-/// at, as resolved by <c>git rev-parse --show-prefix</c> (empty when it was the repo root
-/// itself). Resolving this via git rather than comparing filesystem paths in .NET avoids
+/// The repo-root-relative, forward-slash path of the directory (or file) <c>repoPathHint</c>
+/// pointed at, as resolved by <c>git rev-parse --show-prefix</c> (empty when it was the repo
+/// root itself; for a file, its directory's prefix plus the file name). Resolving this via git rather than comparing filesystem paths in .NET avoids
 /// mismatches when the hint path and the repo root differ only by an unresolved symlink
 /// (e.g. macOS's <c>/var/folders/...</c> vs. its <c>/private/var/folders/...</c> real path).
 /// Lets a caller that was given a subdirectory of the repo filter <see cref="Files"/> to it.
@@ -103,7 +103,28 @@ public sealed class GitSnapshotExtractor
         ArgumentNullException.ThrowIfNull(repoPathHint);
         ArgumentNullException.ThrowIfNull(commitHash);
 
-        var repoRoot = RunGit(repoPathHint, ["rev-parse", "--show-toplevel"]).Trim();
+        // git needs a directory to run in: a file hint runs from its parent directory and
+        // scopes RelativePrefix to the file itself. A missing path is reported as such up
+        // front, since starting git in it would otherwise fail with a confusing process-start
+        // error (on Unix, the same "not found" errno as git itself missing from PATH).
+        string hintDirectory;
+        string? hintFileName = null;
+        if (Directory.Exists(repoPathHint))
+        {
+            hintDirectory = repoPathHint;
+        }
+        else if (File.Exists(repoPathHint))
+        {
+            var fullHint = Path.GetFullPath(repoPathHint);
+            hintDirectory = Path.GetDirectoryName(fullHint) ?? fullHint;
+            hintFileName = Path.GetFileName(fullHint);
+        }
+        else
+        {
+            throw new GitSnapshotException($"Path not found: {repoPathHint}");
+        }
+
+        var repoRoot = RunGit(hintDirectory, ["rev-parse", "--show-toplevel"]).Trim();
         // A "--" separator would stop git from resolving this as a revision at all (rev-parse
         // then treats it as a pathspec, and "--verify" fails outright), so reject a leading
         // "-" up front instead: no valid commit-ish (SHA, branch, or tag) can start with one
@@ -117,7 +138,11 @@ public sealed class GitSnapshotExtractor
         var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{commitHash}^{{tree}}"]).Trim();
         // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
         // "prefix/" (an empty result means repoPathHint was the repo root itself).
-        var relativePrefix = RunGit(repoPathHint, ["rev-parse", "--show-prefix"]).Trim().TrimEnd('/');
+        var relativePrefix = RunGit(hintDirectory, ["rev-parse", "--show-prefix"]).Trim().TrimEnd('/');
+        if (hintFileName is not null)
+        {
+            relativePrefix = relativePrefix.Length == 0 ? hintFileName : relativePrefix + "/" + hintFileName;
+        }
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "sloc-git-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -125,6 +150,18 @@ public sealed class GitSnapshotExtractor
         try
         {
             var (blobsToExtract, skipped) = ListTree(repoRoot, treeHash);
+
+            // On a case-insensitive filesystem a file hint can name the file in a different
+            // case than git recorded (e.g. "fileanalyzer.cs" for "FileAnalyzer.cs"); use git's
+            // spelling so callers can match RelativePrefix against git paths exactly.
+            if (hintFileName is not null
+                && !blobsToExtract.Exists(blob => blob.GitPath == relativePrefix)
+                && blobsToExtract.Find(blob => string.Equals(blob.GitPath, relativePrefix, StringComparison.OrdinalIgnoreCase))
+                    is { GitPath: { } trackedPath })
+            {
+                relativePrefix = trackedPath;
+            }
+
             var files = ExtractBlobs(repoRoot, tempRoot, blobsToExtract, skipped, cancellationToken);
             return new GitSnapshot(tempRoot, relativePrefix, files, skipped);
         }

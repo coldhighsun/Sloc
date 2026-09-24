@@ -50,7 +50,7 @@ internal static class SymlinkGuard
             return new Resolution(Resolved: false, Target: null, IsLoop: false);
         }
 
-        target = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        target = Path.TrimEndingDirectorySeparator(target);
         var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(ancestor, target));
         return new Resolution(Resolved: true, Target: target, IsLoop: isLoop);
     }
@@ -61,8 +61,16 @@ internal static class SymlinkGuard
     /// </summary>
     public static bool IsAncestorOrSelf(string ancestor, string path)
     {
-        var normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.Equals(ancestor, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        var normalizedPath = Path.TrimEndingDirectorySeparator(path);
+        var normalizedAncestor = Path.TrimEndingDirectorySeparator(ancestor);
+
+        // A filesystem root (e.g. "C:\" or "/") keeps its trailing separator, so it
+        // already ends with the separator a nested path continues with.
+        var ancestorPrefix = Path.EndsInDirectorySeparator(normalizedAncestor)
+            ? normalizedAncestor
+            : normalizedAncestor + Path.DirectorySeparatorChar;
+
+        return normalizedPath.Equals(normalizedAncestor, StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.StartsWith(ancestorPrefix, StringComparison.OrdinalIgnoreCase);
     }
 }

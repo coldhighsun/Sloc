@@ -118,8 +118,9 @@ public sealed partial class AnalyzeHandler
 
         // Start the update check concurrently with the scan/analysis so a slow network
         // never delays the actual work. It is awaited and reported at the end of the run.
+        // A --watch run never reaches that end-of-run report, so it isn't started there.
         Task<UpdateCheckResult?>? updateCheck = null;
-        if (!options.NoUpdateCheck && !options.Quiet && !string.IsNullOrEmpty(version))
+        if (!options.NoUpdateCheck && !options.Quiet && !options.Watch && !string.IsNullOrEmpty(version))
         {
             updateCheck = new UpdateChecker()
                 .CheckForUpdateAsync(version, TimeSpan.FromSeconds(2), CancellationToken.None);
