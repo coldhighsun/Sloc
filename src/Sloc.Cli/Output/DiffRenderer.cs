@@ -12,6 +12,13 @@ namespace Sloc.Cli.Output;
 internal static class DiffRenderer
 {
     /// <summary>
+    /// The row label for languages diffed as one group against a <c>--top</c>-truncated
+    /// baseline's unlisted remainder. Parenthesized so it can't collide with a real language
+    /// name (including <c>Other</c>, the <c>--all</c> group).
+    /// </summary>
+    internal const string OtherLanguagesLabel = "(other languages)";
+
+    /// <summary>
     /// Loads a baseline report previously produced by <see cref="JsonRenderer"/>.
     /// </summary>
     /// <param name="path">The path to the baseline JSON file.</param>
@@ -179,19 +186,27 @@ internal static class DiffRenderer
     private static Deltas Compute(AnalysisSummary current, JsonReport baseline) =>
         Compute(
             current,
-            ResolveBaselineLanguages(baseline).Select(language => (language.Language, language.Code, language.Comment, language.Blank, language.Total)),
-            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total);
+            ResolveBaselineLanguages(baseline, out var remainder).Select(language => (language.Language, language.Code, language.Comment, language.Blank, language.Total)),
+            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total,
+            remainder);
 
     private static Deltas Compute(AnalysisSummary current, AnalysisSummary baseline) =>
         Compute(
             current,
             baseline.ByLanguage.Select(language => (language.Language, language.Code, language.Comment, language.Blank, language.Total)),
-            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total);
+            baseline.Code, baseline.Comment, baseline.Blank, baseline.Total,
+            baselineRemainder: null);
 
+    // baselineRemainder: the baseline's lines not covered by baselineLanguages (a report saved
+    // with --top), or null when that breakdown is complete. When set, current languages
+    // missing from the baseline can't be told apart from languages that were merely cut off,
+    // so they are diffed together against the remainder in a single OtherLanguagesLabel row
+    // instead of being reported as entirely new.
     private static Deltas Compute(
         AnalysisSummary current,
         IEnumerable<(string Language, int Code, int Comment, int Blank, int Total)> baselineLanguages,
-        int baselineCode, int baselineComment, int baselineBlank, int baselineTotal)
+        int baselineCode, int baselineComment, int baselineBlank, int baselineTotal,
+        LanguageDelta? baselineRemainder)
     {
         // Built manually (last entry wins) instead of ToDictionary: a baseline JSON file may
         // be hand-edited or produced by another tool/version and contain two language
@@ -205,11 +220,21 @@ internal static class DiffRenderer
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var languages = new List<LanguageDelta>();
+        int otherCode = 0, otherComment = 0, otherBlank = 0, otherTotal = 0;
 
         foreach (var language in current.ByLanguage)
         {
             var hasPrevious = baseByLanguage.TryGetValue(language.Language, out var previous);
             seen.Add(language.Language);
+            if (!hasPrevious && baselineRemainder is not null)
+            {
+                otherCode += language.Code;
+                otherComment += language.Comment;
+                otherBlank += language.Blank;
+                otherTotal += language.Total;
+                continue;
+            }
+
             languages.Add(new LanguageDelta(
                 language.Language,
                 language.Code - (hasPrevious ? previous.Code : 0),
@@ -234,6 +259,16 @@ internal static class DiffRenderer
                 -previous.Total));
         }
 
+        if (baselineRemainder is not null)
+        {
+            languages.Add(new LanguageDelta(
+                OtherLanguagesLabel,
+                otherCode - baselineRemainder.Code,
+                otherComment - baselineRemainder.Comment,
+                otherBlank - baselineRemainder.Blank,
+                otherTotal - baselineRemainder.Total));
+        }
+
         var total = new LanguageDelta(
             "Total",
             current.Code - baselineCode,
@@ -246,17 +281,42 @@ internal static class DiffRenderer
 
     /// <summary>
     /// Resolves the per-language breakdown of a baseline report. Reports saved with
-    /// <c>--by-file</c> have no <see cref="JsonReport.ByLanguage"/>; in that case the
-    /// breakdown is reconstructed by aggregating the per-file entries so language deltas
-    /// stay correct.
+    /// <c>--by-file</c> have no <see cref="JsonReport.ByLanguage"/>, and reports saved with
+    /// <c>--top</c> list only some languages; in either case the breakdown is reconstructed
+    /// by aggregating the per-file entries when the report has them, so language deltas stay
+    /// correct.
     /// </summary>
     /// <param name="baseline">The baseline report.</param>
+    /// <param name="remainder">
+    /// When the report is marked <see cref="JsonReport.ByLanguageTruncated"/> and has no
+    /// per-file entries to rebuild its languages from, receives the lines of the unlisted
+    /// languages; otherwise <see langword="null"/>.
+    /// </param>
     /// <returns>The per-language statistics of the baseline.</returns>
-    private static IReadOnlyList<JsonLanguage> ResolveBaselineLanguages(JsonReport baseline)
+    private static IReadOnlyList<JsonLanguage> ResolveBaselineLanguages(JsonReport baseline, out LanguageDelta? remainder)
     {
-        if (baseline.ByLanguage is { Count: > 0 })
+        remainder = null;
+
+        if (baseline.ByLanguage is { Count: > 0 } byLanguage)
         {
-            return baseline.ByLanguage;
+            // Only a report that says it was cut short by --top is treated as partial; a
+            // report whose totals merely don't reconcile (hand-edited, another tool) is taken
+            // at face value rather than guessed at.
+            if (baseline.ByLanguageTruncated != true)
+            {
+                return byLanguage;
+            }
+
+            if (baseline.Files is not { Count: > 0 })
+            {
+                remainder = new LanguageDelta(
+                    OtherLanguagesLabel,
+                    baseline.Code - byLanguage.Sum(language => language.Code),
+                    baseline.Comment - byLanguage.Sum(language => language.Comment),
+                    baseline.Blank - byLanguage.Sum(language => language.Blank),
+                    baseline.Total - byLanguage.Sum(language => language.Total));
+                return byLanguage;
+            }
         }
 
         if (baseline.Files is not { Count: > 0 })

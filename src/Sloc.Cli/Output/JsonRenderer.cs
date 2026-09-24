@@ -64,6 +64,8 @@ public sealed class JsonRenderer : IResultRenderer
                 Health = Health(language.Health, noHealth),
                 Complexity = noComplexity ? null : language.ComplexityTotal
             }).ToList(),
+            // Recorded so a --baseline diff knows the breakdown is partial (see DiffRenderer).
+            ByLanguageTruncated = includeLanguages && summary.ByLanguageTruncated ? true : null,
             Files = includeFiles
                 ? summary.Files.Select(file => new JsonFile
                 {
@@ -235,6 +237,15 @@ internal sealed class JsonReport
     }
 
     public IReadOnlyList<JsonLanguage>? ByLanguage
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// <see langword="true"/> when <see cref="ByLanguage"/> was cut short by <c>--top</c>, so
+    /// it doesn't list every language the totals cover. Omitted otherwise.
+    /// </summary>
+    public bool? ByLanguageTruncated
     {
         get; init;
     }

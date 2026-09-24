@@ -191,9 +191,11 @@ public sealed class AnalysisSummary
                 ComplexityTotal = LanguageRegistry.SupportsComplexity(group.Key)
                     ? group.Sum(file => file.Complexity ?? 0)
                     : null
-            });
+            })
+            .ToList();
 
         ByLanguage = OrderAndLimit(grouped, sortBy, descending, top);
+        ByLanguageTruncated = ByLanguage.Count < grouped.Count;
     }
 
     /// <summary>
@@ -263,10 +265,19 @@ public sealed class AnalysisSummary
     /// per-file results. Intended for live/progress displays where re-aggregating every
     /// file on each refresh would be wasteful; <see cref="Files"/> is empty.
     /// </summary>
-    /// <param name="byLanguage">The pre-aggregated per-language statistics.</param>
+    /// <param name="byLanguage">The pre-aggregated per-language statistics, already ordered.</param>
     /// <param name="fileCount">The number of files represented by the aggregates.</param>
     /// <param name="skipped">Entries that were skipped due to read errors.</param>
-    public AnalysisSummary(IReadOnlyList<LanguageStatistics> byLanguage, int fileCount, IReadOnlyList<SkippedEntry>? skipped = null)
+    /// <param name="top">
+    /// When set to 1 or greater, keeps only the first this-many entries of
+    /// <paramref name="byLanguage"/> in <see cref="ByLanguage"/>. The overall totals still
+    /// cover every entry, the same as the per-file constructor's <c>top</c>.
+    /// </param>
+    public AnalysisSummary(
+        IReadOnlyList<LanguageStatistics> byLanguage,
+        int fileCount,
+        IReadOnlyList<SkippedEntry>? skipped = null,
+        int? top = null)
     {
         ArgumentNullException.ThrowIfNull(byLanguage);
 
@@ -295,7 +306,19 @@ public sealed class AnalysisSummary
         Comment = comment;
         Blank = blank;
         ComplexityTotal = hasComplexitySupport ? complexityTotal : null;
-        ByLanguage = byLanguage;
+        ByLanguage = top is { } limit && limit >= 1 && limit < byLanguage.Count
+            ? byLanguage.Take(limit).ToList()
+            : byLanguage;
+        ByLanguageTruncated = ByLanguage.Count < byLanguage.Count;
+    }
+
+    /// <summary>
+    /// Whether <see cref="ByLanguage"/> was cut short by a <c>top</c> limit, so it doesn't
+    /// list every language the overall totals cover.
+    /// </summary>
+    public bool ByLanguageTruncated
+    {
+        get;
     }
 
     /// <summary>
