@@ -218,29 +218,40 @@ public sealed class FileAnalyzer
         // One spare byte so a file that grew since Length was read is detected rather
         // than silently truncated.
         var buffer = ArrayPool<byte>.Shared.Rent((int)stream.Length + 1);
-        var total = 0;
-        int read;
-        while ((read = stream.Read(buffer, total, buffer.Length - total)) > 0)
+        var owns = false;
+        try
         {
-            total += read;
-            if (total == buffer.Length)
+            var total = 0;
+            int read;
+            while ((read = stream.Read(buffer, total, buffer.Length - total)) > 0)
             {
-                if (total > maxBytes)
+                total += read;
+                if (total == buffer.Length)
                 {
-                    ArrayPool<byte>.Shared.Return(buffer);
-                    return false;
-                }
+                    if (total > maxBytes)
+                    {
+                        return false;
+                    }
 
-                var larger = ArrayPool<byte>.Shared.Rent(Math.Min(buffer.Length * 2, maxBytes + 1));
-                buffer.AsSpan(0, total).CopyTo(larger);
+                    var larger = ArrayPool<byte>.Shared.Rent(Math.Min(buffer.Length * 2, maxBytes + 1));
+                    buffer.AsSpan(0, total).CopyTo(larger);
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = larger;
+                }
+            }
+
+            rented = buffer;
+            length = total;
+            owns = true;
+            return true;
+        }
+        finally
+        {
+            if (!owns)
+            {
                 ArrayPool<byte>.Shared.Return(buffer);
-                buffer = larger;
             }
         }
-
-        rented = buffer;
-        length = total;
-        return true;
     }
 
     private static Encoding? DetectBomEncoding(ReadOnlySpan<byte> bytes, out int bomLength)
