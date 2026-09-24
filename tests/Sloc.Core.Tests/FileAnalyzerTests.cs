@@ -257,7 +257,10 @@ public class FileAnalyzerTests
         try
         {
             var inMemory = new FileAnalyzer().Analyze(path, CSharp, computeHash: true);
-            var streamed = new FileAnalyzer { InMemoryThreshold = 0 }.Analyze(path, CSharp, computeHash: true);
+            // -1 (not 0) so a zero-byte file is still forced onto the streaming path: TryReadAll
+            // treats "at most 0 bytes" as satisfied by an empty file and would otherwise take the
+            // in-memory path regardless of the threshold.
+            var streamed = new FileAnalyzer { InMemoryThreshold = -1 }.Analyze(path, CSharp, computeHash: true);
 
             Assert.True(
                 inMemory.Code == streamed.Code
