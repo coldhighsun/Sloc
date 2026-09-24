@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Sloc.Core;
@@ -73,6 +76,16 @@ public sealed class GitSnapshotException : Exception
 public sealed class GitSnapshotExtractor
 {
     /// <summary>
+    /// The longest file name, in UTF-8 bytes, <see cref="SanitizeFileName"/> produces. 255 is
+    /// the per-component limit on Linux and macOS (in bytes) and on Windows (in UTF-16 code
+    /// units, of which a name never has more than it has UTF-8 bytes), so this fits everywhere.
+    /// </summary>
+    internal const int MaxFileNameBytes = 255;
+
+    private static readonly SearchValues<char> InvalidFileNameChars =
+        SearchValues.Create([.. Path.GetInvalidFileNameChars(), '/', '\\']);
+
+    /// <summary>
     /// Extracts every blob reachable from <paramref name="commitHash"/> in the git
     /// repository containing <paramref name="repoPathHint"/> into a new temporary
     /// directory.
@@ -130,6 +143,130 @@ public sealed class GitSnapshotExtractor
         }
     }
 
+    /// <summary>
+    /// Makes a git tree entry name safe to use as a single file name on this platform while
+    /// resolving to the same language as the original: characters invalid in a file name
+    /// (including path separators) become <c>_</c>; a trailing dot or space (which Windows
+    /// would silently strip, turning e.g. <c>gen.c.</c> into a C file) gets a <c>_</c>
+    /// appended instead of being removed, which also covers <c>.</c> and <c>..</c>; and
+    /// Windows reserved device names (<c>CON</c>, <c>aux.c</c>, …) are prefixed with <c>_</c>
+    /// so they don't open a device. A name longer than <see cref="MaxFileNameBytes"/> is cut
+    /// down to its tail (which holds the extension and any language suffix such as
+    /// <c>.designer.cs</c>) behind a <c>_</c>. The result never contains a path separator and
+    /// is never <c>.</c>/<c>..</c>, so combining it with a directory can't escape that directory.
+    /// Returns <paramref name="name"/> itself (no allocation) when it is already safe.
+    /// </summary>
+    internal static string SanitizeFileName(string name)
+    {
+        if (IsSafeFileName(name))
+        {
+            return name;
+        }
+
+        if (name.Length == 0)
+        {
+            return "_";
+        }
+
+        var sanitized = name;
+        if (name.AsSpan().ContainsAny(InvalidFileNameChars))
+        {
+            var chars = name.ToCharArray();
+            for (var i = 0; i < chars.Length; i++)
+            {
+                if (InvalidFileNameChars.Contains(chars[i]))
+                {
+                    chars[i] = '_';
+                }
+            }
+
+            sanitized = new string(chars);
+        }
+
+        if (sanitized[^1] is '.' or ' ')
+        {
+            sanitized += "_";
+        }
+
+        if (OperatingSystem.IsWindows() && IsWindowsReservedName(Stem(sanitized)))
+        {
+            sanitized = "_" + sanitized;
+        }
+
+        // Checked last, since the fixes above can each lengthen the name by one character.
+        if (Encoding.UTF8.GetByteCount(sanitized) > MaxFileNameBytes)
+        {
+            sanitized = "_" + Utf8Tail(sanitized, MaxFileNameBytes - 1);
+        }
+
+        return sanitized;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="name"/> can be used as a file name exactly as-is, i.e.
+    /// <see cref="SanitizeFileName"/> would return it unchanged.
+    /// </summary>
+    internal static bool IsSafeFileName(ReadOnlySpan<char> name) =>
+        name.Length > 0
+        && !name.ContainsAny(InvalidFileNameChars)
+        && name[^1] is not ('.' or ' ')
+        && !(OperatingSystem.IsWindows() && IsWindowsReservedName(Stem(name)))
+        && Encoding.UTF8.GetByteCount(name) <= MaxFileNameBytes;
+
+    /// <summary>
+    /// The part of <paramref name="name"/> Windows matches against reserved device names: up
+    /// to the first dot, ignoring trailing spaces.
+    /// </summary>
+    private static ReadOnlySpan<char> Stem(ReadOnlySpan<char> name)
+    {
+        var dot = name.IndexOf('.');
+        return (dot < 0 ? name : name[..dot]).TrimEnd(' ');
+    }
+
+    /// <summary>
+    /// Returns the longest suffix of <paramref name="name"/> whose UTF-8 encoding fits in
+    /// <paramref name="maxBytes"/>, never splitting a surrogate pair.
+    /// </summary>
+    private static string Utf8Tail(string name, int maxBytes)
+    {
+        var start = name.Length;
+        var bytes = 0;
+        while (start > 0)
+        {
+            var width = start >= 2 && char.IsSurrogatePair(name[start - 2], name[start - 1]) ? 2 : 1;
+            var runeBytes = width == 2 ? 4 : name[start - 1] switch
+            {
+                < '\u0080' => 1,
+                < 'ࠀ' => 2,
+                _ => 3 // Includes a lone surrogate, which UTF-8 encodes as U+FFFD.
+            };
+
+            if (bytes + runeBytes > maxBytes)
+            {
+                break;
+            }
+
+            bytes += runeBytes;
+            start -= width;
+        }
+
+        return name[start..];
+    }
+
+    private static bool IsWindowsReservedName(ReadOnlySpan<char> stem) => stem.Length switch
+    {
+        3 => stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase),
+        // COM0-9 and LPT0-9, including the superscript-digit variants Windows also reserves.
+        4 => (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) || stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
+            && (char.IsAsciiDigit(stem[3]) || stem[3] is '¹' or '²' or '³'),
+        6 => stem.Equals("CONIN$", StringComparison.OrdinalIgnoreCase),
+        7 => stem.Equals("CONOUT$", StringComparison.OrdinalIgnoreCase),
+        _ => false
+    };
+
     private static void CopyExactly(Stream source, Stream destination, long count, CancellationToken cancellationToken)
     {
         var buffer = new byte[81920];
@@ -173,6 +310,8 @@ public sealed class GitSnapshotExtractor
         {
             return files;
         }
+
+        var allocator = new SnapshotFileAllocator(tempRoot);
 
         using var process = StartGit(repoRoot, ["cat-file", "--batch"], redirectInput: true);
         var stdin = process.StandardInput.BaseStream;
@@ -242,14 +381,8 @@ public sealed class GitSnapshotExtractor
                 continue;
             }
 
-            var tempPath = Path.Combine(tempRoot, gitPath.Replace('/', Path.DirectorySeparatorChar));
-            var parentDir = Path.GetDirectoryName(tempPath);
-            if (!string.IsNullOrEmpty(parentDir))
-            {
-                Directory.CreateDirectory(parentDir);
-            }
-
-            using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+            string tempPath;
+            using (var fileStream = allocator.Create(gitPath, out tempPath))
             {
                 CopyExactly(stdout, fileStream, size, cancellationToken);
             }
@@ -440,6 +573,107 @@ public sealed class GitSnapshotExtractor
                 ex.NativeErrorCode == 2
                     ? "git executable not found on PATH."
                     : $"failed to start the git process: {ex.Message}");
+        }
+    }
+}
+
+/// <summary>
+/// Chooses and creates the temporary file each blob of a <see cref="GitSnapshotExtractor"/>
+/// extraction is dumped into: <c>&lt;tempRoot&gt;/&lt;chunk&gt;/&lt;slot&gt;/&lt;name&gt;</c>,
+/// where <c>name</c> is the entry's <see cref="GitSnapshotExtractor.SanitizeFileName">sanitized</see>
+/// file name (all that language detection looks at), <c>chunk</c> groups every
+/// <see cref="FilesPerChunk"/> consecutive blobs so no directory grows unboundedly large,
+/// and <c>slot</c> is how many earlier blobs in that chunk had the same name, compared
+/// case-insensitively. Not safe for concurrent use.
+/// </summary>
+/// <remarks>
+/// git's directory structure is deliberately not mirrored on disk. Tree entry names are
+/// untrusted and git allows characters in them (e.g. <c>\</c>, <c>:</c>) that another
+/// platform treats as path syntax, which could otherwise place a file outside the temp root;
+/// and paths that differ only by case (<c>Foo.c</c>/<c>foo.c</c>, or a file <c>a</c> beside a
+/// directory <c>A/</c>) would collide on a case-insensitive filesystem. Results are mapped
+/// back to the git path via <see cref="GitSnapshotFile"/>, so the temp layout is never
+/// user-visible.
+/// <para>
+/// A filesystem can also equate names that compare different here (Unicode normalization on
+/// macOS, NTFS 8.3 short-name aliases), so a create that finds the name already taken moves
+/// on to the next slot. Any other I/O error is a real failure (e.g. the temp directory isn't
+/// writable) and propagates, failing the extraction rather than silently dropping files
+/// from the counts.
+/// </para>
+/// </remarks>
+internal sealed class SnapshotFileAllocator
+{
+    /// <summary>
+    /// How many consecutive blobs share a chunk directory, bounding how many files any one
+    /// directory holds.
+    /// </summary>
+    internal const int FilesPerChunk = 1024;
+
+    private readonly Dictionary<string, int> _nextSlotByName = new(StringComparer.OrdinalIgnoreCase);
+    // Lets an already-safe name (the common case) be looked up straight from its git path,
+    // allocating a string key only the first time the name is seen in a chunk.
+    private readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> _nextSlotByNameSpan;
+    // Paths of this chunk's slot directories created so far; slot N is always created before
+    // slot N + 1, so this doubles as the "already created" check.
+    private readonly List<string> _slotDirectories = [];
+    private readonly string _tempRoot;
+    private int _allocated;
+    private int _chunk = -1;
+    private string _chunkDirectory = string.Empty;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SnapshotFileAllocator"/> class.
+    /// </summary>
+    /// <param name="tempRoot">The (existing) directory to create chunk directories under.</param>
+    public SnapshotFileAllocator(string tempRoot)
+    {
+        _tempRoot = tempRoot;
+        _nextSlotByNameSpan = _nextSlotByName.GetAlternateLookup<ReadOnlySpan<char>>();
+    }
+
+    /// <summary>
+    /// Creates a new, empty file for the blob at <paramref name="gitPath"/>.
+    /// </summary>
+    /// <param name="gitPath">The blob's forward-slash, repo-root-relative git path.</param>
+    /// <param name="tempPath">Receives the full path of the created file.</param>
+    /// <returns>A writable stream over the created file; the caller must dispose it.</returns>
+    public FileStream Create(string gitPath, out string tempPath)
+    {
+        var chunk = _allocated++ / FilesPerChunk;
+        if (chunk != _chunk)
+        {
+            // Names only need to be unique within a chunk, so the map stays small.
+            _chunk = chunk;
+            _chunkDirectory = Path.Combine(_tempRoot, chunk.ToString(CultureInfo.InvariantCulture));
+            _nextSlotByName.Clear();
+            _slotDirectories.Clear();
+        }
+
+        var leaf = gitPath.AsSpan(gitPath.LastIndexOf('/') + 1);
+        var name = GitSnapshotExtractor.IsSafeFileName(leaf)
+            ? leaf
+            : GitSnapshotExtractor.SanitizeFileName(leaf.ToString()).AsSpan();
+
+        while (true)
+        {
+            var slot = CollectionsMarshal.GetValueRefOrAddDefault(_nextSlotByNameSpan, name, out _)++;
+            if (slot == _slotDirectories.Count)
+            {
+                var created = Path.Combine(_chunkDirectory, slot.ToString(CultureInfo.InvariantCulture));
+                Directory.CreateDirectory(created);
+                _slotDirectories.Add(created);
+            }
+
+            tempPath = Path.Join(_slotDirectories[slot], name);
+            try
+            {
+                return new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write);
+            }
+            catch (IOException) when (File.Exists(tempPath))
+            {
+                // Taken under an alias of this name; try the next slot.
+            }
         }
     }
 }
