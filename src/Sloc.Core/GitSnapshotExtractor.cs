@@ -135,7 +135,11 @@ public sealed class GitSnapshotExtractor
             throw new GitSnapshotException($"Invalid commit-ish: {commitHash}");
         }
 
-        var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{commitHash}^{{tree}}"]).Trim();
+        // Resolve the revision on its own before peeling it to a tree: appending "^{tree}"
+        // directly would make git read a "rev:path" tree-ish (e.g. "HEAD:src") as the path
+        // "src^{tree}". The resolved object is a full hash, so the peel below is unambiguous.
+        var objectHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", commitHash]).Trim();
+        var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{objectHash}^{{tree}}"]).Trim();
         // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
         // "prefix/" (an empty result means repoPathHint was the repo root itself).
         var relativePrefix = RunGit(hintDirectory, ["rev-parse", "--show-prefix"]).Trim().TrimEnd('/');

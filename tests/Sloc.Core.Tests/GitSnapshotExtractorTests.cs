@@ -84,6 +84,36 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a <c>rev:path</c> tree-ish (e.g. <c>HEAD:sub</c>) is accepted and
+    /// extracts that subtree, with git paths relative to it.
+    /// </summary>
+    [Fact]
+    public void Extract_RevPathTreeish_ExtractsThatSubtree()
+    {
+        Write("a.cs", "// top");
+        Write("sub/b.py", "print(1)");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD:sub", TestContext.Current.CancellationToken);
+
+        var file = Assert.Single(snapshot.Files);
+        Assert.Equal("b.py", file.GitPath);
+        Assert.Equal("print(1)", File.ReadAllText(file.TempPath));
+    }
+
+    /// <summary>
+    /// Verifies that a <c>rev:path</c> naming a blob rather than a tree is still rejected.
+    /// </summary>
+    [Fact]
+    public void Extract_RevPathNamingBlob_ThrowsGitSnapshotException()
+    {
+        Write("a.cs", "// top");
+        Commit("first");
+
+        Assert.Throws<GitSnapshotException>(() => _extractor.Extract(_root, "HEAD:a.cs", TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// Verifies that an invalid commit-ish throws <see cref="GitSnapshotException"/>.
     /// </summary>
     [Fact]
