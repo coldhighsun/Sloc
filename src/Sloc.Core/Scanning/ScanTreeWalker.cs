@@ -51,14 +51,18 @@ internal static class ScanTreeWalker
         var symlinkedFilePaths = new HashSet<string>();
         var skipped = new List<SkippedEntry>();
         var visited = 0;
-        var ancestors = new List<string> { normalizedRoot };
-        var followedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot };
+
+        // Loop and double-count checks compare real paths, so a root given through a
+        // symlink/junction is still recognized as the directory its links point back into.
+        var realRoot = followSymlinks ? SymlinkGuard.GetRealPath(normalizedRoot) ?? normalizedRoot : normalizedRoot;
+        var ancestors = new List<string> { realRoot };
+        var follow = followSymlinks ? new FollowState(realRoot) : null;
 
         Collect(
-            fullRoot, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
+            fullRoot, realRoot, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
             collectGitignore, collectGitattributes, collectFiles,
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-            onDirectoryVisited, ref visited, ancestors, followedTargets);
+            onDirectoryVisited, ref visited, ancestors, follow);
 
         return new ScanTreeWalkResult(
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped);
@@ -78,12 +82,36 @@ internal static class ScanTreeWalker
         relativeDirectory.Length == 0
         || (recursive && !relativeDirectory.Split('/').Any(excludedDirectoryNames.Contains));
 
+    /// <summary>
+    /// Visits <paramref name="directory"/>: records its rule files and (when requested) its
+    /// files, then recurses into its subdirectories, following symlinks/junctions only when
+    /// <paramref name="follow"/> is set and the target is neither a loop nor already covered.
+    /// </summary>
+    /// <param name="directory">The directory as reached from the scan root (possibly through links).</param>
+    /// <param name="realDirectory">The real path of <paramref name="directory"/>, with every link resolved.</param>
+    /// <param name="normalizedRoot">The scan root, relative to which rule-file bases are computed.</param>
+    /// <param name="excludedDirectoryNames">Directory names the walk never descends into.</param>
+    /// <param name="recursive">Whether to descend into subdirectories.</param>
+    /// <param name="ignoreCase">Whether rule patterns match case-insensitively.</param>
+    /// <param name="collectGitignore">Whether to collect <c>.gitignore</c> files.</param>
+    /// <param name="collectGitattributes">Whether to collect <c>.gitattributes</c> files.</param>
+    /// <param name="collectFiles">Whether to collect candidate file paths.</param>
+    /// <param name="gitignoreFiles">Receives the <c>.gitignore</c> files found.</param>
+    /// <param name="attributesFiles">Receives the <c>.gitattributes</c> files found.</param>
+    /// <param name="symlinkedDirectories">Receives the directories excluded from the walk.</param>
+    /// <param name="filePaths">Receives the candidate file paths.</param>
+    /// <param name="symlinkedFilePaths">Receives the file paths that are symlinks.</param>
+    /// <param name="skipped">Receives the entries that could not be read.</param>
+    /// <param name="onDirectoryVisited">Optional progress callback.</param>
+    /// <param name="visited">The running count of visited directories.</param>
+    /// <param name="ancestors">The real paths of the directories on the current path from the scan root.</param>
+    /// <param name="follow">The symlink-following state, or <see langword="null"/> when links are not followed.</param>
     private static void Collect(
         string directory,
+        string realDirectory,
         string normalizedRoot,
         IReadOnlySet<string> excludedDirectoryNames,
         bool recursive,
-        bool followSymlinks,
         bool ignoreCase,
         bool collectGitignore,
         bool collectGitattributes,
@@ -97,7 +125,7 @@ internal static class ScanTreeWalker
         Action<int, string>? onDirectoryVisited,
         ref int visited,
         List<string> ancestors,
-        HashSet<string> followedTargets)
+        FollowState? follow)
     {
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
@@ -121,6 +149,10 @@ internal static class ScanTreeWalker
             attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, parsedAttributeLines));
         }
 
+        // Outside the real scan root (i.e. below a followed link), the same real file or
+        // directory can be reached again through another link with an overlapping target.
+        var outsideRoot = follow is not null && !SymlinkGuard.IsAncestorOrSelf(follow.RealRoot, realDirectory);
+
         string[] subdirectories;
         try
         {
@@ -136,12 +168,20 @@ internal static class ScanTreeWalker
                         if (SymlinkGuard.IsLink(file))
                         {
                             symlinkedFilePaths.Add(file.FullName);
+                            if (follow is not null && !follow.ShouldFollowFile(file.FullName))
+                            {
+                                continue;
+                            }
                         }
                         else if (SymlinkGuard.IsCloudOnly(file.Attributes))
                         {
                             // Reading an online-only placeholder (e.g. OneDrive Files-On-Demand)
                             // would make the sync client download it; report it instead.
                             skipped.Add(new SkippedEntry(file.FullName, "cloud-only file (not downloaded)"));
+                            continue;
+                        }
+                        else if (outsideRoot && !follow!.SeenFiles.Add(Path.Combine(realDirectory, file.Name)))
+                        {
                             continue;
                         }
                     }
@@ -204,43 +244,88 @@ internal static class ScanTreeWalker
 
             if (!isLink)
             {
-                ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var realSubdirectory = Path.Combine(realDirectory, Path.GetFileName(subdirectory));
+                if (outsideRoot && !follow!.VisitedDirectories.Add(realSubdirectory))
+                {
+                    // Already walked as (part of) another followed link's target.
+                    symlinkedDirectories.Add(subdirectory);
+                    continue;
+                }
+
+                ancestors.Add(realSubdirectory);
                 Collect(
-                    subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
+                    subdirectory, realSubdirectory, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                     collectGitignore, collectGitattributes, collectFiles,
                     gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                    onDirectoryVisited, ref visited, ancestors, followedTargets);
+                    onDirectoryVisited, ref visited, ancestors, follow);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
 
-            // A directory symlink/junction. Resolve its target and check whether following
-            // it would loop back onto a directory already on the current path from the
-            // scan root (directly, or transitively through an earlier symlink), or onto a
-            // real directory already reached via a different symlink chain — not just the
-            // scan root itself, so both ancestor loops and diamond-shaped chains are caught.
-            // A target at or under the scan root is also excluded: the normal tree walk
-            // already covers those files, so following the link would double-count them.
-            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
-            if (!resolution.Resolved || resolution.IsLoop || !followSymlinks
-                || SymlinkGuard.IsAncestorOrSelf(normalizedRoot, resolution.Target!)
-                || !followedTargets.Add(resolution.Target!))
+            if (follow is null)
             {
-                // Not followed: resolution failed, it would loop, the target is inside the
-                // scan root, it was already reached via another symlink, or the caller opted
-                // out of following symlinked directories entirely. Either way, exclude it.
+                // The caller opted out of following symlinked directories entirely.
+                symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            // A directory symlink/junction. Resolve its target's real path and check whether
+            // following it would loop: the target is at or under a directory already on the
+            // current path from the scan root (directly, or transitively through an earlier
+            // symlink), or contains one, so following it would walk that path again. The
+            // first ancestor is the real scan root, so a target inside the scan root, which
+            // the normal tree walk already covers, is excluded the same way. A target already
+            // walked through another link (a diamond-shaped chain, or overlapping targets) is
+            // excluded too, so its files are not double-counted.
+            var resolution = SymlinkGuard.Resolve(subdirectory, ancestors);
+            if (!resolution.Resolved || resolution.IsLoop || !follow.VisitedDirectories.Add(resolution.Target!))
+            {
                 symlinkedDirectories.Add(subdirectory);
                 continue;
             }
 
             ancestors.Add(resolution.Target!);
             Collect(
-                subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
+                subdirectory, resolution.Target!, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                 collectGitignore, collectGitattributes, collectFiles,
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                onDirectoryVisited, ref visited, ancestors, followedTargets);
+                onDirectoryVisited, ref visited, ancestors, follow);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
+    }
+
+    /// <summary>
+    /// Tracks what a walk that follows symlinks has already covered, by real path, so no
+    /// file is counted twice however many links lead to it.
+    /// </summary>
+    /// <param name="realRoot">The real path of the scan root.</param>
+    private sealed class FollowState(string realRoot)
+    {
+        /// <summary>
+        /// Gets the real path of the scan root, whose contents the plain tree walk covers.
+        /// </summary>
+        public string RealRoot { get; } = realRoot;
+
+        /// <summary>
+        /// Gets the real paths of directories outside <see cref="RealRoot"/> already walked.
+        /// </summary>
+        public HashSet<string> VisitedDirectories { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Gets the real paths of files outside <see cref="RealRoot"/> already collected.
+        /// </summary>
+        public HashSet<string> SeenFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Whether the file symlink at <paramref name="linkPath"/> should be collected: not
+        /// when its target is inside <see cref="RealRoot"/> (the tree walk already covers it)
+        /// or was already collected. A dangling link is still collected, so reading it
+        /// reports the failure as a skipped file.
+        /// </summary>
+        /// <param name="linkPath">The full path of the file symlink.</param>
+        public bool ShouldFollowFile(string linkPath) =>
+            SymlinkGuard.GetRealPath(linkPath) is not { } realPath
+            || (!SymlinkGuard.IsAncestorOrSelf(RealRoot, realPath) && SeenFiles.Add(realPath));
     }
 
     /// <summary>

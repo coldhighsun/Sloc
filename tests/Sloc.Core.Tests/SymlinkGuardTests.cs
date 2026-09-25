@@ -224,6 +224,118 @@ public class SymlinkGuardTests
     }
 
     /// <summary>
+    /// Verifies that a symlink whose target contains one of the ancestors (e.g. a link to the
+    /// scan root's parent) is flagged as a loop, since following it would walk the ancestor
+    /// again.
+    /// </summary>
+    [Fact]
+    public void Resolve_SymlinkToParentOfAncestor_ReturnsLoop()
+    {
+        var parent = Directory.CreateTempSubdirectory();
+        try
+        {
+            var root = parent.CreateSubdirectory("root");
+            var linkPath = Path.Combine(root.FullName, "up");
+            if (!TryCreateDirectorySymlink(linkPath, parent.FullName))
+            {
+                return;
+            }
+
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [SymlinkGuard.GetRealPath(root.FullName)!]);
+
+            Assert.True(resolution.Resolved);
+            Assert.True(resolution.IsLoop);
+        }
+        finally
+        {
+            parent.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="SymlinkGuard.GetRealPath"/> resolves a link in the middle of a
+    /// path, and a relative link chained to another link, to the real location.
+    /// </summary>
+    [Fact]
+    public void GetRealPath_PathThroughLinks_ResolvesEveryComponent()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var target = directory.CreateSubdirectory("target");
+            File.WriteAllText(Path.Combine(target.FullName, "file.txt"), "x");
+            var absoluteLink = Path.Combine(directory.FullName, "absolute");
+            var relativeLink = Path.Combine(directory.FullName, "relative");
+            if (!TryCreateDirectorySymlink(absoluteLink, target.FullName)
+                || !TryCreateDirectorySymlink(relativeLink, "absolute"))
+            {
+                return;
+            }
+
+            var expected = Path.Combine(SymlinkGuard.GetRealPath(target.FullName)!, "file.txt");
+
+            Assert.Equal(expected, SymlinkGuard.GetRealPath(Path.Combine(absoluteLink, "file.txt")));
+            Assert.Equal(expected, SymlinkGuard.GetRealPath(Path.Combine(relativeLink, "file.txt")));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="SymlinkGuard.GetRealPath"/> returns <see langword="null"/> for
+    /// a missing path, a dangling link, and a cycle of links.
+    /// </summary>
+    [Fact]
+    public void GetRealPath_MissingOrLoopingPath_ReturnsNull()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            Assert.Null(SymlinkGuard.GetRealPath(Path.Combine(directory.FullName, "missing", "file.txt")));
+
+            var first = Path.Combine(directory.FullName, "first");
+            var second = Path.Combine(directory.FullName, "second");
+            var dangling = Path.Combine(directory.FullName, "dangling");
+            if (!TryCreateDirectorySymlink(first, second)
+                || !TryCreateDirectorySymlink(second, first)
+                || !TryCreateDirectorySymlink(dangling, Path.Combine(directory.FullName, "gone")))
+            {
+                return;
+            }
+
+            Assert.Null(SymlinkGuard.GetRealPath(first));
+            Assert.Null(SymlinkGuard.GetRealPath(dangling));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="SymlinkGuard.GetRealPath"/> returns a path without links
+    /// unchanged apart from normalization.
+    /// </summary>
+    [Fact]
+    public void GetRealPath_PlainPath_ReturnsFullPath()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var real = SymlinkGuard.GetRealPath(directory.FullName)!;
+            var nested = Directory.CreateDirectory(Path.Combine(real, "a", "b"));
+
+            Assert.Equal(nested.FullName.TrimEnd(Path.DirectorySeparatorChar), SymlinkGuard.GetRealPath(nested.FullName + Path.DirectorySeparatorChar));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Creates a directory symlink at <paramref name="linkPath"/> pointing at
     /// <paramref name="targetPath"/>, returning <see langword="false"/> instead of
     /// throwing when the environment does not grant the privilege required (e.g.
