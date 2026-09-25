@@ -17,6 +17,7 @@ namespace Sloc.Core.Scanning;
 /// found in that order that mentions an attribute decides it, whether it sets it,
 /// unsets it (<c>-attr</c>), gives it a value, or resets it to unspecified (<c>!attr</c>).
 /// Macro attributes (<c>[attr]name …</c>) are honored when defined in the top-level file
+/// (the repository root's, or the scan root's outside a repository)
 /// and expand wherever they are set. Quoted C-style patterns are unquoted, while lines with a
 /// negative pattern (<c>!pattern</c>) or an invalid attribute name are ignored, as git does.
 /// One deliberate deviation: a directory-only pattern (<c>vendor/</c>) also matches the
@@ -55,16 +56,25 @@ public sealed class GitAttributesRules
     private readonly IReadOnlyDictionary<string, IReadOnlyList<AttributeState>> _macros;
 
     /// <summary>
+    /// The scan root's <c>/</c>-separated path relative to the root of the repository the
+    /// file bases are relative to, empty when the scan root is that root.
+    /// </summary>
+    private readonly string _scanPrefix;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GitAttributesRules"/> class.
     /// </summary>
     /// <param name="files">The compiled files, deepest first.</param>
     /// <param name="macros">The macro definitions in effect.</param>
+    /// <param name="scanPrefix">The scan root's repository-relative directory.</param>
     private GitAttributesRules(
         IReadOnlyList<CompiledFile> files,
-        IReadOnlyDictionary<string, IReadOnlyList<AttributeState>> macros)
+        IReadOnlyDictionary<string, IReadOnlyList<AttributeState>> macros,
+        string scanPrefix)
     {
         _files = files;
         _macros = macros;
+        _scanPrefix = scanPrefix;
     }
 
     /// <summary>
@@ -91,7 +101,8 @@ public sealed class GitAttributesRules
 
     /// <summary>
     /// Discovers and loads every <c>.gitattributes</c> file under <paramref name="root"/>,
-    /// skipping the supplied excluded directory names.
+    /// skipping the supplied excluded directory names, along with the ones in the directories
+    /// above <paramref name="root"/> up to the root of the repository it belongs to.
     /// </summary>
     /// <param name="root">The scan root directory.</param>
     /// <param name="excludedDirectoryNames">
@@ -121,7 +132,7 @@ public sealed class GitAttributesRules
             root, excludedDirectoryNames, recursive, followSymlinks: false, ignoreCase,
             collectGitignore: false, collectGitattributes: true, collectFiles: false, onDirectoryVisited);
 
-        return FromFiles(walk.AttributesFiles, ignoreCase);
+        return FromWalk(root, walk.AttributesFiles, ignoreCase);
     }
 
     /// <summary>
@@ -145,6 +156,7 @@ public sealed class GitAttributesRules
             return false;
         }
 
+        normalized = RelativePathResolver.Combine(_scanPrefix, normalized);
         if (_cache.TryGetValue(normalized, out var cached))
         {
             return cached;
@@ -211,7 +223,11 @@ public sealed class GitAttributesRules
     /// </summary>
     /// <param name="files">The parsed attributes files, in any order.</param>
     /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
-    internal static GitAttributesRules FromFiles(IReadOnlyList<AttributesFile> files, bool ignoreCase)
+    /// <param name="scanPrefix">
+    /// The scan root's <c>/</c>-separated directory relative to the directory the file bases
+    /// are relative to (the repository root), prepended to every path looked up.
+    /// </param>
+    internal static GitAttributesRules FromFiles(IReadOnlyList<AttributesFile> files, bool ignoreCase, string scanPrefix = "")
     {
         var macroDefinitions = new Dictionary<string, IReadOnlyList<AttributeState>>(StringComparer.Ordinal);
         foreach (var file in files.Where(static file => file.BaseDirectory.Length == 0))
@@ -256,7 +272,54 @@ public sealed class GitAttributesRules
             }
         }
 
-        return new GitAttributesRules(compiled, macros);
+        return new GitAttributesRules(compiled, macros, scanPrefix);
+    }
+
+    /// <summary>
+    /// Builds a rule set from <c>.gitattributes</c> files already discovered under
+    /// <paramref name="root"/> by a <see cref="ScanTreeWalker"/> pass, adding, when
+    /// <paramref name="root"/> is below the root of its repository, the <c>.gitattributes</c>
+    /// files in the directories between them, read from disk, as git applies them (so
+    /// macros come from the repository's top-level file).
+    /// </summary>
+    /// <param name="root">The scan root directory.</param>
+    /// <param name="walkedFiles">The attributes files found under <paramref name="root"/>, with scan-root-relative bases.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    internal static GitAttributesRules FromWalk(string root, IReadOnlyList<AttributesFile> walkedFiles, bool ignoreCase)
+    {
+        var workTree = GitWorkTree.Find(root);
+        var scanPrefix = workTree?.RelativeDirectory(root) ?? string.Empty;
+        var ancestorFiles = new List<AttributesFile>();
+        if (workTree is not null)
+        {
+            foreach (var (directory, lines) in workTree.ReadAncestorFiles(scanPrefix, ".gitattributes"))
+            {
+                ancestorFiles.Add(new AttributesFile(directory, ParseLines(lines)));
+            }
+        }
+
+        return FromWalk(walkedFiles, ignoreCase, scanPrefix, ancestorFiles);
+    }
+
+    /// <summary>
+    /// Builds a rule set like <see cref="FromWalk(string, IReadOnlyList{AttributesFile}, bool)"/>,
+    /// but with the scan root's position in its repository and the <c>.gitattributes</c>
+    /// files above it supplied by the caller (e.g. taken from a git commit instead of the disk).
+    /// </summary>
+    /// <param name="walkedFiles">The attributes files found under the scan root, with scan-root-relative bases.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    /// <param name="scanPrefix">The scan root's <c>/</c>-separated repository-relative directory.</param>
+    /// <param name="ancestorFiles">The attributes files above the scan root, with repository-relative bases.</param>
+    internal static GitAttributesRules FromWalk(
+        IReadOnlyList<AttributesFile> walkedFiles,
+        bool ignoreCase,
+        string scanPrefix,
+        IReadOnlyList<AttributesFile> ancestorFiles)
+    {
+        var files = new List<AttributesFile>(ancestorFiles);
+        files.AddRange(walkedFiles.Select(file =>
+            new AttributesFile(RelativePathResolver.Combine(scanPrefix, file.BaseDirectory), file.Lines)));
+        return FromFiles(files, ignoreCase, scanPrefix);
     }
 
     /// <summary>

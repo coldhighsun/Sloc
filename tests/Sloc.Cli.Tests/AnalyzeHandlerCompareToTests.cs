@@ -118,6 +118,45 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--compare-to</c> on a subdirectory filters the baseline by the
+    /// commit's own <c>.gitignore</c> above that subdirectory and the current side by the
+    /// working tree's, so a file newly ignored by the repository root shows up as removed.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToSubdirectory_UsesEachSideEnclosingGitignore()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "*.log\n");
+        File.WriteAllText(Path.Combine(_root, "sub", "a.cs"), "int x = 1;\n");
+        File.WriteAllText(Path.Combine(_root, "sub", "b.gen.cs"), "int y = 1;\nint z = 2;\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        // Ignores the generated file from the repository root, in the working tree only.
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "*.log\n*.gen.cs\n");
+        var outputFile = Path.Combine(Path.GetTempPath(), "sloc-diff-" + Guid.NewGuid().ToString("N") + ".json");
+
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "sub"),
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        });
+
+        Assert.Equal(ExitCode.Success, exitCode);
+
+        using var document = JsonDocument.Parse(File.ReadAllText(outputFile));
+        var total = document.RootElement.GetProperty("total");
+        Assert.Equal(-2, total.GetProperty("code").GetInt32());
+        Assert.Equal(-2, total.GetProperty("total").GetInt32());
+
+        File.Delete(outputFile);
+    }
+
+    /// <summary>
     /// Verifies that an invalid commit-ish returns <see cref="ExitCode.Error"/> rather
     /// than throwing.
     /// </summary>

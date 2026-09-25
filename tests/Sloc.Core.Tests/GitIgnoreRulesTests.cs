@@ -634,6 +634,31 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that <c>core.ignoreCase</c> for a subdirectory of a repository is read from
+    /// the enclosing repository's config.
+    /// </summary>
+    [Fact]
+    public void ResolveIgnoreCase_SubdirectoryOfRepository_ReadsEnclosingRepoConfig()
+    {
+        var root = CreateTempHome();
+        try
+        {
+            var notDefault = !(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS());
+            Directory.CreateDirectory(Path.Combine(root, ".git"));
+            File.WriteAllText(Path.Combine(root, ".git", "config"), $"[core]\n\tignorecase = {notDefault}\n");
+            var sub = Directory.CreateDirectory(Path.Combine(root, "sub", "inner")).FullName;
+
+            var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(sub);
+
+            Assert.Equal(notDefault, ignoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Verifies that with <c>core.ignoreCase</c> off, patterns match only paths of the same case.
     /// </summary>
     [Theory]
