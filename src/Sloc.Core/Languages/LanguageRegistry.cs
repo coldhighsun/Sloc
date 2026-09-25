@@ -313,7 +313,14 @@ public static class LanguageRegistry
                 Extensions = [".ps1", ".psm1", ".psd1"],
                 LineCommentTokens = ["#"],
                 BlockComments = [new BlockComment("<#", "#>")],
-                StringLiterals = [doubleQuote, singleQuote]
+                // PowerShell escapes with a backtick in "…" strings ("`"") and has no escape
+                // in '…' strings other than doubling the quote ('it''s'); a backslash is an
+                // ordinary character in both ("C:\").
+                StringLiterals =
+                [
+                    doubleQuote with { EscapeChar = '`' },
+                    singleQuote with { AllowEscape = false, DoubledClosingEscape = true }
+                ]
             },
             new()
             {
@@ -578,7 +585,9 @@ public static class LanguageRegistry
                 Extensions = [".pas", ".pp", ".inc"],
                 LineCommentTokens = ["//"],
                 BlockComments = [new BlockComment("{", "}"), new BlockComment("(*", "*)")],
-                StringLiterals = [singleQuote]
+                // Pascal has no backslash escape ('C:\' is a complete string); a quote is
+                // embedded by doubling it ('it''s').
+                StringLiterals = [singleQuote with { AllowEscape = false, DoubledClosingEscape = true }]
             },
             new()
             {

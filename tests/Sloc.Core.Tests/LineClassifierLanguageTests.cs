@@ -240,6 +240,61 @@ public class LineClassifierLanguageTests
     }
 
     /// <summary>
+    /// Verifies that a backslash is an ordinary character in a Pascal string, so
+    /// <c>'C:\'</c> closes and a <c>{</c> after it still opens a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PascalStringEndingInBackslash_ClosesString()
+    {
+        var classifier = new LineClassifier(Resolve(".pas"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(@"dir := 'C:\'; { start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment }"));
+    }
+
+    /// <summary>
+    /// Verifies that a doubled quote inside a Pascal string is an embedded quote, not the
+    /// end of one string and the start of another.
+    /// </summary>
+    [Fact]
+    public void Classify_PascalDoubledQuote_StaysInsideString()
+    {
+        var classifier = new LineClassifier(Resolve(".pas"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("s := 'it''s { not a comment';"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a PowerShell backtick-escaped quote (<c>"`""</c>) does not close the
+    /// string, so a <c>&lt;#</c> inside it does not open a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PowerShellBacktickEscapedQuote_StaysInsideString()
+    {
+        var classifier = new LineClassifier(Resolve(".ps1"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("$a = \"`\"<# not a comment\""));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("$b = 1"));
+    }
+
+    /// <summary>
+    /// Verifies that a backslash is an ordinary character in a PowerShell string, so
+    /// <c>"C:\"</c> closes and a <c>&lt;#</c> after it still opens a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PowerShellStringEndingInBackslash_ClosesString()
+    {
+        var classifier = new LineClassifier(Resolve(".ps1"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(@"$dir = ""C:\"" <# start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment #>"));
+    }
+
+    /// <summary>
     /// Verifies that D's <c>/* */</c> comments do not nest (the first <c>*/</c> closes the
     /// comment), while its <c>/+ +/</c> comments do.
     /// </summary>
