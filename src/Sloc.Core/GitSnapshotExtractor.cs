@@ -351,6 +351,10 @@ public sealed class GitSnapshotExtractor
         var allocator = new SnapshotFileAllocator(tempRoot);
 
         using var process = StartGit(repoRoot, ["cat-file", "--batch"], redirectInput: true);
+        // Nothing here reports git's stderr, but it must still be drained: once the pipe
+        // buffer fills, git blocks writing to it and stops producing stdout, which would
+        // hang the read loop below.
+        var stderrTask = process.StandardError.ReadToEndAsync();
         var stdin = process.StandardInput.BaseStream;
         var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536);
 
@@ -436,6 +440,7 @@ public sealed class GitSnapshotExtractor
             process.Kill(entireProcessTree: true);
         }
 
+        _ = stderrTask.GetAwaiter().GetResult();
         return files;
     }
 
@@ -444,6 +449,7 @@ public sealed class GitSnapshotExtractor
     {
         string[] arguments = ["ls-tree", "-r", "-z", treeHash];
         using var process = StartGit(repoRoot, arguments, redirectInput: false);
+        var stderrTask = process.StandardError.ReadToEndAsync();
         var blobs = new List<(string Hash, string GitPath)>();
         var skipped = new List<Models.SkippedEntry>();
 
@@ -487,7 +493,7 @@ public sealed class GitSnapshotExtractor
             blobs.Add((hash, gitPath));
         }
 
-        var stderr = process.StandardError.ReadToEnd();
+        var stderr = stderrTask.GetAwaiter().GetResult();
         process.WaitForExit();
 
         if (process.ExitCode != 0)
@@ -567,9 +573,10 @@ public sealed class GitSnapshotExtractor
     private static byte[] RunGitRaw(string workingDirectory, string[] arguments)
     {
         using var process = StartGit(workingDirectory, arguments, redirectInput: false);
+        var stderrTask = process.StandardError.ReadToEndAsync();
         using var stdout = new MemoryStream();
         process.StandardOutput.BaseStream.CopyTo(stdout);
-        var stderr = process.StandardError.ReadToEnd();
+        var stderr = stderrTask.GetAwaiter().GetResult();
         process.WaitForExit();
 
         if (process.ExitCode != 0)
