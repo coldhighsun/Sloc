@@ -140,6 +140,20 @@ public class MarkdownRendererTests
     }
 
     /// <summary>
+    /// Verifies that Markdown emphasis, code, link, and HTML characters in a path, and the
+    /// backslashes of a Windows path, are escaped so the path renders literally.
+    /// </summary>
+    [Fact]
+    public void Render_ByFile_EscapesInlineMarkdownInPaths()
+    {
+        var summary = BuildSummary(@"pkg\__init__[1]`<b>&amp*~.py");
+
+        var text = Render(summary, byFile: true, noHealth: true, noComplexity: true);
+
+        Assert.Contains(@"pkg\\\_\_init\_\_\[1\]\`\<b\>\&amp\*\~.py", text);
+    }
+
+    /// <summary>
     /// Verifies that skipped entries are rendered in a trailing Skipped section.
     /// </summary>
     [Fact]
