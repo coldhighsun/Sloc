@@ -551,13 +551,21 @@ public sealed class GitSnapshotExtractor
     }
 
     /// <summary>
+    /// The characters that separate path segments in a checkout: <c>/</c>, plus <c>\</c> on
+    /// Windows, where git treats either as a directory separator (elsewhere a backslash is an
+    /// ordinary file name character).
+    /// </summary>
+    private static readonly char[] CheckoutPathSeparators = OperatingSystem.IsWindows() ? ['/', '\\'] : ['/'];
+
+    /// <summary>
     /// Returns whether <paramref name="repositoryPath"/> is a path a checkout could write:
-    /// one with no empty, <c>.</c>, or <c>..</c> segment. Both <c>/</c> and <c>\</c> separate
-    /// segments, since git on Windows treats either as a directory separator.
+    /// one with no empty, <c>.</c>, or <c>..</c> segment, split on
+    /// <see cref="CheckoutPathSeparators"/>.
     /// </summary>
     /// <param name="repositoryPath">A repository-relative tree entry path.</param>
-    private static bool IsCheckoutPath(string repositoryPath) =>
-        repositoryPath.Split('/', '\\').All(segment => segment is not ("" or "." or ".."));
+    /// <returns><see langword="true"/> if a checkout could write the path.</returns>
+    internal static bool IsCheckoutPath(string repositoryPath) =>
+        repositoryPath.Split(CheckoutPathSeparators).All(segment => segment is not ("" or "." or ".."));
 
     /// <summary>
     /// Dumps one blob with the checkout conversions for its path applied, via
