@@ -249,14 +249,18 @@ public sealed partial class AnalyzeHandler
     {
         using var snapshot = new GitSnapshotExtractor().Extract(repoPath, gitRef);
 
+        var isFilePath = File.Exists(repoPath);
         var filesInScope = snapshot.Files;
         IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
         if (options.GitHash is null && snapshot.RelativePrefix.Length > 0)
         {
+            // A file path scopes to exactly that entry and a directory path to entries under it,
+            // even if the ref had the other kind at that path (a file now a directory, or vice
+            // versa): that entry is not part of what the current side analyzes.
             var relativePrefix = snapshot.RelativePrefix;
-            bool InScope(string gitPath) =>
-                gitPath.Equals(relativePrefix, StringComparison.Ordinal)
-                    || gitPath.StartsWith(relativePrefix + "/", StringComparison.Ordinal);
+            bool InScope(string gitPath) => isFilePath
+                ? gitPath.Equals(relativePrefix, StringComparison.Ordinal)
+                : gitPath.StartsWith(relativePrefix + "/", StringComparison.Ordinal);
 
             filesInScope = snapshot.Files.Where(f => InScope(f.GitPath)).ToList();
             skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
@@ -268,7 +272,7 @@ public sealed partial class AnalyzeHandler
             // Both sides are git snapshots analyzed the same way (no directory filtering).
             scanResult = _scanner.ScanFiles(filesInScope.Select(f => f.TempPath), scanOptions);
         }
-        else if (File.Exists(repoPath))
+        else if (isFilePath)
         {
             // A single file: filtered by the same single-file rules the current side's Scan applied.
             scanResult = filesInScope.Count == 0
