@@ -240,6 +240,25 @@ public class LineClassifierLanguageTests
     }
 
     /// <summary>
+    /// Verifies that D's <c>/* */</c> comments do not nest (the first <c>*/</c> closes the
+    /// comment), while its <c>/+ +/</c> comments do.
+    /// </summary>
+    [Fact]
+    public void Classify_DBlockComments_OnlyPlusCommentsNest()
+    {
+        var classifier = new LineClassifier(Resolve(".d"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("/* outer /* inner */"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("int x = 1;"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("/+ outer /+ inner +/"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment +/"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
     /// Verifies that a Zig <c>//</c> line comment is classified as a comment.
     /// </summary>
     [Fact]
