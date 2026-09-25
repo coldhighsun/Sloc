@@ -134,7 +134,7 @@ public class SymlinkGuardTests
                 return;
             }
 
-            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [root.FullName]);
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [SymlinkGuard.GetRealPath(root.FullName)!]);
 
             Assert.True(resolution.Resolved);
             Assert.NotNull(resolution.Target);
@@ -172,7 +172,7 @@ public class SymlinkGuardTests
                 return;
             }
 
-            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [ancestor.FullName]);
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [SymlinkGuard.GetRealPath(ancestor.FullName)!]);
 
             Assert.True(resolution.Resolved);
             Assert.True(resolution.IsLoop);
@@ -206,7 +206,7 @@ public class SymlinkGuardTests
                 return;
             }
 
-            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [root.FullName]);
+            var resolution = SymlinkGuard.Resolve(linkPath, ancestors: [SymlinkGuard.GetRealPath(root.FullName)!]);
 
             Assert.True(resolution.Resolved);
             Assert.False(resolution.IsLoop);
