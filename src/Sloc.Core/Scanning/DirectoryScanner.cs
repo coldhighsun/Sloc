@@ -176,15 +176,16 @@ public sealed class DirectoryScanner
 
         var fullRoot = Path.GetFullPath(root);
         var walkRecursive = WalksRecursively(options);
+        var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(fullRoot);
 
         // A single tree walk discovers .gitignore files, .gitattributes files, candidate
         // file paths, and symlink/junction loop protection all at once, instead of walking
         // the same directory tree separately for each concern.
         var walk = ScanTreeWalker.Walk(
-            root, DefaultExcludeDirectoryNames, walkRecursive, options.FollowSymlinks,
+            root, DefaultExcludeDirectoryNames, walkRecursive, options.FollowSymlinks, ignoreCase,
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
 
-        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles) : null;
+        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles, ignoreCase) : null;
         var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles) : null;
 
         // Ordinal (case-sensitive) comparer: Matcher.Match's OrdinalIgnoreCase comparison is
@@ -236,6 +237,7 @@ public sealed class DirectoryScanner
         ArgumentNullException.ThrowIfNull(options);
 
         var walkRecursive = WalksRecursively(options);
+        var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(root);
         var skipped = new List<SkippedEntry>();
         var gitignoreFiles = new List<GitIgnoreRules.GitIgnoreFile>();
         var attributesFiles = new List<GitAttributesRules.AttributesFile>();
@@ -273,18 +275,18 @@ public sealed class DirectoryScanner
                 continue;
             }
 
-            if (isGitignore && GitIgnoreRules.CompilePatterns(lines) is { Count: > 0 } ignorePatterns)
+            if (isGitignore && GitIgnoreRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } ignorePatterns)
             {
                 gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns));
             }
 
-            if (isGitattributes && GitAttributesRules.CompilePatterns(lines) is { Count: > 0 } attributePatterns)
+            if (isGitattributes && GitAttributesRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } attributePatterns)
             {
                 attributesFiles.Add(new GitAttributesRules.AttributesFile(GitAttributesRules.NormalizeBase(directory), attributePatterns));
             }
         }
 
-        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, gitignoreFiles) : null;
+        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, gitignoreFiles, ignoreCase) : null;
         var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(attributesFiles) : null;
 
         var candidates = FilterCandidates(pathByRelative, options, gitignore, gitattributes, onFileFound: null);

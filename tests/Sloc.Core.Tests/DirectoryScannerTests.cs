@@ -422,6 +422,29 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that the repository's <c>core.ignoreCase</c> decides whether
+    /// <c>.gitignore</c> and <c>.gitattributes</c> patterns match paths of a different case.
+    /// </summary>
+    /// <param name="ignoreCase">The <c>core.ignoreCase</c> value written to <c>.git/config</c>.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Scan_RepoIgnoreCaseSetting_ControlsPatternCaseSensitivity(bool ignoreCase)
+    {
+        Write(".git/config", $"[core]\n\tignorecase = {ignoreCase}\n");
+        Write(".gitignore", "*.CS\n");
+        Write(".gitattributes", "Vendor/** linguist-vendored\n");
+        Write("app.cs", "// app");
+        Write("vendor/lib.py", "# vendored");
+        Write("main.py", "# main");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(ignoreCase ? ["main.py"] : ["app.cs", "main.py", "vendor/lib.py"], names);
+    }
+
+    /// <summary>
     /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
     /// </summary>
     [Fact]

@@ -30,6 +30,7 @@ internal static class ScanTreeWalker
         IReadOnlySet<string> excludedDirectoryNames,
         bool recursive,
         bool followSymlinks,
+        bool ignoreCase,
         bool collectGitignore,
         bool collectGitattributes,
         bool collectFiles,
@@ -54,7 +55,7 @@ internal static class ScanTreeWalker
         var followedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot };
 
         Collect(
-            fullRoot, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
+            fullRoot, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
             collectGitignore, collectGitattributes, collectFiles,
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
             onDirectoryVisited, ref visited, ancestors, followedTargets);
@@ -83,6 +84,7 @@ internal static class ScanTreeWalker
         IReadOnlySet<string> excludedDirectoryNames,
         bool recursive,
         bool followSymlinks,
+        bool ignoreCase,
         bool collectGitignore,
         bool collectGitattributes,
         bool collectFiles,
@@ -105,7 +107,7 @@ internal static class ScanTreeWalker
         // on, rather than aborting the directory and silently dropping its whole subtree.
         if (collectGitignore
             && TryReadRuleFile(Path.Combine(directory, ".gitignore"), skipped) is { } ignoreLines
-            && GitIgnoreRules.CompilePatterns(ignoreLines) is { Count: > 0 } ignorePatterns)
+            && GitIgnoreRules.CompilePatterns(ignoreLines, ignoreCase) is { Count: > 0 } ignorePatterns)
         {
             var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
             gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, ignorePatterns));
@@ -113,7 +115,7 @@ internal static class ScanTreeWalker
 
         if (collectGitattributes
             && TryReadRuleFile(Path.Combine(directory, ".gitattributes"), skipped) is { } attributeLines
-            && GitAttributesRules.CompilePatterns(attributeLines) is { Count: > 0 } attributePatterns)
+            && GitAttributesRules.CompilePatterns(attributeLines, ignoreCase) is { Count: > 0 } attributePatterns)
         {
             var baseDir = GitAttributesRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
             attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, attributePatterns));
@@ -204,7 +206,7 @@ internal static class ScanTreeWalker
             {
                 ancestors.Add(subdirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 Collect(
-                    subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
+                    subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
                     collectGitignore, collectGitattributes, collectFiles,
                     gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
                     onDirectoryVisited, ref visited, ancestors, followedTargets);
@@ -233,7 +235,7 @@ internal static class ScanTreeWalker
 
             ancestors.Add(resolution.Target!);
             Collect(
-                subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks,
+                subdirectory, normalizedRoot, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
                 collectGitignore, collectGitattributes, collectFiles,
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
                 onDirectoryVisited, ref visited, ancestors, followedTargets);
