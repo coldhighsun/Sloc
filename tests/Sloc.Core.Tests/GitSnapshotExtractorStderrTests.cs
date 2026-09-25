@@ -70,7 +70,7 @@ public sealed class GitSnapshotExtractorStderrTests : IDisposable
     /// than a pipe buffer holds (here, a pack-access trace line per object read).
     /// </summary>
     [Fact]
-    public void Extract_GitWritesLargeStderr_CompletesWithoutDeadlock()
+    public async Task Extract_GitWritesLargeStderr_CompletesWithoutDeadlock()
     {
         for (var i = 0; i < FileCount; i++)
         {
@@ -88,10 +88,8 @@ public sealed class GitSnapshotExtractorStderrTests : IDisposable
         {
             var extraction = Task.Run(() => new GitSnapshotExtractor().Extract(_root, "HEAD"));
 
-            Assert.True(
-                extraction.Wait(ExtractTimeout, TestContext.Current.CancellationToken),
-                "Extraction did not finish; git most likely blocked writing to a full stderr pipe.");
-            using var snapshot = extraction.Result;
+            // Throws TimeoutException if git blocked writing to a full stderr pipe.
+            using var snapshot = await extraction.WaitAsync(ExtractTimeout, TestContext.Current.CancellationToken);
             Assert.Equal(FileCount, snapshot.Files.Count);
             Assert.Empty(snapshot.Skipped);
         }
