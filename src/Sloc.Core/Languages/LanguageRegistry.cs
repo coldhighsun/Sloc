@@ -673,7 +673,8 @@ public static class LanguageRegistry
                 Name = "D",
                 Extensions = [".d"],
                 LineCommentTokens = ["//"],
-                BlockComments = [nestedCStyleBlock, new BlockComment("/+", "+/", AllowNested: true)],
+                // Only D's /+ +/ comments nest; its /* */ comments end at the first */.
+                BlockComments = [cStyleBlock, new BlockComment("/+", "+/", AllowNested: true)],
                 StringLiterals = [backtickRaw, doubleQuote, singleQuote]
             },
             new()
