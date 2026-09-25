@@ -209,18 +209,46 @@ public sealed partial class AnalyzeHandler
 
     /// <summary>
     /// Reads a <c>--list-file</c>'s entries, one per non-blank line, from either the file at
-    /// <paramref name="listFile"/> or, when it is the stdin sentinel (<c>-</c>), from
-    /// <see cref="Console.In"/>.
+    /// <paramref name="listFile"/> or, when it is the stdin sentinel (<c>-</c>), from stdin.
     /// </summary>
     /// <param name="listFile">The list-file path, or <c>-</c> to read from stdin.</param>
     private static IEnumerable<string> ReadListFile(string listFile)
     {
-        var lines = listFile == StdoutToken
-            ? ReadAllLines(Console.In)
-            : File.ReadLines(listFile);
+        if (listFile != StdoutToken)
+        {
+            return ReadListEntries(File.ReadLines(listFile));
+        }
 
-        return lines.Where(line => !string.IsNullOrWhiteSpace(line));
+        // Piped stdin is decoded as UTF-8, like a list file, rather than via Console.In's
+        // console code page (e.g. 936 on Chinese Windows), which would garble the non-ASCII
+        // paths UTF-8 producers such as "git ls-files" emit. Setting Console.InputEncoding
+        // instead would change the code page of the user's console window itself. Typed
+        // (non-redirected) input still goes through Console.In, which decodes it correctly.
+        return Console.IsInputRedirected
+            ? ReadListEntries(Console.OpenStandardInput())
+            : ReadListEntries(ReadAllLines(Console.In));
     }
+
+    /// <summary>
+    /// Lazily yields the non-blank lines of <paramref name="stream"/>, decoded as UTF-8 unless
+    /// a byte order mark says otherwise (e.g. UTF-16 from a Windows PowerShell pipeline).
+    /// </summary>
+    /// <param name="stream">The stream to read the list from; disposed once fully read.</param>
+    internal static IEnumerable<string> ReadListEntries(Stream stream)
+    {
+        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        foreach (var line in ReadListEntries(ReadAllLines(reader)))
+        {
+            yield return line;
+        }
+    }
+
+    /// <summary>
+    /// Filters <paramref name="lines"/> down to the non-blank ones.
+    /// </summary>
+    /// <param name="lines">The raw lines of the list.</param>
+    private static IEnumerable<string> ReadListEntries(IEnumerable<string> lines) =>
+        lines.Where(line => !string.IsNullOrWhiteSpace(line));
 
     /// <summary>
     /// Replaces each analysis's temporary extraction path with its original git-relative
