@@ -485,7 +485,11 @@ public sealed class GitSnapshotExtractor
         var stdin = process.StandardInput.BaseStream;
 
         // Written on a background thread while this thread reads, for the same reason as in
-        // ExtractBlobs: the listing can exceed the pipe buffers in both directions.
+        // ExtractBlobs: the listing can exceed the pipe buffers in both directions. The token
+        // is checked inside the delegate rather than passed to Task.Run itself: an
+        // already-cancelled token passed to Task.Run skips the delegate entirely, so the
+        // "finally" below would never dispose stdin, and the main thread's read of stdout
+        // would then block forever on a process still waiting for input.
         var writerTask = Task.Run(() =>
         {
             try
@@ -507,40 +511,53 @@ public sealed class GitSnapshotExtractor
             {
                 stdin.Dispose();
             }
-        }, cancellationToken);
+        });
 
-        // The output is "<path>\0<attribute>\0<value>\0" for each requested attribute of each
-        // path, in request order, so the n-th pair of triples belongs to the n-th queried blob. A value
-        // can be empty (e.g. "filter="), so empty records must be kept to stay aligned.
-        using (var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536))
+        string stderr;
+        try
         {
-            var fields = new string[3];
-            var field = 0;
-            var triple = 0;
-            foreach (var record in ReadNullTerminatedRecords(stdout, keepEmpty: true))
+            // The output is "<path>\0<attribute>\0<value>\0" for each requested attribute of
+            // each path, in request order, so the n-th pair of triples belongs to the n-th
+            // queried blob. A value can be empty (e.g. "filter="), so empty records must be
+            // kept to stay aligned.
+            using (var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536))
             {
-                fields[field++] = record;
-                if (field < fields.Length)
+                var fields = new string[3];
+                var field = 0;
+                var triple = 0;
+                foreach (var record in ReadNullTerminatedRecords(stdout, keepEmpty: true))
                 {
-                    continue;
-                }
+                    fields[field++] = record;
+                    if (field < fields.Length)
+                    {
+                        continue;
+                    }
 
-                field = 0;
-                var value = fields[2];
-                var converts = fields[1] == "filter"
-                    ? drivers.Contains(value)
-                    : value is not ("unspecified" or "unset" or "set" or "");
-                if (converts)
-                {
-                    filtered.Add(queried[triple / 2]);
-                }
+                    field = 0;
+                    var value = fields[2];
+                    var converts = fields[1] == "filter"
+                        ? drivers.Contains(value)
+                        : value is not ("unspecified" or "unset" or "set" or "");
+                    if (converts)
+                    {
+                        filtered.Add(queried[triple / 2]);
+                    }
 
-                triple++;
+                    triple++;
+                }
             }
+
+            writerTask.GetAwaiter().GetResult();
+            stderr = stderrTask.GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Cancelled mid-read, or some other failure (e.g. a disk-full IOException):
+            // disposing the process on unwind only releases the handle, not stop it.
+            process.Kill(entireProcessTree: true);
+            throw;
         }
 
-        writerTask.GetAwaiter().GetResult();
-        var stderr = stderrTask.GetAwaiter().GetResult();
         process.WaitForExit();
         if (process.ExitCode != 0)
         {
@@ -598,9 +615,11 @@ public sealed class GitSnapshotExtractor
             {
                 process.StandardOutput.BaseStream.CopyToAsync(fileStream, cancellationToken).GetAwaiter().GetResult();
             }
-            catch (OperationCanceledException)
+            catch
             {
-                // A filter such as Git LFS can block on a download; don't leave it running.
+                // A filter such as Git LFS can block on a download, and disposing the process
+                // on any other failure (e.g. a disk-full IOException) only releases the handle
+                // without stopping it; don't leave it running either way.
                 process.Kill(entireProcessTree: true);
                 throw;
             }
@@ -611,7 +630,7 @@ public sealed class GitSnapshotExtractor
         {
             stderr = stderrTask.GetAwaiter().GetResult();
         }
-        catch (OperationCanceledException)
+        catch
         {
             process.Kill(entireProcessTree: true);
             throw;
@@ -660,7 +679,11 @@ public sealed class GitSnapshotExtractor
         // producing the next blob's header while this thread is still copying the current
         // one's content. Writing and reading concurrently (rather than writing everything
         // up front) also avoids a deadlock if the requests exceed the stdin pipe buffer
-        // while nobody is draining stdout yet.
+        // while nobody is draining stdout yet. The token is checked inside the delegate
+        // rather than passed to Task.Run itself: an already-cancelled token passed to
+        // Task.Run skips the delegate entirely, so the "finally" below would never dispose
+        // stdin, and the main thread's read of stdout would then block forever on a process
+        // still waiting for input.
         var writerTask = Task.Run(() =>
         {
             try
@@ -690,7 +713,7 @@ public sealed class GitSnapshotExtractor
             {
                 stdin.Dispose();
             }
-        }, cancellationToken);
+        });
 
         try
         {
@@ -751,10 +774,11 @@ public sealed class GitSnapshotExtractor
 
             writerTask.GetAwaiter().GetResult();
         }
-        catch (OperationCanceledException)
+        catch
         {
-            // Cancelled mid-batch: the process would otherwise keep running (possibly
-            // blocked on a full stdout pipe) since disposing it only releases the handle.
+            // Failed mid-batch (cancellation, or e.g. a disk-full IOException from
+            // CopyExactly): the process would otherwise keep running (possibly blocked on a
+            // full stdout pipe) since disposing it only releases the handle.
             process.Kill(entireProcessTree: true);
             throw;
         }

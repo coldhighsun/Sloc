@@ -84,6 +84,27 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that an already-cancelled token makes extraction throw promptly instead of
+    /// hanging: whichever stage picks up the cancellation kills its <c>git</c> child process
+    /// rather than leaving it running (what the broadened <c>catch</c> blocks around each
+    /// <c>process.Kill</c> call guard against for any mid-extraction failure, not just
+    /// cancellation).
+    /// </summary>
+    [Fact]
+    public async Task Extract_AlreadyCancelledToken_ThrowsCanceledPromptly()
+    {
+        Write("a.cs", "// hello");
+        Commit("first");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var extraction = Task.Run(() => _extractor.Extract(_root, "HEAD", cts.Token));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => extraction.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// Verifies that a <c>rev:path</c> tree-ish (e.g. <c>HEAD:sub</c>) is accepted and
     /// extracts that subtree, with git paths relative to it.
     /// </summary>
