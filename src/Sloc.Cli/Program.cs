@@ -322,17 +322,4 @@ rootCommand.SetAction(parseResult =>
     return new AnalyzeHandler().Execute(options);
 });
 
-try
-{
-    if (args.Length == 0)
-    {
-        return rootCommand.Parse(["--help"]).Invoke();
-    }
-
-    return rootCommand.Parse(args).Invoke();
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine($"sloc: {ex.Message}");
-    return ExitCode.Unexpected;
-}
+return CommandInvoker.Invoke(rootCommand.Parse(args.Length == 0 ? ["--help"] : args), Console.Error);
