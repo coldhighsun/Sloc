@@ -139,16 +139,14 @@ public sealed class ScanOptions
 /// </summary>
 public sealed class DirectoryScanner
 {
-    // Single source of truth for built-in directory excludes; the glob list below is
-    // derived from it so the two never drift out of sync.
-    private static readonly IReadOnlySet<string> DefaultExcludeDirectoryNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"
-        };
+    private static readonly string[] DefaultExcludeDirectoryNameList =
+        ["bin", "obj", "artifacts", ".git", ".vs", ".vscode", ".idea", "node_modules"];
 
-    private static readonly string[] DefaultExcludes =
-        DefaultExcludeDirectoryNames.Select(name => $"**/{name}/**").ToArray();
+    // Built fresh per scan so directory-name exclusion honors the same resolved
+    // ignoreCase (git core.ignoreCase/platform) as every other rule in the scan, instead
+    // of always matching case-insensitively.
+    private static IReadOnlySet<string> ExcludeDirectoryNames(bool ignoreCase) =>
+        new HashSet<string>(DefaultExcludeDirectoryNameList, IgnoreCaseComparer.Comparer(ignoreCase));
 
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
@@ -211,7 +209,7 @@ public sealed class DirectoryScanner
         // descends into a nested repository (a submodule, or a clone it doesn't track), so
         // with .gitignore honored neither does the walk.
         var walk = ScanTreeWalker.Walk(
-            root, DefaultExcludeDirectoryNames, walkRecursive, options.FollowSymlinks, ignoreCase,
+            root, ExcludeDirectoryNames(ignoreCase), walkRecursive, options.FollowSymlinks, ignoreCase,
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan,
             skipNestedRepositories: (options.RespectGitignore || options.SkipNestedRepositories) && workTree is not null);
 
@@ -236,7 +234,7 @@ public sealed class DirectoryScanner
             pathByRelative[Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/')] = fullPath;
         }
 
-        var files = FilterCandidates(pathByRelative, options, gitignore, gitattributes, onFileFound)
+        var files = FilterCandidates(pathByRelative, options, gitignore, gitattributes, ignoreCase, onFileFound)
             .ConvertAll(static candidate => candidate.File);
         files.Sort(static (left, right) => string.CompareOrdinal(left.Path, right.Path));
         return new ScanResult(files, [.. walk.Skipped, .. ancestors.Skipped]);
@@ -284,6 +282,7 @@ public sealed class DirectoryScanner
         var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(workTree);
         var walked = CreateRuleFiles(ignoreCase, options);
         var pathByRelative = new Dictionary<string, string>(entries.Count);
+        var excludeDirectoryNames = ExcludeDirectoryNames(ignoreCase);
 
         foreach (var entry in entries)
         {
@@ -292,7 +291,7 @@ public sealed class DirectoryScanner
 
             // Only the rule files a directory walk would have visited.
             if (walked.TryGetRuleFile(relativePath, out var directory, out var kind)
-                && ScanTreeWalker.Visits(directory, DefaultExcludeDirectoryNames, walkRecursive))
+                && ScanTreeWalker.Visits(directory, excludeDirectoryNames, walkRecursive))
             {
                 walked.Read(entry.FullPath, directory, kind);
             }
@@ -314,7 +313,7 @@ public sealed class DirectoryScanner
 
         var (gitignore, gitattributes) = BuildRules(
             workTree, ignoreCase, scanPrefix, walked.GitignoreFiles, walked.AttributesFiles, ancestors, options);
-        var candidates = FilterCandidates(pathByRelative, options, gitignore, gitattributes, onFileFound: null);
+        var candidates = FilterCandidates(pathByRelative, options, gitignore, gitattributes, ignoreCase, onFileFound: null);
         candidates.Sort(static (left, right) => string.CompareOrdinal(left.RelativePath, right.RelativePath));
         return new ScanResult(
             candidates.ConvertAll(static candidate => candidate.File), [.. walked.Skipped, .. ancestors.Skipped]);
@@ -547,6 +546,11 @@ public sealed class DirectoryScanner
     /// <param name="options">The scan options.</param>
     /// <param name="gitignore">The <c>.gitignore</c> rules to apply, or <see langword="null"/>.</param>
     /// <param name="gitattributes">The <c>.gitattributes</c> rules to apply, or <see langword="null"/>.</param>
+    /// <param name="ignoreCase">
+    /// Whether a built-in excluded directory name matches a differently-cased directory (git's
+    /// <c>core.ignoreCase</c>), applied the same way <see cref="ScanTreeWalker.Visits"/> already
+    /// applies it when a real directory walk is available.
+    /// </param>
     /// <param name="onFileFound">Invoked with the running count and path of each included file.</param>
     /// <returns>Each included file, paired with its relative path.</returns>
     private static List<(string RelativePath, ScannedFile File)> FilterCandidates(
@@ -554,6 +558,7 @@ public sealed class DirectoryScanner
         ScanOptions options,
         GitIgnoreRules? gitignore,
         GitAttributesRules? gitattributes,
+        bool ignoreCase,
         Action<int, string>? onFileFound)
     {
         var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
@@ -566,11 +571,15 @@ public sealed class DirectoryScanner
             matcher.AddInclude(options.Recursive ? "**/*" : "*");
         }
 
-        matcher.AddExcludePatterns(DefaultExcludes);
         if (options.Excludes.Count > 0)
         {
             matcher.AddExcludePatterns(options.Excludes);
         }
+
+        // Built-in directory excludes are applied separately below, by directory-name segment
+        // against excludeDirectoryNames, rather than through the Matcher's own (always
+        // case-insensitive) glob matching: unlike Matcher, that check can honor ignoreCase.
+        var excludeDirectoryNames = ExcludeDirectoryNames(ignoreCase);
 
         // Batch the glob match across all candidate paths instead of re-running Matcher.Match
         // (which rebuilds an InMemoryDirectoryInfo internally) once per file. The reverse map
@@ -581,6 +590,12 @@ public sealed class DirectoryScanner
         {
             var relativePath = matchedFile.Path;
             if (!pathByRelative.TryGetValue(relativePath, out var fullPath))
+            {
+                continue;
+            }
+
+            var directory = relativePath[..Math.Max(0, relativePath.LastIndexOf('/'))];
+            if (!ScanTreeWalker.Visits(directory, excludeDirectoryNames, recursive: true))
             {
                 continue;
             }

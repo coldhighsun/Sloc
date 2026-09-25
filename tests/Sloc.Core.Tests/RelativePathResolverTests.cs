@@ -14,7 +14,7 @@ public class RelativePathResolverTests
     [Fact]
     public void TryGetRelativePath_EmptyBaseDirectory_ReturnsPathUnchanged()
     {
-        var result = RelativePathResolver.TryGetRelativePath(string.Empty, "src/Foo.cs", out var relative);
+        var result = RelativePathResolver.TryGetRelativePath(string.Empty, "src/Foo.cs", ignoreCase: false, out var relative);
 
         Assert.True(result);
         Assert.Equal("src/Foo.cs", relative);
@@ -26,7 +26,7 @@ public class RelativePathResolverTests
     [Fact]
     public void TryGetRelativePath_PathNestedUnderBase_ReturnsRebasedPath()
     {
-        var result = RelativePathResolver.TryGetRelativePath("src", "src/sub/Foo.cs", out var relative);
+        var result = RelativePathResolver.TryGetRelativePath("src", "src/sub/Foo.cs", ignoreCase: false, out var relative);
 
         Assert.True(result);
         Assert.Equal("sub/Foo.cs", relative);
@@ -39,7 +39,7 @@ public class RelativePathResolverTests
     [Fact]
     public void TryGetRelativePath_PathEqualsBase_ReturnsFalse()
     {
-        var result = RelativePathResolver.TryGetRelativePath("src", "src", out var relative);
+        var result = RelativePathResolver.TryGetRelativePath("src", "src", ignoreCase: false, out var relative);
 
         Assert.False(result);
         Assert.Equal(string.Empty, relative);
@@ -51,7 +51,7 @@ public class RelativePathResolverTests
     [Fact]
     public void TryGetRelativePath_PathNotUnderBase_ReturnsFalse()
     {
-        var result = RelativePathResolver.TryGetRelativePath("src", "other/Foo.cs", out var relative);
+        var result = RelativePathResolver.TryGetRelativePath("src", "other/Foo.cs", ignoreCase: false, out var relative);
 
         Assert.False(result);
         Assert.Equal(string.Empty, relative);
@@ -64,9 +64,35 @@ public class RelativePathResolverTests
     [Fact]
     public void TryGetRelativePath_PrefixWithoutSeparator_ReturnsFalse()
     {
-        var result = RelativePathResolver.TryGetRelativePath("src", "src-extra/Foo.cs", out var relative);
+        var result = RelativePathResolver.TryGetRelativePath("src", "src-extra/Foo.cs", ignoreCase: false, out var relative);
 
         Assert.False(result);
         Assert.Equal(string.Empty, relative);
+    }
+
+    /// <summary>
+    /// Verifies that a path differing from the base directory only by case is rejected when
+    /// <c>ignoreCase</c> is <see langword="false"/>.
+    /// </summary>
+    [Fact]
+    public void TryGetRelativePath_CaseDiffersIgnoreCaseFalse_ReturnsFalse()
+    {
+        var result = RelativePathResolver.TryGetRelativePath("Src", "src/Foo.cs", ignoreCase: false, out var relative);
+
+        Assert.False(result);
+        Assert.Equal(string.Empty, relative);
+    }
+
+    /// <summary>
+    /// Verifies that a path differing from the base directory only by case is accepted and
+    /// rebased when <c>ignoreCase</c> is <see langword="true"/>.
+    /// </summary>
+    [Fact]
+    public void TryGetRelativePath_CaseDiffersIgnoreCaseTrue_ReturnsRebasedPath()
+    {
+        var result = RelativePathResolver.TryGetRelativePath("Src", "src/sub/Foo.cs", ignoreCase: true, out var relative);
+
+        Assert.True(result);
+        Assert.Equal("sub/Foo.cs", relative);
     }
 }

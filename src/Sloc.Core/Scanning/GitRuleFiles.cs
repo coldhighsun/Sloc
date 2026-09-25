@@ -97,7 +97,7 @@ internal sealed class GitRuleFiles(bool ignoreCase, bool collectGitignore, bool 
         {
             if (GitIgnoreRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } ignorePatterns)
             {
-                GitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns));
+                GitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns, ignoreCase));
             }
         }
         else if (GitAttributesRules.ParseLines(lines) is { Count: > 0 } attributeLines)

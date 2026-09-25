@@ -62,19 +62,28 @@ public sealed class GitAttributesRules
     private readonly string _scanPrefix;
 
     /// <summary>
+    /// Whether patterns, and the base-directory nesting check, match case-insensitively
+    /// (git's <c>core.ignoreCase</c>).
+    /// </summary>
+    private readonly bool _ignoreCase;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GitAttributesRules"/> class.
     /// </summary>
     /// <param name="files">The compiled files, deepest first.</param>
     /// <param name="macros">The macro definitions in effect.</param>
     /// <param name="scanPrefix">The scan root's repository-relative directory.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
     private GitAttributesRules(
         IReadOnlyList<CompiledFile> files,
         IReadOnlyDictionary<string, IReadOnlyList<AttributeState>> macros,
-        string scanPrefix)
+        string scanPrefix,
+        bool ignoreCase)
     {
         _files = files;
         _macros = macros;
         _scanPrefix = scanPrefix;
+        _ignoreCase = ignoreCase;
     }
 
     /// <summary>
@@ -170,7 +179,7 @@ public sealed class GitAttributesRules
         var result = false;
         foreach (var file in _files)
         {
-            if (!RelativePathResolver.TryGetRelativePath(file.BaseDirectory, normalized, out var relativeToBase))
+            if (!RelativePathResolver.TryGetRelativePath(file.BaseDirectory, normalized, _ignoreCase, out var relativeToBase))
             {
                 continue;
             }
@@ -276,7 +285,7 @@ public sealed class GitAttributesRules
             }
         }
 
-        return new GitAttributesRules(compiled, macros, scanPrefix);
+        return new GitAttributesRules(compiled, macros, scanPrefix, ignoreCase);
     }
 
     /// <summary>
