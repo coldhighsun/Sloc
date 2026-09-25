@@ -9,6 +9,21 @@ namespace Sloc.Core.Scanning;
 internal static class SymlinkGuard
 {
     /// <summary>
+    /// Compares full file paths the way the platform's default file system does:
+    /// case-insensitively on Windows and macOS, case-sensitively elsewhere.
+    /// </summary>
+    internal static readonly StringComparer FileSystemPathComparer =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    /// <summary>
+    /// The <see cref="StringComparison"/> equivalent of <see cref="FileSystemPathComparer"/>,
+    /// for APIs (e.g. <see cref="string.StartsWith(string, StringComparison)"/>) that take a
+    /// comparison mode rather than a comparer instance.
+    /// </summary>
+    private static readonly StringComparison FileSystemPathComparison =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>
     /// The outcome of resolving a directory symlink/junction's target for loop detection.
     /// </summary>
     /// <param name="Resolved">
@@ -213,7 +228,7 @@ internal static class SymlinkGuard
             ? normalizedAncestor
             : normalizedAncestor + Path.DirectorySeparatorChar;
 
-        return normalizedPath.Equals(normalizedAncestor, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(ancestorPrefix, StringComparison.OrdinalIgnoreCase);
+        return normalizedPath.Equals(normalizedAncestor, FileSystemPathComparison)
+            || normalizedPath.StartsWith(ancestorPrefix, FileSystemPathComparison);
     }
 }

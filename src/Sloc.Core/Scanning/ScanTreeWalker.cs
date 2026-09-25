@@ -265,16 +265,16 @@ internal static class ScanTreeWalker
 
             if (!isLink)
             {
-                if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
-                {
-                    continue;
-                }
-
                 var realSubdirectory = Path.Combine(realDirectory, Path.GetFileName(subdirectory));
                 if (outsideRoot && !follow!.VisitedDirectories.Add(realSubdirectory))
                 {
                     // Already walked as (part of) another followed link's target.
                     symlinkedDirectories.Add(subdirectory);
+                    continue;
+                }
+
+                if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
+                {
                     continue;
                 }
 
@@ -295,11 +295,6 @@ internal static class ScanTreeWalker
                 continue;
             }
 
-            if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
-            {
-                continue;
-            }
-
             // A directory symlink/junction. Resolve its target's real path and check whether
             // following it would loop: the target is at or under a directory already on the
             // current path from the scan root (directly, or transitively through an earlier
@@ -312,6 +307,11 @@ internal static class ScanTreeWalker
             if (!resolution.Resolved || resolution.IsLoop || !follow.VisitedDirectories.Add(resolution.Target!))
             {
                 symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
+            {
                 continue;
             }
 
@@ -340,12 +340,12 @@ internal static class ScanTreeWalker
         /// <summary>
         /// Gets the real paths of directories outside <see cref="RealRoot"/> already walked.
         /// </summary>
-        public HashSet<string> VisitedDirectories { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> VisitedDirectories { get; } = new(SymlinkGuard.FileSystemPathComparer);
 
         /// <summary>
         /// Gets the real paths of files outside <see cref="RealRoot"/> already collected.
         /// </summary>
-        public HashSet<string> SeenFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> SeenFiles { get; } = new(SymlinkGuard.FileSystemPathComparer);
 
         /// <summary>
         /// Whether the file symlink at <paramref name="linkPath"/> should be collected: not
