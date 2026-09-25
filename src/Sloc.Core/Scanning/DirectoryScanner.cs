@@ -150,13 +150,6 @@ public sealed class DirectoryScanner
     private static readonly string[] DefaultExcludes =
         DefaultExcludeDirectoryNames.Select(name => $"**/{name}/**").ToArray();
 
-    /// <summary>
-    /// Compares full file paths the way the platform's default file system does:
-    /// case-insensitively on Windows and macOS, case-sensitively elsewhere.
-    /// </summary>
-    private static readonly StringComparer FileSystemPathComparer =
-        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
         Name = "Other",
@@ -386,7 +379,7 @@ public sealed class DirectoryScanner
 
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>();
-        var seen = new HashSet<string>(FileSystemPathComparer);
+        var seen = new HashSet<string>(SymlinkGuard.FileSystemPathComparer);
 
         foreach (var path in paths)
         {
