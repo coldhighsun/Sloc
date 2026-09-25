@@ -28,6 +28,18 @@ public sealed record ScanResult(IReadOnlyList<ScannedFile> Files, IReadOnlyList<
 public sealed record SnapshotEntry(string FullPath, string RelativePath);
 
 /// <summary>
+/// The repository a <see cref="DirectoryScanner.ScanSnapshot"/> tree belongs to, so the
+/// <c>.gitignore</c>/<c>.gitattributes</c> files above its scan root come from the same
+/// snapshot rather than from the disk.
+/// </summary>
+/// <param name="ScanPrefix">The scan root's <c>/</c>-separated path relative to the repository root, empty for the root itself.</param>
+/// <param name="Files">
+/// The snapshot's files with repository-relative paths; only the <c>.gitignore</c> and
+/// <c>.gitattributes</c> files in the directories above <paramref name="ScanPrefix"/> are used.
+/// </param>
+public sealed record SnapshotRepository(string ScanPrefix, IReadOnlyList<SnapshotEntry> Files);
+
+/// <summary>
 /// Options controlling how <see cref="DirectoryScanner"/> discovers files.
 /// </summary>
 public sealed class ScanOptions
@@ -191,7 +203,7 @@ public sealed class DirectoryScanner
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
 
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles, ignoreCase) : null;
-        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles, ignoreCase) : null;
+        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromWalk(root, walk.AttributesFiles, ignoreCase) : null;
 
         // Ordinal (case-sensitive) comparer: Matcher.Match's OrdinalIgnoreCase comparison is
         // for pattern matching only, its Files results echo back the exact strings it was
@@ -226,16 +238,26 @@ public sealed class DirectoryScanner
     /// </summary>
     /// <param name="root">
     /// The real directory the relative paths are rooted at, used (as by <see cref="Scan"/>)
-    /// to locate the global git excludes file and the repository's <c>.git/info/exclude</c>.
+    /// to locate the global git excludes file and the repository's config and
+    /// <c>info/exclude</c>, and, unless <paramref name="repository"/> is given, the rule files
+    /// above the scan root in its repository.
     /// </param>
     /// <param name="entries">The files, each with its scan-root-relative path.</param>
     /// <param name="options">The scan options.</param>
+    /// <param name="repository">
+    /// The repository the entries belong to, whose rule files above the scan root replace the
+    /// ones <see cref="Scan"/> would read from the disk above <paramref name="root"/>.
+    /// </param>
     /// <returns>
     /// A <see cref="ScanResult"/> with the entries that pass every filter, ordered by their
     /// relative path, and an entry in <see cref="ScanResult.Skipped"/> for every rule file
     /// that could not be read.
     /// </returns>
-    public ScanResult ScanSnapshot(string root, IReadOnlyList<SnapshotEntry> entries, ScanOptions options)
+    public ScanResult ScanSnapshot(
+        string root,
+        IReadOnlyList<SnapshotEntry> entries,
+        ScanOptions options,
+        SnapshotRepository? repository = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(entries);
@@ -253,46 +275,43 @@ public sealed class DirectoryScanner
             var relativePath = entry.RelativePath.Replace('\\', '/').Trim('/');
             pathByRelative[relativePath] = entry.FullPath;
 
-            var slash = relativePath.LastIndexOf('/');
-            var fileName = relativePath[(slash + 1)..];
-            var isGitignore = options.RespectGitignore && fileName == ".gitignore";
-            var isGitattributes = options.RespectGitAttributes && fileName == ".gitattributes";
-            if (!isGitignore && !isGitattributes)
-            {
-                continue;
-            }
-
             // Only the rule files a directory walk would have visited.
-            var directory = slash < 0 ? string.Empty : relativePath[..slash];
-            if (!ScanTreeWalker.Visits(directory, DefaultExcludeDirectoryNames, walkRecursive))
+            if (TryGetRuleFileDirectory(relativePath, options, out var directory)
+                && ScanTreeWalker.Visits(directory, DefaultExcludeDirectoryNames, walkRecursive))
             {
-                continue;
-            }
-
-            string[] lines;
-            try
-            {
-                lines = File.ReadAllLines(entry.FullPath);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                skipped.Add(new SkippedEntry(entry.FullPath, ex.Message));
-                continue;
-            }
-
-            if (isGitignore && GitIgnoreRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } ignorePatterns)
-            {
-                gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns));
-            }
-
-            if (isGitattributes && GitAttributesRules.ParseLines(lines) is { Count: > 0 } attributeLines)
-            {
-                attributesFiles.Add(new GitAttributesRules.AttributesFile(GitAttributesRules.NormalizeBase(directory), attributeLines));
+                ReadRuleFile(entry.FullPath, relativePath, directory, ignoreCase, gitignoreFiles, attributesFiles, skipped);
             }
         }
 
-        var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, gitignoreFiles, ignoreCase) : null;
-        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(attributesFiles, ignoreCase) : null;
+        GitIgnoreRules? gitignore;
+        GitAttributesRules? gitattributes;
+        if (repository is null)
+        {
+            gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, gitignoreFiles, ignoreCase) : null;
+            gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromWalk(root, attributesFiles, ignoreCase) : null;
+        }
+        else
+        {
+            var scanPrefix = repository.ScanPrefix.Replace('\\', '/').Trim('/');
+            var ancestors = GitWorkTree.AncestorDirectories(scanPrefix).ToHashSet(StringComparer.Ordinal);
+            var ancestorGitignoreFiles = new List<GitIgnoreRules.GitIgnoreFile>();
+            var ancestorAttributesFiles = new List<GitAttributesRules.AttributesFile>();
+            foreach (var file in repository.Files)
+            {
+                var repositoryPath = file.RelativePath.Replace('\\', '/').Trim('/');
+                if (TryGetRuleFileDirectory(repositoryPath, options, out var directory) && ancestors.Contains(directory))
+                {
+                    ReadRuleFile(file.FullPath, repositoryPath, directory, ignoreCase, ancestorGitignoreFiles, ancestorAttributesFiles, skipped);
+                }
+            }
+
+            gitignore = options.RespectGitignore
+                ? GitIgnoreRules.FromWalk(root, gitignoreFiles, ignoreCase, scanPrefix, ancestorGitignoreFiles)
+                : null;
+            gitattributes = options.RespectGitAttributes
+                ? GitAttributesRules.FromWalk(attributesFiles, ignoreCase, scanPrefix, ancestorAttributesFiles)
+                : null;
+        }
 
         var candidates = FilterCandidates(pathByRelative, options, gitignore, gitattributes, onFileFound: null);
         candidates.Sort(static (left, right) => string.CompareOrdinal(left.RelativePath, right.RelativePath));
@@ -381,6 +400,67 @@ public sealed class DirectoryScanner
     /// </summary>
     private static bool WalksRecursively(ScanOptions options) =>
         options.Recursive || options.Includes.Count > 0;
+
+    /// <summary>
+    /// Whether <paramref name="relativePath"/> names a <c>.gitignore</c> or
+    /// <c>.gitattributes</c> file that <paramref name="options"/> say to honor.
+    /// </summary>
+    /// <param name="relativePath">A <c>/</c>-separated relative path with no leading/trailing slash.</param>
+    /// <param name="options">The scan options.</param>
+    /// <param name="directory">The directory holding the file, empty for the root.</param>
+    /// <returns><see langword="true"/> if the file is a rule file to read.</returns>
+    private static bool TryGetRuleFileDirectory(string relativePath, ScanOptions options, out string directory)
+    {
+        var slash = relativePath.LastIndexOf('/');
+        var fileName = relativePath[(slash + 1)..];
+        directory = slash < 0 ? string.Empty : relativePath[..slash];
+        return (options.RespectGitignore && fileName == ".gitignore")
+            || (options.RespectGitAttributes && fileName == ".gitattributes");
+    }
+
+    /// <summary>
+    /// Reads and compiles a snapshot's <c>.gitignore</c> or <c>.gitattributes</c> file (as
+    /// chosen by <see cref="TryGetRuleFileDirectory"/>), adding it to the matching list.
+    /// </summary>
+    /// <param name="fullPath">Where the file's content is stored.</param>
+    /// <param name="relativePath">The file's <c>/</c>-separated relative path.</param>
+    /// <param name="directory">The directory holding the file, which its patterns are relative to.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively.</param>
+    /// <param name="gitignoreFiles">Receives the file if it is a <c>.gitignore</c> with patterns.</param>
+    /// <param name="attributesFiles">Receives the file if it is a <c>.gitattributes</c> with lines.</param>
+    /// <param name="skipped">Receives an entry if the file cannot be read.</param>
+    private static void ReadRuleFile(
+        string fullPath,
+        string relativePath,
+        string directory,
+        bool ignoreCase,
+        List<GitIgnoreRules.GitIgnoreFile> gitignoreFiles,
+        List<GitAttributesRules.AttributesFile> attributesFiles,
+        List<SkippedEntry> skipped)
+    {
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            skipped.Add(new SkippedEntry(fullPath, ex.Message));
+            return;
+        }
+
+        if (relativePath.EndsWith(".gitignore", StringComparison.Ordinal))
+        {
+            if (GitIgnoreRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } ignorePatterns)
+            {
+                gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns));
+            }
+        }
+        else if (GitAttributesRules.ParseLines(lines) is { Count: > 0 } attributeLines)
+        {
+            attributesFiles.Add(new GitAttributesRules.AttributesFile(GitAttributesRules.NormalizeBase(directory), attributeLines));
+        }
+    }
 
     /// <summary>
     /// <see cref="Scan"/>'s handling of an explicit single-file root: the file is dropped if

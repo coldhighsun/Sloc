@@ -283,12 +283,16 @@ public sealed partial class AnalyzeHandler
         {
             // The current side is a filtered directory scan, so the baseline must be filtered
             // the same way (globs, built-in excludes, .gitignore/.gitattributes, recursion),
-            // or anything those filters exclude would show up as a spurious delta.
+            // or anything those filters exclude would show up as a spurious delta. The rule
+            // files above the subdirectory come from the commit too, not the working tree.
             var prefixLength = snapshot.RelativePrefix.Length == 0 ? 0 : snapshot.RelativePrefix.Length + 1;
             scanResult = _scanner.ScanSnapshot(
                 repoPath,
                 [.. filesInScope.Select(f => new SnapshotEntry(f.TempPath, f.GitPath[prefixLength..]))],
-                scanOptions);
+                scanOptions,
+                new SnapshotRepository(
+                    snapshot.RelativePrefix,
+                    [.. snapshot.Files.Select(f => new SnapshotEntry(f.TempPath, f.GitPath))]));
         }
 
         var skipped = new List<SkippedEntry>(scanResult.Skipped);

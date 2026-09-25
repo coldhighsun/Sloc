@@ -945,6 +945,137 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(scanned, snapshot);
     }
 
+    /// <summary>
+    /// Verifies that scanning a subdirectory of a repository applies the rule files of the
+    /// directories above it and the repository's <c>info/exclude</c>, with their patterns
+    /// relative to their own directories as git evaluates them.
+    /// </summary>
+    [Fact]
+    public void Scan_SubdirectoryOfRepository_AppliesEnclosingRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git", "info"));
+        Write(".git/info/exclude", "*.tmp.cs\n");
+        Write(".gitignore", "*.gen.cs\n/sub/anchored.cs\nsub/skip/\n/a.cs\n");
+        Write(".gitattributes", "*.vendor.cs linguist-vendored\n");
+        Write("sub/a.cs", "// a");
+        Write("sub/b.gen.cs", "// generated");
+        Write("sub/anchored.cs", "// anchored");
+        Write("sub/skip/c.cs", "// skipped directory");
+        Write("sub/d.vendor.cs", "// vendored");
+        Write("sub/e.tmp.cs", "// excluded");
+
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["sub/a.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
+    /// <summary>
+    /// Verifies that a scan root the enclosing repository's rules would ignore is still
+    /// scanned, while the rules keep applying to the files inside it.
+    /// </summary>
+    [Fact]
+    public void Scan_ScanRootIgnoredByEnclosingRepository_IsStillScanned()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "sub/\n/sub/*\n*.gen.cs\n");
+        Write("sub/inner/a.cs", "// a");
+        Write("sub/inner/b.gen.cs", "// generated");
+
+        var result = _scanner.Scan(Path.Combine(_root, "sub", "inner"), new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["sub/inner/a.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
+    /// <summary>
+    /// Verifies that attribute macros defined in the repository root's <c>.gitattributes</c>
+    /// apply when scanning a subdirectory.
+    /// </summary>
+    [Fact]
+    public void Scan_SubdirectoryOfRepository_TakesMacrosFromRepositoryRoot()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitattributes", "[attr]thirdparty linguist-vendored\n");
+        Write("sub/.gitattributes", "lib/** thirdparty\n");
+        Write("sub/a.cs", "// a");
+        Write("sub/lib/b.cs", "// vendored");
+
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions());
+
+        Assert.Equal(["sub/a.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
+    /// <summary>
+    /// Verifies that in a linked worktree (whose <c>.git</c> is a file pointing into the main
+    /// repository), <c>info/exclude</c> is read from the main repository's common directory.
+    /// </summary>
+    [Fact]
+    public void Scan_LinkedWorktree_UsesCommonDirectoryExclude()
+    {
+        Write("main/.git/info/exclude", "*.tmp.cs\n");
+        Write("main/.git/worktrees/wt/commondir", "../..\n");
+        Write("wt/.git", "gitdir: ../main/.git/worktrees/wt\n");
+        Write("wt/a.cs", "// a");
+        Write("wt/b.tmp.cs", "// excluded");
+
+        var result = _scanner.Scan(Path.Combine(_root, "wt"), new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["wt/a.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="DirectoryScanner.ScanSnapshot"/> of a repository subdirectory
+    /// without a <see cref="SnapshotRepository"/> applies the enclosing rule files on disk,
+    /// as <see cref="DirectoryScanner.Scan"/> does.
+    /// </summary>
+    [Fact]
+    public void ScanSnapshot_SubdirectoryOfRepository_AppliesEnclosingRulesFromDisk()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "*.gen.cs\n");
+        SnapshotEntry[] entries =
+        [
+            new(Write("sub/a.cs", "// a"), "a.cs"),
+            new(Write("sub/b.gen.cs", "// generated"), "b.gen.cs")
+        ];
+
+        var result = _scanner.ScanSnapshot(Path.Combine(_root, "sub"), entries, new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["sub/a.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="DirectoryScanner.ScanSnapshot"/> given a
+    /// <see cref="SnapshotRepository"/> takes the rule files above the scan root from the
+    /// repository's files instead of the disk.
+    /// </summary>
+    [Fact]
+    public void ScanSnapshot_WithRepository_UsesSuppliedAncestorRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        Write(".gitignore", "b.cs\n");
+        var a = Write("store/sub/a.cs", "// a");
+        var b = Write("store/sub/b.cs", "// b");
+        var c = Write("store/sub/c.gen.cs", "// generated");
+        var gitignore = Write("store/.gitignore", "*.gen.cs\n");
+        var gitattributes = Write("store/.gitattributes", "a.cs linguist-generated\n");
+        var repository = new SnapshotRepository(
+            "sub",
+            [
+                new(gitignore, ".gitignore"),
+                new(gitattributes, ".gitattributes"),
+                new(a, "sub/a.cs"),
+                new(b, "sub/b.cs"),
+                new(c, "sub/c.gen.cs")
+            ]);
+        SnapshotEntry[] entries = [new(a, "a.cs"), new(b, "b.cs"), new(c, "c.gen.cs")];
+
+        var result = _scanner.ScanSnapshot(
+            Path.Combine(_root, "sub"), entries, new ScanOptions { RespectGitignore = true }, repository);
+
+        Assert.Equal(["store/sub/b.cs"], result.Files.Select(f => Relative(f.Path)));
+    }
+
     private string Relative(string path) =>
         Path.GetRelativePath(_root, path).Replace('\\', '/');
 
