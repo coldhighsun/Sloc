@@ -121,8 +121,7 @@ public sealed class FileAnalyzer
 
     private static FileAnalysis AnalyzeBytes(string path, LanguageDefinition language, ReadOnlySpan<byte> bytes, bool computeHash)
     {
-        var hasTextBom = HasTextBom(bytes);
-        if (!hasTextBom && bytes.Contains((byte)0))
+        if (!HasWideTextBom(bytes) && bytes.Contains((byte)0))
         {
             throw new BinaryFileException();
         }
@@ -350,7 +349,7 @@ public sealed class FileAnalyzer
 
     /// <summary>
     /// Scans <paramref name="stream"/> once to decide both whether it is binary (contains a
-    /// NUL byte outside a recognized text BOM) and, if not, which encoding
+    /// NUL byte, unless it starts with a UTF-16/UTF-32 BOM) and, if not, which encoding
     /// <see cref="StreamReader"/> should fall back to when the file has no byte-order mark.
     /// Combines what used to be two separate full-file passes (<c>LooksBinary</c> and
     /// <c>DetectFallbackEncoding</c>) into one, and in doing so checks the whole file for NUL
@@ -373,7 +372,7 @@ public sealed class FileAnalyzer
 
         var isValidUtf8 = true;
         var first = true;
-        var hasTextBom = false;
+        var hasWideTextBom = false;
 
         int read;
         while ((read = stream.Read(buffer)) > 0)
@@ -382,13 +381,13 @@ public sealed class FileAnalyzer
 
             if (first)
             {
-                // A recognized Unicode BOM means the file is text whose encoding legitimately
-                // contains NUL bytes (UTF-16/UTF-32), so the NUL heuristic below does not apply.
-                hasTextBom = HasTextBom(window);
+                // A UTF-16/UTF-32 BOM means the file is text whose encoding legitimately
+                // contains NUL bytes, so the NUL heuristic below does not apply.
+                hasWideTextBom = HasWideTextBom(window);
                 first = false;
             }
 
-            if (!hasTextBom)
+            if (!hasWideTextBom)
             {
                 foreach (var b in window)
                 {
@@ -428,15 +427,18 @@ public sealed class FileAnalyzer
         return (IsBinary: false, FallbackEncoding: isValidUtf8 ? Encoding.UTF8 : Encoding.Latin1);
     }
 
-    private static bool HasTextBom(ReadOnlySpan<byte> bytes)
+    /// <summary>
+    /// Whether <paramref name="bytes"/> starts with a UTF-16 or UTF-32 byte-order mark, i.e. an
+    /// encoding in which ordinary text contains NUL bytes. A UTF-8 BOM does not count: UTF-8
+    /// text never contains NUL, so a NUL after one still means the file is binary.
+    /// </summary>
+    /// <param name="bytes">The leading bytes of the file.</param>
+    /// <returns>
+    /// <see langword="true"/> if a UTF-16 LE/BE or UTF-32 LE/BE BOM is present; otherwise <see langword="false"/>.
+    /// </returns>
+    private static bool HasWideTextBom(ReadOnlySpan<byte> bytes)
     {
-        // UTF-8, UTF-16 LE/BE, UTF-32 LE/BE byte-order marks. (UTF-32 LE shares its first
-        // two bytes with UTF-16 LE, which is fine: both are text.)
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-        {
-            return true;
-        }
-
+        // UTF-32 LE shares its first two bytes with UTF-16 LE, which is fine: both are text.
         if (bytes.Length >= 2 &&
             ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))
         {
