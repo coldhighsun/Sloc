@@ -31,15 +31,17 @@ public class SymlinkGuardTests
     }
 
     /// <summary>
-    /// Verifies that comparison is case-insensitive.
+    /// Verifies that comparison matches the platform's own file system: case-insensitive on
+    /// Windows and macOS, case-sensitive elsewhere.
     /// </summary>
     [Fact]
-    public void IsAncestorOrSelf_DifferentCasing_ReturnsTrue()
+    public void IsAncestorOrSelf_DifferentCasing_MatchesPlatformCaseSensitivity()
     {
         var ancestor = Path.Combine(Path.GetTempPath(), "repo");
         var nested = Path.Combine(ancestor, "src").ToUpperInvariant();
 
-        Assert.True(SymlinkGuard.IsAncestorOrSelf(ancestor, nested));
+        var expected = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+        Assert.Equal(expected, SymlinkGuard.IsAncestorOrSelf(ancestor, nested));
     }
 
     /// <summary>
