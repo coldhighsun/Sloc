@@ -1091,11 +1091,12 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/b.cs", "// submodule");
         if (gitFile)
         {
+            CreateRepositoryDirectory(Path.Combine(_root, ".git", "modules", "sub"));
             Write("sub/.git", "gitdir: ../.git/modules/sub\n");
         }
         else
         {
-            Directory.CreateDirectory(Path.Combine(_root, "sub", ".git"));
+            CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
         }
 
         var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
@@ -1103,6 +1104,83 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
         var skipped = Assert.Single(result.Skipped);
         Assert.Equal("sub", Relative(skipped.Path));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="ScanOptions.SkipNestedRepositories"/> skips a nested
+    /// repository inside a repository even when <c>.gitignore</c> is not honored.
+    /// </summary>
+    [Fact]
+    public void Scan_SkipNestedRepositoriesWithoutGitignore_IsSkipped()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write("a.cs", "// a");
+        Write("sub/b.cs", "// submodule");
+        CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false, SkipNestedRepositories = true });
+
+        Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal("sub", Relative(skipped.Path));
+    }
+
+    /// <summary>
+    /// Verifies that a subdirectory whose <c>.git</c> is not a valid repository (an empty
+    /// directory, e.g. a test fixture, or a file that is not a <c>gitdir:</c> pointer) is not
+    /// treated as a nested repository and is scanned, as git itself would track its files.
+    /// </summary>
+    /// <param name="gitFile">Whether the stray <c>.git</c> is a file rather than a directory.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Scan_StrayDotGitInsideRepository_IsScanned(bool gitFile)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write("fixture/b.cs", "// fixture");
+        if (gitFile)
+        {
+            Write("fixture/.git", "not a pointer\n");
+        }
+        else
+        {
+            Directory.CreateDirectory(Path.Combine(_root, "fixture", ".git"));
+        }
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["fixture/b.cs"], result.Files.Select(f => Relative(f.Path)));
+        Assert.Empty(result.Skipped);
+    }
+
+    /// <summary>
+    /// Verifies that an unfollowed directory symlink to another repository is left out as a
+    /// link, not reported as a nested repository.
+    /// </summary>
+    [Fact]
+    public void Scan_UnfollowedSymlinkToRepository_IsNotReportedAsNestedRepository()
+    {
+        var external = Directory.CreateTempSubdirectory("sloc-other-repo-");
+        try
+        {
+            CreateRepositoryDirectory(Path.Combine(external.FullName, ".git"));
+            File.WriteAllText(Path.Combine(external.FullName, "b.cs"), "// other");
+            Directory.CreateDirectory(Path.Combine(_root, ".git"));
+            Write("a.cs", "// a");
+            if (!TryCreateDirectorySymlink(Path.Combine(_root, "libs"), external.FullName))
+            {
+                return;
+            }
+
+            var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+
+            Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
+            Assert.Empty(result.Skipped);
+        }
+        finally
+        {
+            external.Delete(recursive: true);
+        }
     }
 
     /// <summary>
@@ -1121,7 +1199,7 @@ public sealed class DirectoryScannerTests : IDisposable
             Directory.CreateDirectory(Path.Combine(_root, ".git"));
         }
 
-        Directory.CreateDirectory(Path.Combine(_root, "clone", ".git"));
+        CreateRepositoryDirectory(Path.Combine(_root, "clone", ".git"));
         Write("clone/b.cs", "// clone");
 
         var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = respectGitignore });
@@ -1130,15 +1208,38 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Empty(result.Skipped);
     }
 
+    /// <summary>
+    /// Returns <paramref name="path"/> relative to the test root, with <c>/</c> separators.
+    /// </summary>
+    /// <param name="path">The path to convert.</param>
+    /// <returns>The <c>/</c>-separated path relative to the test root.</returns>
     private string Relative(string path) =>
         Path.GetRelativePath(_root, path).Replace('\\', '/');
 
+    /// <summary>
+    /// Writes <paramref name="content"/> to a file under the test root, creating its directories.
+    /// </summary>
+    /// <param name="relativePath">The <c>/</c>-separated path relative to the test root.</param>
+    /// <param name="content">The file content.</param>
+    /// <returns>The file's full path.</returns>
     private string Write(string relativePath, string content)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
         return full;
+    }
+
+    /// <summary>
+    /// Creates the minimal layout git recognizes as a repository directory (<c>HEAD</c>,
+    /// <c>objects/</c>, and <c>refs/</c>) at <paramref name="gitDirectory"/>.
+    /// </summary>
+    /// <param name="gitDirectory">The repository directory to create.</param>
+    private static void CreateRepositoryDirectory(string gitDirectory)
+    {
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "objects"));
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "refs"));
+        File.WriteAllText(Path.Combine(gitDirectory, "HEAD"), "ref: refs/heads/main\n");
     }
 
     /// <summary>
