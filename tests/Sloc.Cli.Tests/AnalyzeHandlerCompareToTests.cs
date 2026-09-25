@@ -195,6 +195,37 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--compare-to</c> still skips a checked-out submodule when
+    /// <c>.gitignore</c> is not honored, since the commit never holds the submodule's files.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToUnchangedTreeWithSubmoduleWithoutGitignore_ReportsNoDelta()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "b.cs"), "int y = 1;\nint z = 2;\n");
+        RunGit("-C", "sub", "init", "-q");
+        RunGit("-C", "sub", "add", "-A");
+        RunGit("-C", "sub", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "inner");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = _root,
+            CompareTo = "HEAD",
+            RespectGitignore = false,
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        }).GetProperty("total");
+
+        Assert.Equal(0, total.GetProperty("code").GetInt32());
+        Assert.Equal(0, total.GetProperty("total").GetInt32());
+    }
+
+    /// <summary>
     /// Verifies that an invalid commit-ish returns <see cref="ExitCode.Error"/> rather
     /// than throwing.
     /// </summary>
@@ -374,6 +405,38 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--compare-to</c> on a single file filters the baseline by the commit's
+    /// own <c>.gitignore</c> above the file, not the working tree's: a file the commit ignored
+    /// (but tracked) and the working tree no longer ignores shows up as wholly added.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToFilePath_UsesCommitEnclosingGitignore()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "*.gen.cs\n");
+        File.WriteAllText(Path.Combine(_root, "sub", "a.gen.cs"), "int y = 1;\nint z = 2;\n");
+        RunGit("add", "-A");
+        RunGit("add", "-f", "sub/a.gen.cs");
+        RunGit("commit", "-q", "-m", "first");
+
+        // Stops ignoring the generated file, in the working tree only.
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "*.log\n");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "sub", "a.gen.cs"),
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        }).GetProperty("total");
+
+        Assert.Equal(2, total.GetProperty("code").GetInt32());
+        Assert.Equal(2, total.GetProperty("total").GetInt32());
+    }
+
+    /// <summary>
     /// Verifies that <c>--compare-to</c> on a directory that was a file of the same name at
     /// the given commit treats that old file as out of scope, reporting every current line
     /// as added instead of crashing.
@@ -430,6 +493,12 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
         Assert.Equal(3, total.GetProperty("code").GetInt32());
     }
 
+    /// <summary>
+    /// Runs the handler with the options <paramref name="buildOptions"/> builds for a
+    /// temporary JSON output file, asserts success, and returns the parsed report.
+    /// </summary>
+    /// <param name="buildOptions">Builds the options from the output file path.</param>
+    /// <returns>The report's root element.</returns>
     private static JsonElement RunCompareToJson(Func<string, AnalyzeOptions> buildOptions)
     {
         var outputFile = Path.Combine(Path.GetTempPath(), "sloc-diff-" + Guid.NewGuid().ToString("N") + ".json");
@@ -447,6 +516,10 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs <c>git</c> in the test repository, throwing if it exits with an error.
+    /// </summary>
+    /// <param name="arguments">The git arguments.</param>
     private void RunGit(params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("git")

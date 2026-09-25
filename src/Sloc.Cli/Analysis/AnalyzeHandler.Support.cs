@@ -141,7 +141,11 @@ public sealed partial class AnalyzeHandler
             IncludeUnknown = options.IncludeUnknown,
             RespectGitignore = options.RespectGitignore,
             RespectGitAttributes = options.RespectGitAttributes,
-            FollowSymlinks = options.FollowSymlinks
+            FollowSymlinks = options.FollowSymlinks,
+
+            // A commit records a submodule without its files, so --compare-to must not count
+            // the checked-out ones on the current side either.
+            SkipNestedRepositories = options.CompareTo is not null
         };
 
         return new RunContext(version, sourcePath, showProgress, scanOptions, new TableRenderer(), updateCheck);

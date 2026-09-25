@@ -266,6 +266,9 @@ public sealed partial class AnalyzeHandler
             skippedInScope = snapshot.Skipped.Where(s => InScope(s.Path));
         }
 
+        // The commit's whole tree, whose rule files above the scanned path replace the working tree's.
+        var repository = new SnapshotRepository(
+            snapshot.RelativePrefix, [.. snapshot.Files.Select(f => new SnapshotEntry(f.TempPath, f.GitPath))]);
         ScanResult scanResult;
         if (options.GitHash is not null)
         {
@@ -274,10 +277,11 @@ public sealed partial class AnalyzeHandler
         }
         else if (isFilePath)
         {
-            // A single file: filtered by the same single-file rules the current side's Scan applied.
+            // A single file: filtered by the same single-file rules the current side's Scan
+            // applied, with the rule files taken from the commit.
             scanResult = filesInScope.Count == 0
                 ? new ScanResult([], [])
-                : _scanner.ScanSnapshotFile(repoPath, filesInScope[0].TempPath, scanOptions);
+                : _scanner.ScanSnapshotFile(repoPath, filesInScope[0].TempPath, scanOptions, repository);
         }
         else
         {
@@ -290,9 +294,7 @@ public sealed partial class AnalyzeHandler
                 repoPath,
                 [.. filesInScope.Select(f => new SnapshotEntry(f.TempPath, f.GitPath[prefixLength..]))],
                 scanOptions,
-                new SnapshotRepository(
-                    snapshot.RelativePrefix,
-                    [.. snapshot.Files.Select(f => new SnapshotEntry(f.TempPath, f.GitPath))]));
+                repository);
         }
 
         var skipped = new List<SkippedEntry>(scanResult.Skipped);

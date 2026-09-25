@@ -54,6 +54,28 @@ internal sealed record GitWorkTree(string Root, string CommonDirectory)
     }
 
     /// <summary>
+    /// Whether <paramref name="directory"/> is the root of a working tree, as git decides
+    /// when it meets a nested repository: its <c>.git</c> entry is a repository directory
+    /// (one holding a <c>HEAD</c> file, with <c>objects</c> and <c>refs</c> directories), or a
+    /// <c>.git</c> file pointing at one. A stray <c>.git</c> entry (e.g. an empty directory in
+    /// a test fixture) does not make a repository.
+    /// </summary>
+    /// <param name="directory">The directory to check.</param>
+    /// <returns><see langword="true"/> if <paramref name="directory"/> is a working tree root.</returns>
+    public static bool IsRepositoryRoot(string directory)
+    {
+        var dotGit = Path.Combine(directory, ".git");
+        if (Directory.Exists(dotGit))
+        {
+            return IsRepositoryDirectory(dotGit);
+        }
+
+        return File.Exists(dotGit)
+            && ReadGitFile(dotGit, directory) is { } gitDirectory
+            && IsRepositoryDirectory(gitDirectory);
+    }
+
+    /// <summary>
     /// Returns the repository-relative directories above <paramref name="scanPrefix"/>, the
     /// root (the empty string) first, not including <paramref name="scanPrefix"/> itself.
     /// </summary>
@@ -84,32 +106,6 @@ internal sealed record GitWorkTree(string Root, string CommonDirectory)
     }
 
     /// <summary>
-    /// Reads the file named <paramref name="fileName"/> (e.g. <c>.gitignore</c>) in each
-    /// directory above <paramref name="scanPrefix"/> (see <see cref="AncestorDirectories"/>),
-    /// skipping any that is missing or cannot be read.
-    /// </summary>
-    /// <param name="scanPrefix">The scan root's repository-relative directory.</param>
-    /// <param name="fileName">The rule file's name.</param>
-    /// <returns>Each file read, with its repository-relative directory.</returns>
-    public IEnumerable<(string Directory, string[] Lines)> ReadAncestorFiles(string scanPrefix, string fileName)
-    {
-        foreach (var directory in AncestorDirectories(scanPrefix))
-        {
-            string[] lines;
-            try
-            {
-                lines = File.ReadAllLines(Path.Combine(Root, directory, fileName));
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                continue;
-            }
-
-            yield return (directory, lines);
-        }
-    }
-
-    /// <summary>
     /// Reads the repository directory a <c>.git</c> file points at (<c>gitdir: &lt;path&gt;</c>,
     /// relative to the directory holding the file).
     /// </summary>
@@ -137,6 +133,24 @@ internal sealed record GitWorkTree(string Root, string CommonDirectory)
 
         var gitDirectory = Path.GetFullPath(line[Prefix.Length..].Trim(), workTreeRoot);
         return Directory.Exists(gitDirectory) ? gitDirectory : null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="gitDirectory"/> looks like a repository directory, checking the
+    /// entries git checks for: a <c>HEAD</c> file, and <c>objects</c> and <c>refs</c>
+    /// directories in its common directory (itself, except for a linked worktree).
+    /// </summary>
+    /// <param name="gitDirectory">The candidate repository directory.</param>
+    private static bool IsRepositoryDirectory(string gitDirectory)
+    {
+        if (!File.Exists(Path.Combine(gitDirectory, "HEAD")))
+        {
+            return false;
+        }
+
+        var commonDirectory = ResolveCommonDirectory(gitDirectory);
+        return Directory.Exists(Path.Combine(commonDirectory, "objects"))
+            && Directory.Exists(Path.Combine(commonDirectory, "refs"));
     }
 
     /// <summary>

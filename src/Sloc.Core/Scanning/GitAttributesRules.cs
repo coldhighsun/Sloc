@@ -127,12 +127,16 @@ public sealed class GitAttributesRules
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
-        var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(root);
+        var workTree = GitWorkTree.Find(root);
+        var ignoreCase = GitIgnoreRules.ResolveIgnoreCase(workTree);
         var walk = ScanTreeWalker.Walk(
             root, excludedDirectoryNames, recursive, followSymlinks: false, ignoreCase,
             collectGitignore: false, collectGitattributes: true, collectFiles: false, onDirectoryVisited);
 
-        return FromWalk(root, walk.AttributesFiles, ignoreCase);
+        var scanPrefix = workTree?.RelativeDirectory(root) ?? string.Empty;
+        var ancestors = new GitRuleFiles(ignoreCase, collectGitignore: false, collectGitattributes: true);
+        ancestors.ReadAncestorsFromDisk(workTree, scanPrefix);
+        return FromWalk(walk.AttributesFiles, ignoreCase, scanPrefix, ancestors.AttributesFiles);
     }
 
     /// <summary>
@@ -276,35 +280,10 @@ public sealed class GitAttributesRules
     }
 
     /// <summary>
-    /// Builds a rule set from <c>.gitattributes</c> files already discovered under
-    /// <paramref name="root"/> by a <see cref="ScanTreeWalker"/> pass, adding, when
-    /// <paramref name="root"/> is below the root of its repository, the <c>.gitattributes</c>
-    /// files in the directories between them, read from disk, as git applies them (so
-    /// macros come from the repository's top-level file).
-    /// </summary>
-    /// <param name="root">The scan root directory.</param>
-    /// <param name="walkedFiles">The attributes files found under <paramref name="root"/>, with scan-root-relative bases.</param>
-    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
-    internal static GitAttributesRules FromWalk(string root, IReadOnlyList<AttributesFile> walkedFiles, bool ignoreCase)
-    {
-        var workTree = GitWorkTree.Find(root);
-        var scanPrefix = workTree?.RelativeDirectory(root) ?? string.Empty;
-        var ancestorFiles = new List<AttributesFile>();
-        if (workTree is not null)
-        {
-            foreach (var (directory, lines) in workTree.ReadAncestorFiles(scanPrefix, ".gitattributes"))
-            {
-                ancestorFiles.Add(new AttributesFile(directory, ParseLines(lines)));
-            }
-        }
-
-        return FromWalk(walkedFiles, ignoreCase, scanPrefix, ancestorFiles);
-    }
-
-    /// <summary>
-    /// Builds a rule set like <see cref="FromWalk(string, IReadOnlyList{AttributesFile}, bool)"/>,
-    /// but with the scan root's position in its repository and the <c>.gitattributes</c>
-    /// files above it supplied by the caller (e.g. taken from a git commit instead of the disk).
+    /// Builds a rule set from the <c>.gitattributes</c> files found under the scan root (e.g.
+    /// by a <see cref="ScanTreeWalker"/> pass) and the ones above it up to the root of its
+    /// repository (collected by <see cref="GitRuleFiles"/>, from disk or from a git commit),
+    /// as git applies them (so macros come from the repository's top-level file).
     /// </summary>
     /// <param name="walkedFiles">The attributes files found under the scan root, with scan-root-relative bases.</param>
     /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>

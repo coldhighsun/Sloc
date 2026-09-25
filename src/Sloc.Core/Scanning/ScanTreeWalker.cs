@@ -38,8 +38,9 @@ internal static class ScanTreeWalker
     /// <param name="collectFiles">Whether to collect candidate file paths.</param>
     /// <param name="onDirectoryVisited">Optional progress callback.</param>
     /// <param name="skipNestedRepositories">
-    /// Whether to skip, and report as skipped, every subdirectory holding a <c>.git</c> entry
-    /// (a submodule or other nested repository), as git does within a repository.
+    /// Whether to skip, and report as skipped, every subdirectory that is the root of a
+    /// nested repository (a submodule or other clone, see <see cref="GitWorkTree.IsRepositoryRoot"/>),
+    /// as git does within a repository. An unfollowed directory link is reported as a link instead.
     /// </param>
     /// <returns>Everything the walk collected.</returns>
     public static ScanTreeWalkResult Walk(
@@ -262,13 +263,13 @@ internal static class ScanTreeWalker
                 continue;
             }
 
-            if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
-            {
-                continue;
-            }
-
             if (!isLink)
             {
+                if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
+                {
+                    continue;
+                }
+
                 var realSubdirectory = Path.Combine(realDirectory, Path.GetFileName(subdirectory));
                 if (outsideRoot && !follow!.VisitedDirectories.Add(realSubdirectory))
                 {
@@ -291,6 +292,11 @@ internal static class ScanTreeWalker
             {
                 // The caller opted out of following symlinked directories entirely.
                 symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
+            {
                 continue;
             }
 
@@ -354,14 +360,14 @@ internal static class ScanTreeWalker
     }
 
     /// <summary>
-    /// Whether <paramref name="directory"/> is the root of a nested repository (it holds a
-    /// <c>.git</c> directory or file), recording it in <paramref name="skipped"/> if so.
+    /// Whether <paramref name="directory"/> is the root of a nested repository (see
+    /// <see cref="GitWorkTree.IsRepositoryRoot"/>), recording it in <paramref name="skipped"/> if so.
     /// </summary>
     /// <param name="directory">The subdirectory about to be walked.</param>
     /// <param name="skipped">The list a nested repository is recorded in.</param>
     private static bool IsNestedRepository(string directory, List<SkippedEntry> skipped)
     {
-        if (!Path.Exists(Path.Combine(directory, ".git")))
+        if (!GitWorkTree.IsRepositoryRoot(directory))
         {
             return false;
         }

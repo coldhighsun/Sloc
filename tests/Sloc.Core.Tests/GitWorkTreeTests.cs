@@ -106,4 +106,89 @@ public sealed class GitWorkTreeTests : IDisposable
 
         Assert.Equal(scanPrefix.Length == 0 ? [] : expected.Split('|'), ancestors);
     }
+
+    /// <summary>
+    /// Verifies that a directory whose <c>.git</c> directory holds <c>HEAD</c>,
+    /// <c>objects</c>, and <c>refs</c> is a repository root.
+    /// </summary>
+    [Fact]
+    public void IsRepositoryRoot_ValidGitDirectory_ReturnsTrue()
+    {
+        CreateRepositoryDirectory(Path.Combine(_root, ".git"));
+
+        Assert.True(GitWorkTree.IsRepositoryRoot(_root));
+    }
+
+    /// <summary>
+    /// Verifies that a stray <c>.git</c> entry (an empty directory, or a file that is not a
+    /// <c>gitdir:</c> pointer to a repository directory) does not make a repository root.
+    /// </summary>
+    /// <param name="kind">Which kind of stray <c>.git</c> entry to create.</param>
+    [Theory]
+    [InlineData("empty-directory")]
+    [InlineData("not-a-pointer")]
+    [InlineData("dangling-pointer")]
+    [InlineData("pointer-to-empty-directory")]
+    public void IsRepositoryRoot_StrayDotGit_ReturnsFalse(string kind)
+    {
+        var dotGit = Path.Combine(_root, ".git");
+        switch (kind)
+        {
+            case "empty-directory":
+                Directory.CreateDirectory(dotGit);
+                break;
+            case "not-a-pointer":
+                File.WriteAllText(dotGit, "not a pointer\n");
+                break;
+            case "dangling-pointer":
+                File.WriteAllText(dotGit, "gitdir: missing\n");
+                break;
+            default:
+                Directory.CreateDirectory(Path.Combine(_root, "empty"));
+                File.WriteAllText(dotGit, "gitdir: empty\n");
+                break;
+        }
+
+        Assert.False(GitWorkTree.IsRepositoryRoot(_root));
+    }
+
+    /// <summary>
+    /// Verifies that a <c>.git</c> file pointing at a repository directory (a submodule's
+    /// <c>modules/&lt;name&gt;</c>, or a linked worktree's directory whose <c>objects</c> and
+    /// <c>refs</c> live in its common directory) makes a repository root.
+    /// </summary>
+    /// <param name="linkedWorktree">Whether the pointer targets a linked worktree's directory.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IsRepositoryRoot_GitFilePointingAtRepository_ReturnsTrue(bool linkedWorktree)
+    {
+        var main = Path.Combine(_root, "main.git");
+        CreateRepositoryDirectory(main);
+        var target = main;
+        if (linkedWorktree)
+        {
+            target = Path.Combine(main, "worktrees", "wt");
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(target, "HEAD"), "ref: refs/heads/wt\n");
+            File.WriteAllText(Path.Combine(target, "commondir"), "../..\n");
+        }
+
+        var workTree = Directory.CreateDirectory(Path.Combine(_root, "checkout")).FullName;
+        File.WriteAllText(Path.Combine(workTree, ".git"), $"gitdir: {target}\n");
+
+        Assert.True(GitWorkTree.IsRepositoryRoot(workTree));
+    }
+
+    /// <summary>
+    /// Creates a minimal repository directory at <paramref name="gitDirectory"/>: a
+    /// <c>HEAD</c> file and empty <c>objects</c> and <c>refs</c> directories.
+    /// </summary>
+    /// <param name="gitDirectory">The directory to create.</param>
+    private static void CreateRepositoryDirectory(string gitDirectory)
+    {
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "objects"));
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "refs"));
+        File.WriteAllText(Path.Combine(gitDirectory, "HEAD"), "ref: refs/heads/main\n");
+    }
 }

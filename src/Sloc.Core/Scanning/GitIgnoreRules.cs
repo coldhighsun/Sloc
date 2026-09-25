@@ -108,13 +108,17 @@ public sealed class GitIgnoreRules
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
-        var ignoreCase = ResolveIgnoreCase(root);
+        var workTree = GitWorkTree.Find(root);
+        var ignoreCase = ResolveIgnoreCase(workTree);
         var walk = ScanTreeWalker.Walk(
             root, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
             collectGitignore: true, collectGitattributes: false, collectFiles: false, onDirectoryVisited);
 
         symlinkedDirectories = walk.SymlinkedDirectories;
-        return FromWalk(root, walk.GitignoreFiles, ignoreCase);
+        var scanPrefix = workTree?.RelativeDirectory(root) ?? string.Empty;
+        var ancestors = new GitRuleFiles(ignoreCase, collectGitignore: true, collectGitattributes: false);
+        ancestors.ReadAncestorsFromDisk(workTree, scanPrefix);
+        return FromWalk(workTree, walk.GitignoreFiles, ignoreCase, scanPrefix, ancestors.GitignoreFiles);
     }
 
     /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string}, bool)"/>
@@ -215,59 +219,18 @@ public sealed class GitIgnoreRules
     }
 
     /// <summary>
-    /// Builds a rule set from <c>.gitignore</c> files already discovered by a
-    /// <see cref="ScanTreeWalker"/> pass, adding the user's global <c>core.excludesFile</c>,
-    /// the repository's <c>info/exclude</c> (lowest precedence, evaluated first), and, when
-    /// <paramref name="root"/> is below the root of its repository, the <c>.gitignore</c>
-    /// files in the directories between them, read from disk, as git applies them.
+    /// Builds a rule set from the <c>.gitignore</c> files found under the scan root (e.g. by a
+    /// <see cref="ScanTreeWalker"/> pass) and the ones above it up to the root of its
+    /// repository (collected by <see cref="GitRuleFiles"/>, from disk or from a git commit),
+    /// adding the user's global <c>core.excludesFile</c> and the repository's
+    /// <c>info/exclude</c> (lowest precedence, evaluated first), as git applies them.
     /// </summary>
-    /// <param name="root">The scan root directory.</param>
-    /// <param name="walkedFiles">The <c>.gitignore</c> files found under <paramref name="root"/>, with scan-root-relative bases.</param>
-    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
-    internal static GitIgnoreRules FromWalk(string root, IReadOnlyList<GitIgnoreFile> walkedFiles, bool ignoreCase)
-    {
-        var workTree = GitWorkTree.Find(root);
-        var scanPrefix = workTree?.RelativeDirectory(root) ?? string.Empty;
-        var ancestorFiles = new List<GitIgnoreFile>();
-        if (workTree is not null)
-        {
-            foreach (var (directory, lines) in workTree.ReadAncestorFiles(scanPrefix, ".gitignore"))
-            {
-                if (CompilePatterns(lines, ignoreCase) is { Count: > 0 } patterns)
-                {
-                    ancestorFiles.Add(new GitIgnoreFile(directory, patterns));
-                }
-            }
-        }
-
-        return FromWalk(workTree, walkedFiles, ignoreCase, scanPrefix, ancestorFiles);
-    }
-
-    /// <summary>
-    /// Builds a rule set like <see cref="FromWalk(string, IReadOnlyList{GitIgnoreFile}, bool)"/>,
-    /// but with the scan root's position in its repository and the <c>.gitignore</c> files
-    /// above it supplied by the caller (e.g. taken from a git commit instead of the disk).
-    /// </summary>
-    /// <param name="root">The scan root directory, used to find the repository's config and <c>info/exclude</c>.</param>
+    /// <param name="workTree">The working tree the scan root belongs to, if any, whose config and <c>info/exclude</c> apply.</param>
     /// <param name="walkedFiles">The <c>.gitignore</c> files found under the scan root, with scan-root-relative bases.</param>
     /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
     /// <param name="scanPrefix">The scan root's <c>/</c>-separated repository-relative directory.</param>
     /// <param name="ancestorFiles">The <c>.gitignore</c> files above the scan root, with repository-relative bases.</param>
     internal static GitIgnoreRules FromWalk(
-        string root,
-        IReadOnlyList<GitIgnoreFile> walkedFiles,
-        bool ignoreCase,
-        string scanPrefix,
-        IReadOnlyList<GitIgnoreFile> ancestorFiles) =>
-        FromWalk(GitWorkTree.Find(root), walkedFiles, ignoreCase, scanPrefix, ancestorFiles);
-
-    /// <inheritdoc cref="FromWalk(string, IReadOnlyList{GitIgnoreFile}, bool, string, IReadOnlyList{GitIgnoreFile})"/>
-    /// <param name="workTree">The repository the scan root belongs to, if any.</param>
-    /// <param name="walkedFiles">The <c>.gitignore</c> files found under the scan root, with scan-root-relative bases.</param>
-    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
-    /// <param name="scanPrefix">The scan root's <c>/</c>-separated repository-relative directory.</param>
-    /// <param name="ancestorFiles">The <c>.gitignore</c> files above the scan root, with repository-relative bases.</param>
-    private static GitIgnoreRules FromWalk(
         GitWorkTree? workTree,
         IReadOnlyList<GitIgnoreFile> walkedFiles,
         bool ignoreCase,
@@ -289,6 +252,11 @@ public sealed class GitIgnoreRules
         return new GitIgnoreRules(files.OrderBy(file => file.BaseDirectory.Length).ToList(), scanPrefix);
     }
 
+    /// <summary>
+    /// Normalizes a base directory to the <c>/</c>-separated form used for matching, with
+    /// the scan root itself as the empty string.
+    /// </summary>
+    /// <param name="baseDirectory">The base directory relative to the scan root.</param>
     internal static string NormalizeBase(string baseDirectory)
     {
         var normalized = baseDirectory.Replace('\\', '/').Trim('/');
@@ -433,11 +401,20 @@ public sealed class GitIgnoreRules
     /// <param name="scanRoot">The scan root directory.</param>
     /// <returns><see langword="true"/> if patterns should match case-insensitively.</returns>
     internal static bool ResolveIgnoreCase(string scanRoot) =>
+        ResolveIgnoreCase(GitWorkTree.Find(scanRoot));
+
+    /// <summary>
+    /// Resolves <c>core.ignoreCase</c> from the current user's global config and the config
+    /// of <paramref name="workTree"/> (see <see cref="ResolveIgnoreCase(string, string?, string?, string?)"/>).
+    /// </summary>
+    /// <param name="workTree">The working tree the scan root belongs to, if any.</param>
+    /// <returns><see langword="true"/> if patterns should match case-insensitively.</returns>
+    internal static bool ResolveIgnoreCase(GitWorkTree? workTree) =>
         ResolveIgnoreCase(
             UserHomeDirectory,
             Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
             Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL"),
-            GitWorkTree.Find(scanRoot)?.ConfigPath);
+            workTree?.ConfigPath);
 
     /// <summary>
     /// Splits raw git config contents into its settings, in file order. A minimal,
