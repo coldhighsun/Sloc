@@ -246,6 +246,64 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that a run of three or more stars between slashes (or at the start/end) acts
+    /// like <c>**</c>, as in git's wildmatch, while a star run inside a segment still never
+    /// crosses a <c>/</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("a/***/b.cs", "a/b.cs", true)]
+    [InlineData("a/***/b.cs", "a/x/b.cs", true)]
+    [InlineData("a/***/b.cs", "a/x/y/b.cs", true)]
+    [InlineData("***/temp", "a/b/temp", true)]
+    [InlineData("a/***", "a/x/y.cs", true)]
+    [InlineData("a***b", "axxb", true)]
+    [InlineData("a***b", "ax/xb", false)]
+    public void IsIgnored_StarRun_ActsLikeDoubleStar(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that only trailing spaces are trimmed from a pattern, as in git's
+    /// <c>trim_trailing_spaces</c>: a trailing tab is part of the pattern, an escaped space is
+    /// kept, and a space after an escaped backslash is still trimmed.
+    /// </summary>
+    [Theory]
+    [InlineData("tab\t", "tab\t", true)]
+    [InlineData("tab\t", "tab", false)]
+    [InlineData("sp  ", "sp", true)]
+    [InlineData(@"sp\  ", "sp ", true)]
+    [InlineData(@"sp\  ", "sp", false)]
+    public void IsIgnored_TrailingWhitespace_TrimsOnlyUnescapedSpaces(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern]);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies the trailing-space trimming rules directly, including cases a path can't
+    /// express: backslashes pair up from the start of the line, so a space after an escaped
+    /// backslash is trimmed, and a line ending in a lone backslash is left alone.
+    /// </summary>
+    [Theory]
+    [InlineData("a  ", "a")]
+    [InlineData("a\t", "a\t")]
+    [InlineData("a \t ", "a \t")]
+    [InlineData(@"a\ ", @"a\ ")]
+    [InlineData(@"a\\ ", @"a\\")]
+    [InlineData(@"a \", @"a \")]
+    [InlineData("   ", "")]
+    public void TrimTrailingSpaces_Line_MatchesGitTrimTrailingSpaces(string line, string expected)
+    {
+        var trimmed = GitIgnorePattern.TrimTrailingSpaces(line);
+
+        Assert.Equal(expected, trimmed);
+    }
+
+    /// <summary>
     /// Verifies that a later negation re-includes a path excluded by an earlier pattern.
     /// </summary>
     [Fact]
