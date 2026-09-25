@@ -74,6 +74,48 @@ public class LineClassifierLanguageTests
     }
 
     /// <summary>
+    /// Verifies that F#'s <c>(*)</c> multiplication operator is code and does not open a
+    /// block comment that would swallow the following lines.
+    /// </summary>
+    [Fact]
+    public void Classify_FSharpMultiplicationOperator_IsCodeAndOpensNoBlock()
+    {
+        var classifier = new LineClassifier(Resolve(".fs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("let product = List.reduce (*) [1; 2; 3]"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("let x = 1"));
+    }
+
+    /// <summary>
+    /// Verifies that F#'s <c>(*)</c> inside a block comment neither nests a new comment
+    /// level nor closes the enclosing one with its trailing <c>*)</c>.
+    /// </summary>
+    [Fact]
+    public void Classify_FSharpMultiplicationOperatorInsideBlock_NeitherNestsNorCloses()
+    {
+        var classifier = new LineClassifier(Resolve(".fs"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("(* fold with (*) here"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end *)"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("let x = 1"));
+    }
+
+    /// <summary>
+    /// Verifies that OCaml's <c>(*)</c>, unlike F#'s, still opens a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_OCamlParenStarParen_OpensBlock()
+    {
+        var classifier = new LineClassifier(Resolve(".ml"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("(*) a comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
     /// Verifies that a Lua <c>--[[ ]]</c> block comment spanning lines is classified as
     /// comment and closes correctly.
     /// </summary>

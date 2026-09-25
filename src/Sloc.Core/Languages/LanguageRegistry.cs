@@ -286,6 +286,8 @@ public static class LanguageRegistry
                 Extensions = [".fs", ".fsi", ".fsx"],
                 LineCommentTokens = ["//"],
                 BlockComments = [new BlockComment("(*", "*)", AllowNested: true)],
+                // "(*)" is the multiplication operator as a function (e.g. List.reduce (*)).
+                BlockCommentExceptions = ["(*)"],
                 // Single quotes appear in generic type parameters (e.g. 'a), so only
                 // double quotes are treated as string delimiters.
                 StringLiterals = [doubleQuote]
