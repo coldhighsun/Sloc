@@ -75,6 +75,27 @@ public class HtmlRendererTests
         Assert.Matches(@"Generated:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", html);
     }
 
+    /// <summary>
+    /// Verifies that the by-file tree keeps folders differing only by case (possible in a
+    /// <c>--git-hash</c> tree from a case-sensitive filesystem) as separate folders.
+    /// </summary>
+    [Fact]
+    public void Render_ByFileCaseVariantFolders_KeepsThemSeparate()
+    {
+        var summary = new AnalysisSummary(
+        [
+            new FileAnalysis { Path = Path.Combine("Src", "upper.js"), Language = "JavaScript", Code = 1, Comment = 0, Blank = 0 },
+            new FileAnalysis { Path = Path.Combine("src", "lower.js"), Language = "JavaScript", Code = 1, Comment = 0, Blank = 0 }
+        ]);
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(summary, byFile: true, noHealth: true);
+        var html = writer.ToString();
+
+        Assert.Contains("<span>Src</span>", html);
+        Assert.Contains("<span>src</span>", html);
+    }
+
     private static AnalysisSummary BuildSummary()
     {
         var file = new FileAnalysis
