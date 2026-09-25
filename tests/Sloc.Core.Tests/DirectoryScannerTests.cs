@@ -457,6 +457,34 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a <c>.gitignore</c>/<c>.gitattributes</c> file that cannot be read is
+    /// reported as skipped on its own, while the rest of its directory and subtree is still scanned.
+    /// </summary>
+    [Theory]
+    [InlineData(".gitignore")]
+    [InlineData(".gitattributes")]
+    public void Scan_UnreadableRuleFile_SkipsOnlyThatFileAndKeepsItsSubtree(string ruleFileName)
+    {
+        Write("a.cs", "int a;");
+        Write("sub/b.cs", "int b;");
+        Write("sub/deep/c.cs", "int c;");
+        Write($"sub/{ruleFileName}", "x.cs linguist-vendored");
+        var ruleFilePath = Path.Combine(_root, "sub", ruleFileName);
+
+        ScanResult result;
+        using (new FileStream(ruleFilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, RespectGitAttributes = true });
+        }
+
+        Assert.Equal(
+            ["a.cs", "b.cs", "c.cs"],
+            result.Files.Select(f => Path.GetFileName(f.Path)).Order(StringComparer.Ordinal));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal(ruleFilePath, skipped.Path);
+    }
+
+    /// <summary>
     /// Verifies that scanning a single existing file returns exactly that file.
     /// </summary>
     [Fact]
