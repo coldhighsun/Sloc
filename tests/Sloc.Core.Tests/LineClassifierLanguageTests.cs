@@ -679,4 +679,114 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\"value\"\"\""));
         Assert.Equal(LineKind.Comment, classifier.Classify("\"\"\"docstring\"\"\""));
     }
+
+    /// <summary>
+    /// Verifies that Batch's <c>@REM</c> is a comment (case-insensitively), but not when it
+    /// begins a longer word.
+    /// </summary>
+    [Fact]
+    public void Classify_BatchAtRem_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".bat"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("@rem hi"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("  @REM"));
+        Assert.Equal(LineKind.Code, classifier.Classify("@remove x"));
+        Assert.Equal(LineKind.Code, classifier.Classify("@echo off"));
+    }
+
+    /// <summary>
+    /// Verifies that a Lua long-bracket comment with <c>=</c> signs spans lines and is only
+    /// closed by the matching level.
+    /// </summary>
+    [Fact]
+    public void Classify_LuaLeveledBlockComment_ClosesOnMatchingLevel()
+    {
+        var classifier = new LineClassifier(Resolve(".lua"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("--[==[ start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("t[a[1]] ]] ]=]"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end ]==]"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("local x = 1"));
+    }
+
+    /// <summary>
+    /// Verifies that a Nim <c>##[ ]##</c> doc comment spans lines.
+    /// </summary>
+    [Fact]
+    public void Classify_NimDocBlockComment_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".nim"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("##[ doc"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still doc"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("]##"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that Visual Basic's <c>REM</c> is a comment (case-insensitively), but not
+    /// inside a longer identifier.
+    /// </summary>
+    [Fact]
+    public void Classify_VisualBasicRem_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".vb"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("REM a comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("    rem lower case"));
+        Assert.Equal(LineKind.Code, classifier.Classify("REMOVE(x)"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("' quote comment"));
+    }
+
+    /// <summary>
+    /// Verifies that a Razor <c>@* *@</c> comment in a <c>.cshtml</c> file spans lines.
+    /// </summary>
+    [Fact]
+    public void Classify_RazorComment_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".cshtml"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("@* razor"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("comment *@"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("<p>@Model.Name</p>"));
+    }
+
+    /// <summary>
+    /// Verifies that Perl POD, from a command paragraph at column 0 through <c>=cut</c>,
+    /// counts as comment lines.
+    /// </summary>
+    /// <param name="command">The POD command that starts the block.</param>
+    [Theory]
+    [InlineData("=pod")]
+    [InlineData("=head1 NAME")]
+    public void Classify_PerlPod_CountsAsComment(string command)
+    {
+        var classifier = new LineClassifier(Resolve(".pl"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify(command));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("my $x = 1; # documentation text"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("=cut"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("my $y = 2;"));
+    }
+
+    /// <summary>
+    /// Verifies that a POD-like command that is not at column 0 is ordinary code.
+    /// </summary>
+    [Fact]
+    public void Classify_PerlIndentedPodCommand_IsCode()
+    {
+        var classifier = new LineClassifier(Resolve(".pl"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("  =pod"));
+        Assert.False(classifier.InBlockComment);
+    }
 }

@@ -243,6 +243,7 @@ sloc ./src
 
 - Line classification is based on text matching of comment symbols, not a full lexer.
 - String literals are recognized for most languages, so comment markers inside strings (e.g. `"// not a comment"`) are counted as code, and escaped quotes are handled, including C# verbatim strings (`@"…""…"`), C# raw string literals and Java text blocks (`"""…"""`), and Rust raw strings (`r"…"`, `r#"…"#`). Rust raw strings with more than one `#` and C# raw strings delimited by four or more quotes are not modeled, and interpolation expressions inside strings are not analyzed. C/C++ digit separators (`1'000`) are not mistaken for character literals.
+- Lua long-bracket comments are recognized up to level 4 (`--[====[ … ]====]`), and Perl POD blocks only when opened by a common command (`=pod`, `=head1`–`=head6`, `=over`, `=item`, `=back`, `=begin`, `=end`, `=for`, `=encoding`) at column 0.
 - JavaScript/TypeScript regex literals are recognized, so comment markers inside them (e.g. `/\/*$/`) are counted as code, and PHP 8 attributes (`#[…]`) are code rather than `#` comments.
 - Python triple-quoted strings are counted as comments only when they begin a statement (docstrings, including `r"""…"""`/`u"""…"""`); used as a value (e.g. `x = """…"""`), inside brackets left open by an earlier line, or after a trailing `\` line continuation they are counted as code.
 
@@ -481,6 +482,7 @@ sloc ./src
 
 - 行的分类基于注释符号的文本匹配，不是完整的词法分析器。
 - 大多数语言已识别字符串字面量，因此字符串内部的注释符号（例如 `"// 这不是注释"`）会被计为代码，转义引号也能正确处理，包括 C# 逐字字符串（`@"…""…"`）、C# 原始字符串与 Java 文本块（`"""…"""`）以及 Rust 原始字符串（`r"…"`、`r#"…"#`）。带多个 `#` 的 Rust 原始字符串和以四个及以上引号定界的 C# 原始字符串暂不支持，字符串内的插值表达式也不做分析。C/C++ 数字分隔符（`1'000`）不会被误认为字符字面量。
+- Lua 长括号注释最多识别到第 4 级（`--[====[ … ]====]`）；Perl POD 块仅在第 0 列以常见指令（`=pod`、`=head1`–`=head6`、`=over`、`=item`、`=back`、`=begin`、`=end`、`=for`、`=encoding`）开头时识别。
 - 已识别 JavaScript/TypeScript 正则字面量，因此其中的注释符号（例如 `/\/*$/`）会被计为代码；PHP 8 属性（`#[…]`）计为代码，而不是 `#` 注释。
 - Python 三引号字符串仅在作为语句开头（docstring，包括 `r"""…"""`/`u"""…"""`）时计为注释；作为值使用时（例如 `x = """…"""`）、位于前面行未闭合的括号内或跟在行尾 `\` 续行之后时计为代码。
 
