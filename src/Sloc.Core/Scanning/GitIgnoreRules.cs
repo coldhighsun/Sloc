@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -45,13 +46,14 @@ public sealed class GitIgnoreRules
     /// </summary>
     /// <param name="baseDirectory">The base directory the patterns are relative to.</param>
     /// <param name="lines">The raw ignore-file lines.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
     /// <returns>The loaded rule set.</returns>
-    public static GitIgnoreRules FromLines(string baseDirectory, IEnumerable<string> lines)
+    public static GitIgnoreRules FromLines(string baseDirectory, IEnumerable<string> lines, bool ignoreCase = true)
     {
         ArgumentNullException.ThrowIfNull(baseDirectory);
         ArgumentNullException.ThrowIfNull(lines);
 
-        var patterns = CompilePatterns(lines);
+        var patterns = CompilePatterns(lines, ignoreCase);
         return new GitIgnoreRules(patterns.Count == 0
             ? []
             : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns)]);
@@ -93,12 +95,13 @@ public sealed class GitIgnoreRules
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
+        var ignoreCase = ResolveIgnoreCase(root);
         var walk = ScanTreeWalker.Walk(
-            root, excludedDirectoryNames, recursive, followSymlinks,
+            root, excludedDirectoryNames, recursive, followSymlinks, ignoreCase,
             collectGitignore: true, collectGitattributes: false, collectFiles: false, onDirectoryVisited);
 
         symlinkedDirectories = walk.SymlinkedDirectories;
-        return FromWalk(root, walk.GitignoreFiles);
+        return FromWalk(root, walk.GitignoreFiles, ignoreCase);
     }
 
     /// <inheritdoc cref="Load(string, IReadOnlySet{string}, bool, Action{int, string}?, out IReadOnlyList{string}, bool)"/>
@@ -175,12 +178,18 @@ public sealed class GitIgnoreRules
         return ignored;
     }
 
-    internal static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines)
+    /// <summary>
+    /// Compiles the patterns of one ignore file, skipping comments, blank lines, and lines
+    /// git never matches.
+    /// </summary>
+    /// <param name="lines">The raw ignore-file lines.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    internal static List<GitIgnorePattern> CompilePatterns(IEnumerable<string> lines, bool ignoreCase)
     {
         var patterns = new List<GitIgnorePattern>();
         foreach (var line in lines)
         {
-            if (GitIgnorePattern.TryCompile(line, out var pattern))
+            if (GitIgnorePattern.TryCompile(line, ignoreCase, out var pattern))
             {
                 patterns.Add(pattern);
             }
@@ -195,7 +204,10 @@ public sealed class GitIgnoreRules
     /// and the repo-local <c>.git/info/exclude</c> (lowest precedence, evaluated first),
     /// without walking the directory tree again.
     /// </summary>
-    internal static GitIgnoreRules FromWalk(string root, IReadOnlyList<GitIgnoreFile> walkedFiles)
+    /// <param name="root">The scan root directory.</param>
+    /// <param name="walkedFiles">The <c>.gitignore</c> files found under <paramref name="root"/>.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    internal static GitIgnoreRules FromWalk(string root, IReadOnlyList<GitIgnoreFile> walkedFiles, bool ignoreCase)
     {
         var fullRoot = Path.GetFullPath(root);
 
@@ -205,8 +217,8 @@ public sealed class GitIgnoreRules
         // stable sort (not List<T>.Sort, which isn't stable) is required to preserve this
         // relative order.
         var files = new List<GitIgnoreFile>();
-        AddIfPresent(files, LoadGlobalExcludesFile(fullRoot));
-        AddIfPresent(files, LoadRepoExcludeFile(fullRoot));
+        AddIfPresent(files, LoadGlobalExcludesFile(fullRoot, ignoreCase));
+        AddIfPresent(files, LoadRepoExcludeFile(fullRoot, ignoreCase));
         files.AddRange(walkedFiles);
 
         return new GitIgnoreRules(files.OrderBy(file => file.BaseDirectory.Length).ToList());
@@ -247,49 +259,9 @@ public sealed class GitIgnoreRules
         [NotNullWhen(true)] out string? excludesFilePath)
     {
         excludesFilePath = null;
-        var inCoreSection = false;
-
-        foreach (var rawLine in gitConfigContents.Split('\n'))
+        foreach (var entry in ParseConfigEntries(gitConfigContents))
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line[0] == '#' || line[0] == ';')
-            {
-                continue;
-            }
-
-            if (line[0] == '[')
-            {
-                // Only the plain [core] section; [core "name"] is a different (sub)section.
-                var close = line.IndexOf(']');
-                inCoreSection = close > 0 && line[1..close].Trim().Equals("core", StringComparison.OrdinalIgnoreCase);
-
-                // A setting may follow the section header on the same line.
-                line = close < 0 ? string.Empty : line[(close + 1)..].TrimStart();
-                if (line.Length == 0 || line[0] == '#' || line[0] == ';')
-                {
-                    continue;
-                }
-            }
-
-            if (!inCoreSection)
-            {
-                continue;
-            }
-
-            var separator = line.IndexOf('=');
-            if (separator < 0)
-            {
-                continue;
-            }
-
-            var key = line[..separator].Trim();
-            if (!key.Equals("excludesFile", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var value = ParseConfigValue(line[(separator + 1)..]);
-            if (value.Length == 0)
+            if (!IsCoreKey(entry, "excludesFile") || entry.Value is not { Length: > 0 } value)
             {
                 continue;
             }
@@ -321,19 +293,223 @@ public sealed class GitIgnoreRules
         string? gitConfigGlobal = null,
         string? repoConfigPath = null)
     {
-        var xdgGitDirectory = string.IsNullOrEmpty(xdgConfigHome)
-            ? Path.Combine(homeDirectory, ".config", "git")
-            : Path.Combine(xdgConfigHome, "git");
+        string? excludesFilePath = null;
+        foreach (var contents in ReadConfigFiles(homeDirectory, xdgConfigHome, gitConfigGlobal, repoConfigPath))
+        {
+            if (TryParseExcludesFile(contents, homeDirectory, out var configured))
+            {
+                excludesFilePath = configured;
+            }
+        }
 
+        return excludesFilePath ?? Path.Combine(XdgGitDirectory(homeDirectory, xdgConfigHome), "ignore");
+    }
+
+    /// <summary>
+    /// Parses the <c>[core] ignoreCase</c> setting out of raw git config contents. When it is
+    /// set more than once, the last value wins, as in git. A key with no <c>=</c> means
+    /// <see langword="true"/>; a value git would reject as a boolean is skipped.
+    /// </summary>
+    /// <param name="gitConfigContents">The raw contents of a git config file.</param>
+    /// <param name="ignoreCase">The configured value, if the setting was found.</param>
+    /// <returns><see langword="true"/> if a valid <c>ignoreCase</c> setting was found.</returns>
+    internal static bool TryParseIgnoreCase(string gitConfigContents, out bool ignoreCase)
+    {
+        ignoreCase = false;
+        var found = false;
+        foreach (var entry in ParseConfigEntries(gitConfigContents))
+        {
+            if (IsCoreKey(entry, "ignoreCase") && TryParseConfigBool(entry.Value, out var value))
+            {
+                ignoreCase = value;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Resolves whether ignore and attribute patterns match case-insensitively, as git's
+    /// <c>core.ignoreCase</c> decides: the value from the global config files (in the order
+    /// <see cref="ResolveGlobalExcludesFilePath"/> reads them) and then the repository's own
+    /// config, the last one that sets it winning. When nothing sets it, the platform's usual
+    /// file-system behavior: case-insensitive on Windows and macOS (where <c>git init</c> and
+    /// <c>git clone</c> write <c>ignorecase = true</c>), case-sensitive elsewhere.
+    /// </summary>
+    /// <param name="homeDirectory">The user's home directory, as git resolves it (<c>$HOME</c>).</param>
+    /// <param name="xdgConfigHome">The value of <c>XDG_CONFIG_HOME</c>, if set.</param>
+    /// <param name="gitConfigGlobal">The value of <c>GIT_CONFIG_GLOBAL</c>, if set.</param>
+    /// <param name="repoConfigPath">The repository's config file path, if any.</param>
+    /// <returns><see langword="true"/> if patterns should match case-insensitively.</returns>
+    internal static bool ResolveIgnoreCase(
+        string homeDirectory,
+        string? xdgConfigHome,
+        string? gitConfigGlobal,
+        string? repoConfigPath)
+    {
+        var ignoreCase = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+        foreach (var contents in ReadConfigFiles(homeDirectory, xdgConfigHome, gitConfigGlobal, repoConfigPath))
+        {
+            if (TryParseIgnoreCase(contents, out var configured))
+            {
+                ignoreCase = configured;
+            }
+        }
+
+        return ignoreCase;
+    }
+
+    /// <summary>
+    /// Resolves <c>core.ignoreCase</c> for a scan rooted at <paramref name="scanRoot"/> from
+    /// the current user's global config and the <c>.git/config</c> at the scan root (see
+    /// <see cref="ResolveIgnoreCase(string, string?, string?, string?)"/>).
+    /// </summary>
+    /// <param name="scanRoot">The scan root directory.</param>
+    /// <returns><see langword="true"/> if patterns should match case-insensitively.</returns>
+    internal static bool ResolveIgnoreCase(string scanRoot) =>
+        ResolveIgnoreCase(
+            UserHomeDirectory,
+            Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
+            Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL"),
+            Path.Combine(Path.GetFullPath(scanRoot), ".git", "config"));
+
+    /// <summary>
+    /// Splits raw git config contents into its settings, in file order. A minimal,
+    /// single-file parser: does not resolve <c>include</c> directives or line continuations.
+    /// Section names are lower-cased; a <c>[section "sub"]</c> header yields the subsection
+    /// separately (case preserved), and a key with no <c>=</c> has a <see langword="null"/> value.
+    /// </summary>
+    /// <param name="contents">The raw contents of a git config file.</param>
+    /// <returns>Each setting, with its decoded value (see <see cref="ParseConfigValue"/>).</returns>
+    internal static IEnumerable<ConfigEntry> ParseConfigEntries(string contents)
+    {
+        var section = string.Empty;
+        string? subsection = null;
+
+        foreach (var rawLine in contents.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line[0] == '#' || line[0] == ';')
+            {
+                continue;
+            }
+
+            if (line[0] == '[')
+            {
+                var close = line.IndexOf(']');
+                (section, subsection) = close > 0 ? ParseSectionHeader(line[1..close]) : (string.Empty, null);
+
+                // A setting may follow the section header on the same line.
+                line = close < 0 ? string.Empty : line[(close + 1)..].TrimStart();
+                if (line.Length == 0 || line[0] == '#' || line[0] == ';')
+                {
+                    continue;
+                }
+            }
+
+            var separator = line.IndexOf('=');
+            var key = (separator < 0 ? line : line[..separator]).Trim();
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            yield return new ConfigEntry(
+                section, subsection, key, separator < 0 ? null : ParseConfigValue(line[(separator + 1)..]));
+        }
+    }
+
+    /// <summary>
+    /// Reads git's boolean config syntax: <see langword="null"/> (a bare key), <c>true</c>,
+    /// <c>yes</c>, <c>on</c>, or a nonzero integer are true; an empty value, <c>false</c>,
+    /// <c>no</c>, <c>off</c>, or <c>0</c> are false (all case-insensitive).
+    /// </summary>
+    /// <param name="value">The decoded config value.</param>
+    /// <param name="result">The parsed boolean.</param>
+    /// <returns><see langword="false"/> if git would reject the value as a boolean.</returns>
+    internal static bool TryParseConfigBool(string? value, out bool result)
+    {
+        switch (value?.ToLowerInvariant())
+        {
+            case null or "true" or "yes" or "on":
+                result = true;
+                return true;
+            case "" or "false" or "no" or "off":
+                result = false;
+                return true;
+        }
+
+        if (long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number))
+        {
+            result = number != 0;
+            return true;
+        }
+
+        result = false;
+        return false;
+    }
+
+    /// <summary>
+    /// Splits the text between a config section header's brackets into the lower-cased
+    /// section name and the (case-preserved, unquoted) subsection, if any.
+    /// </summary>
+    /// <param name="header">The header text, without the surrounding brackets.</param>
+    private static (string Section, string? Subsection) ParseSectionHeader(string header)
+    {
+        var quote = header.IndexOf('"');
+        if (quote < 0)
+        {
+            return (header.Trim().ToLowerInvariant(), null);
+        }
+
+        var subsection = new StringBuilder();
+        for (var i = quote + 1; i < header.Length && header[i] != '"'; i++)
+        {
+            if (header[i] == '\\' && i + 1 < header.Length)
+            {
+                i++;
+            }
+
+            subsection.Append(header[i]);
+        }
+
+        return (header[..quote].Trim().ToLowerInvariant(), subsection.ToString());
+    }
+
+    /// <summary>
+    /// Whether <paramref name="entry"/> is the plain <c>[core]</c> section's
+    /// <paramref name="key"/> (case-insensitive; <c>[core "name"]</c> is a different subsection).
+    /// </summary>
+    /// <param name="entry">The parsed config setting.</param>
+    /// <param name="key">The key name to look for.</param>
+    private static bool IsCoreKey(ConfigEntry entry, string key) =>
+        entry.Section == "core"
+        && entry.Subsection is null
+        && entry.Key.Equals(key, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads the contents of the git config files <see cref="ResolveGlobalExcludesFilePath"/>
+    /// documents, in git's order, skipping any that do not exist or cannot be read.
+    /// </summary>
+    /// <param name="homeDirectory">The user's home directory, as git resolves it (<c>$HOME</c>).</param>
+    /// <param name="xdgConfigHome">The value of <c>XDG_CONFIG_HOME</c>, if set.</param>
+    /// <param name="gitConfigGlobal">The value of <c>GIT_CONFIG_GLOBAL</c>, if set.</param>
+    /// <param name="repoConfigPath">The repository's config file path, if any.</param>
+    private static IEnumerable<string> ReadConfigFiles(
+        string homeDirectory,
+        string? xdgConfigHome,
+        string? gitConfigGlobal,
+        string? repoConfigPath)
+    {
         List<string> configPaths = string.IsNullOrEmpty(gitConfigGlobal)
-            ? [Path.Combine(xdgGitDirectory, "config"), Path.Combine(homeDirectory, ".gitconfig")]
+            ? [Path.Combine(XdgGitDirectory(homeDirectory, xdgConfigHome), "config"), Path.Combine(homeDirectory, ".gitconfig")]
             : [gitConfigGlobal];
         if (repoConfigPath is not null)
         {
             configPaths.Add(repoConfigPath);
         }
 
-        string? excludesFilePath = null;
         foreach (var configPath in configPaths)
         {
             string contents;
@@ -346,14 +522,20 @@ public sealed class GitIgnoreRules
                 continue;
             }
 
-            if (TryParseExcludesFile(contents, homeDirectory, out var configured))
-            {
-                excludesFilePath = configured;
-            }
+            yield return contents;
         }
-
-        return excludesFilePath ?? Path.Combine(xdgGitDirectory, "ignore");
     }
+
+    /// <summary>
+    /// The directory git reads its XDG config and ignore files from:
+    /// <c>$XDG_CONFIG_HOME/git</c>, defaulting to <c>~/.config/git</c>.
+    /// </summary>
+    /// <param name="homeDirectory">The user's home directory.</param>
+    /// <param name="xdgConfigHome">The value of <c>XDG_CONFIG_HOME</c>, if set.</param>
+    private static string XdgGitDirectory(string homeDirectory, string? xdgConfigHome) =>
+        string.IsNullOrEmpty(xdgConfigHome)
+            ? Path.Combine(homeDirectory, ".config", "git")
+            : Path.Combine(xdgConfigHome, "git");
 
     /// <summary>
     /// The home directory git uses: <c>$HOME</c> when set (Git for Windows honors it too),
@@ -444,25 +626,27 @@ public sealed class GitIgnoreRules
     /// if it exists. Like <see cref="LoadRepoExcludeFile"/>, only a <c>.git/config</c> at
     /// the scan root is consulted.
     /// </summary>
-    private static GitIgnoreFile? LoadGlobalExcludesFile(string scanRoot) =>
-        TryLoadIgnoreFile(ResolveGlobalExcludesFilePath(
-            UserHomeDirectory,
-            Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
-            Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL"),
-            Path.Combine(scanRoot, ".git", "config")));
+    private static GitIgnoreFile? LoadGlobalExcludesFile(string scanRoot, bool ignoreCase) =>
+        TryLoadIgnoreFile(
+            ResolveGlobalExcludesFilePath(
+                UserHomeDirectory,
+                Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
+                Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL"),
+                Path.Combine(scanRoot, ".git", "config")),
+            ignoreCase);
 
     /// <summary>
     /// Loads the repo-local <c>.git/info/exclude</c> file at the scan root, if present.
     /// Does not search upward for a repository boundary, matching how local
     /// <c>.gitignore</c> discovery only looks at the scan root down.
     /// </summary>
-    private static GitIgnoreFile? LoadRepoExcludeFile(string scanRoot)
+    private static GitIgnoreFile? LoadRepoExcludeFile(string scanRoot, bool ignoreCase)
     {
         var excludePath = Path.Combine(scanRoot, ".git", "info", "exclude");
-        return TryLoadIgnoreFile(excludePath);
+        return TryLoadIgnoreFile(excludePath, ignoreCase);
     }
 
-    private static GitIgnoreFile? TryLoadIgnoreFile(string path)
+    private static GitIgnoreFile? TryLoadIgnoreFile(string path, bool ignoreCase)
     {
         string[] lines;
         try
@@ -474,7 +658,7 @@ public sealed class GitIgnoreRules
             return null;
         }
 
-        var patterns = CompilePatterns(lines);
+        var patterns = CompilePatterns(lines, ignoreCase);
         return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns);
     }
 
@@ -504,6 +688,15 @@ public sealed class GitIgnoreRules
 
         return result;
     }
+
+    /// <summary>
+    /// One setting read from a git config file by <see cref="ParseConfigEntries"/>.
+    /// </summary>
+    /// <param name="Section">The lower-cased section name (e.g. <c>core</c>).</param>
+    /// <param name="Subsection">The subsection of a <c>[section "sub"]</c> header, if any.</param>
+    /// <param name="Key">The setting's key, as written.</param>
+    /// <param name="Value">The decoded value, or <see langword="null"/> for a key with no <c>=</c>.</param>
+    internal readonly record struct ConfigEntry(string Section, string? Subsection, string Key, string? Value);
 
     internal sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
     {
@@ -543,7 +736,7 @@ internal sealed class GitIgnorePattern
         get;
     }
 
-    public static bool TryCompile(string rawLine, out GitIgnorePattern pattern)
+    public static bool TryCompile(string rawLine, bool ignoreCase, out GitIgnorePattern pattern)
     {
         pattern = null!;
 
@@ -564,7 +757,7 @@ internal sealed class GitIgnorePattern
             line = line[1..];
         }
 
-        if (!TryCompileBody(line, out var regex, out var directoryOnly))
+        if (!TryCompileBody(line, ignoreCase, out var regex, out var directoryOnly))
         {
             return false;
         }
@@ -580,8 +773,8 @@ internal sealed class GitIgnorePattern
     /// same glob dialect (anchoring, <c>**</c>, character classes, trailing-<c>/</c>
     /// directory-only).
     /// </summary>
-    internal static bool TryCompilePattern(string rawPattern, out Regex regex, out bool directoryOnly) =>
-        TryCompileBody(rawPattern, out regex, out directoryOnly);
+    internal static bool TryCompilePattern(string rawPattern, bool ignoreCase, out Regex regex, out bool directoryOnly) =>
+        TryCompileBody(rawPattern, ignoreCase, out regex, out directoryOnly);
 
     /// <summary>
     /// Translates a gitignore glob to a regex body, or returns <see langword="null"/> for a
@@ -772,7 +965,7 @@ internal sealed class GitIgnorePattern
         return trimFrom < 0 ? line : line[..trimFrom];
     }
 
-    private static bool TryCompileBody(string line, out Regex regex, out bool directoryOnly)
+    private static bool TryCompileBody(string line, bool ignoreCase, out Regex regex, out bool directoryOnly)
     {
         regex = null!;
         directoryOnly = false;
@@ -815,9 +1008,13 @@ internal sealed class GitIgnorePattern
         var prefix = anchored ? "^" : "(?:^|.*/)";
         try
         {
-            regex = new Regex(
-                prefix + body + "$",
-                RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            var options = RegexOptions.Compiled | RegexOptions.CultureInvariant;
+            if (ignoreCase)
+            {
+                options |= RegexOptions.IgnoreCase;
+            }
+
+            regex = new Regex(prefix + body + "$", options);
         }
         catch (ArgumentException)
         {

@@ -578,6 +578,76 @@ public class GitIgnoreRulesTests
         }
     }
 
+    /// <summary>
+    /// Verifies that <see cref="GitIgnoreRules.TryParseIgnoreCase"/> reads git's boolean
+    /// syntax for <c>core.ignoreCase</c> (a bare key is true, the last setting wins) and skips
+    /// settings outside the plain <c>[core]</c> section or with an invalid boolean.
+    /// </summary>
+    [Theory]
+    [InlineData("[core]\n\tignorecase = false\n", true, false)]
+    [InlineData("[core]\n\tignoreCase = true\n", true, true)]
+    [InlineData("[core]\n\tignorecase\n", true, true)]
+    [InlineData("[core]\n\tignorecase =\n", true, false)]
+    [InlineData("[CORE]\n\tIgnoreCase = Off\n", true, false)]
+    [InlineData("[core]\n\tignorecase = 2\n", true, true)]
+    [InlineData("[core]\n\tignorecase = true\n[core]\n\tignorecase = no\n", true, false)]
+    [InlineData("[core]\n\tignorecase = maybe\n", false, false)]
+    [InlineData("[core \"sub\"]\n\tignorecase = false\n", false, false)]
+    [InlineData("[user]\n\tignorecase = false\n", false, false)]
+    public void TryParseIgnoreCase_Config_ReadsCoreBoolean(string config, bool expectedFound, bool expectedValue)
+    {
+        var found = GitIgnoreRules.TryParseIgnoreCase(config, out var ignoreCase);
+
+        Assert.Equal(expectedFound, found);
+        Assert.Equal(expectedValue, ignoreCase);
+    }
+
+    /// <summary>
+    /// Verifies that <c>core.ignoreCase</c> falls back to the platform default when nothing
+    /// sets it, is read from the global config, and is overridden by the repository config.
+    /// </summary>
+    [Fact]
+    public void ResolveIgnoreCase_GlobalThenRepoConfig_LastSettingWins()
+    {
+        var home = CreateTempHome();
+        try
+        {
+            var repoConfig = Path.Combine(home, "repo-config");
+            var platformDefault = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+
+            var unset = GitIgnoreRules.ResolveIgnoreCase(home, xdgConfigHome: null, gitConfigGlobal: null, repoConfig);
+
+            File.WriteAllText(Path.Combine(home, ".gitconfig"), $"[core]\n\tignorecase = {!platformDefault}\n");
+            var global = GitIgnoreRules.ResolveIgnoreCase(home, xdgConfigHome: null, gitConfigGlobal: null, repoConfig);
+
+            File.WriteAllText(repoConfig, $"[core]\n\tignorecase = {platformDefault}\n");
+            var repo = GitIgnoreRules.ResolveIgnoreCase(home, xdgConfigHome: null, gitConfigGlobal: null, repoConfig);
+
+            Assert.Equal(platformDefault, unset);
+            Assert.Equal(!platformDefault, global);
+            Assert.Equal(platformDefault, repo);
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that with <c>core.ignoreCase</c> off, patterns match only paths of the same case.
+    /// </summary>
+    [Theory]
+    [InlineData("*.LOG", "debug.LOG", true)]
+    [InlineData("*.LOG", "debug.log", false)]
+    [InlineData("Build/", "Build/out.txt", true)]
+    [InlineData("Build/", "build/out.txt", false)]
+    public void IsIgnored_CaseSensitiveRules_MatchExactCaseOnly(string pattern, string path, bool expected)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, [pattern], ignoreCase: false);
+
+        Assert.Equal(expected, rules.IsIgnored(path));
+    }
+
     private static string CreateTempHome()
     {
         var home = Path.Combine(Path.GetTempPath(), "sloc-home-" + Guid.NewGuid().ToString("N"));

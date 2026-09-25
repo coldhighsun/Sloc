@@ -37,13 +37,14 @@ public sealed class GitAttributesRules
     /// </summary>
     /// <param name="baseDirectory">The base directory the patterns are relative to.</param>
     /// <param name="lines">The raw attributes-file lines.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
     /// <returns>The loaded rule set.</returns>
-    public static GitAttributesRules FromLines(string baseDirectory, IEnumerable<string> lines)
+    public static GitAttributesRules FromLines(string baseDirectory, IEnumerable<string> lines, bool ignoreCase = true)
     {
         ArgumentNullException.ThrowIfNull(baseDirectory);
         ArgumentNullException.ThrowIfNull(lines);
 
-        var patterns = CompilePatterns(lines);
+        var patterns = CompilePatterns(lines, ignoreCase);
         return new GitAttributesRules(patterns.Count == 0
             ? []
             : [new AttributesFile(NormalizeBase(baseDirectory), patterns)]);
@@ -77,7 +78,7 @@ public sealed class GitAttributesRules
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
 
         var walk = ScanTreeWalker.Walk(
-            root, excludedDirectoryNames, recursive, followSymlinks: false,
+            root, excludedDirectoryNames, recursive, followSymlinks: false, GitIgnoreRules.ResolveIgnoreCase(root),
             collectGitignore: false, collectGitattributes: true, collectFiles: false, onDirectoryVisited);
 
         return FromFiles(walk.AttributesFiles);
@@ -142,12 +143,17 @@ public sealed class GitAttributesRules
         return result;
     }
 
-    internal static List<AttributePattern> CompilePatterns(IEnumerable<string> lines)
+    /// <summary>
+    /// Compiles the lines of one attributes file that set a recognized attribute.
+    /// </summary>
+    /// <param name="lines">The raw attributes-file lines.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    internal static List<AttributePattern> CompilePatterns(IEnumerable<string> lines, bool ignoreCase)
     {
         var patterns = new List<AttributePattern>();
         foreach (var line in lines)
         {
-            if (AttributePattern.TryCompile(line, out var pattern))
+            if (AttributePattern.TryCompile(line, ignoreCase, out var pattern))
             {
                 patterns.Add(pattern);
             }
@@ -211,7 +217,7 @@ internal sealed class AttributePattern
         get;
     }
 
-    public static bool TryCompile(string rawLine, out AttributePattern pattern)
+    public static bool TryCompile(string rawLine, bool ignoreCase, out AttributePattern pattern)
     {
         pattern = null!;
 
@@ -240,7 +246,7 @@ internal sealed class AttributePattern
             return false;
         }
 
-        if (!GitIgnorePattern.TryCompilePattern(tokens[0], out var regex, out var directoryOnly))
+        if (!GitIgnorePattern.TryCompilePattern(tokens[0], ignoreCase, out var regex, out var directoryOnly))
         {
             return false;
         }
