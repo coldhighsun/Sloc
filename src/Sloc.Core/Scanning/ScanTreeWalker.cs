@@ -100,37 +100,28 @@ internal static class ScanTreeWalker
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
 
+        // Rule files are read outside the directory-level try/catch below: one that can't be
+        // read (e.g. locked by another process) skips just that file, as git warns and carries
+        // on, rather than aborting the directory and silently dropping its whole subtree.
+        if (collectGitignore
+            && TryReadRuleFile(Path.Combine(directory, ".gitignore"), skipped) is { } ignoreLines
+            && GitIgnoreRules.CompilePatterns(ignoreLines) is { Count: > 0 } ignorePatterns)
+        {
+            var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
+            gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, ignorePatterns));
+        }
+
+        if (collectGitattributes
+            && TryReadRuleFile(Path.Combine(directory, ".gitattributes"), skipped) is { } attributeLines
+            && GitAttributesRules.CompilePatterns(attributeLines) is { Count: > 0 } attributePatterns)
+        {
+            var baseDir = GitAttributesRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
+            attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, attributePatterns));
+        }
+
         string[] subdirectories;
         try
         {
-            if (collectGitignore)
-            {
-                var ignorePath = Path.Combine(directory, ".gitignore");
-                if (File.Exists(ignorePath))
-                {
-                    var patterns = GitIgnoreRules.CompilePatterns(File.ReadAllLines(ignorePath));
-                    if (patterns.Count > 0)
-                    {
-                        var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
-                        gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, patterns));
-                    }
-                }
-            }
-
-            if (collectGitattributes)
-            {
-                var attributesPath = Path.Combine(directory, ".gitattributes");
-                if (File.Exists(attributesPath))
-                {
-                    var patterns = GitAttributesRules.CompilePatterns(File.ReadAllLines(attributesPath));
-                    if (patterns.Count > 0)
-                    {
-                        var baseDir = GitAttributesRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
-                        attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, patterns));
-                    }
-                }
-            }
-
             if (collectFiles)
             {
                 // Enumerating via DirectoryInfo yields FileInfo entries whose Attributes are
@@ -247,6 +238,31 @@ internal static class ScanTreeWalker
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
                 onDirectoryVisited, ref visited, ancestors, followedTargets);
             ancestors.RemoveAt(ancestors.Count - 1);
+        }
+    }
+
+    /// <summary>
+    /// Reads the lines of the rule file at <paramref name="path"/>, or returns
+    /// <see langword="null"/> when it does not exist or cannot be read, recording the
+    /// latter in <paramref name="skipped"/>.
+    /// </summary>
+    /// <param name="path">The path of the <c>.gitignore</c>/<c>.gitattributes</c> file.</param>
+    /// <param name="skipped">The list a read failure is recorded in.</param>
+    private static string[]? TryReadRuleFile(string path, List<SkippedEntry> skipped)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return File.ReadAllLines(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            skipped.Add(new SkippedEntry(path, ex.Message));
+            return null;
         }
     }
 }
