@@ -498,7 +498,15 @@ public sealed partial class AnalyzeHandler
                 Interlocked.Exchange(ref pendingChange, 1);
             }
 
-            watcher = StartWatcher();
+            try
+            {
+                watcher = StartWatcher();
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return ExitCode.Error;
+            }
 
             try
             {

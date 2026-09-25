@@ -457,7 +457,7 @@ public sealed partial class AnalyzeHandler
                 render(writer);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             Console.Error.WriteLine($"sloc: could not write to '{path}': {ex.Message}");
             return false;
