@@ -547,7 +547,7 @@ internal sealed class GitIgnorePattern
     {
         pattern = null!;
 
-        var line = TrimTrailingUnescapedWhitespace(rawLine);
+        var line = TrimTrailingSpaces(rawLine);
         if (line.Length == 0 || line[0] == '#')
         {
             return false;
@@ -608,31 +608,35 @@ internal sealed class GitIgnorePattern
             }
             else if (c == '*')
             {
-                if (i + 1 < pattern.Length && pattern[i + 1] == '*')
+                // Like git's wildmatch, a run of two or more stars ("**", "***", ...) is one
+                // "**" token; a single star never crosses a "/".
+                var end = i + 1;
+                while (end < pattern.Length && pattern[end] == '*')
+                {
+                    end++;
+                }
+
+                if (end - i >= 2)
                 {
                     var slashBefore = i == 0 || pattern[i - 1] == '/';
-                    var slashAfter = i + 2 < pattern.Length && pattern[i + 2] == '/';
+                    var slashAfter = end < pattern.Length && pattern[end] == '/';
                     if (slashBefore && slashAfter)
                     {
                         sb.Append("(?:.*/)?");
-                        i += 3;
+                        i = end + 1;
                         continue;
                     }
 
-                    if (slashBefore && i + 2 == pattern.Length)
+                    if (slashBefore && end == pattern.Length)
                     {
                         sb.Append(".*");
-                        i += 2;
+                        i = end;
                         continue;
                     }
-
-                    sb.Append("[^/]*");
-                    i += 2;
-                    continue;
                 }
 
                 sb.Append("[^/]*");
-                i++;
+                i = end;
             }
             else if (c == '?')
             {
@@ -728,21 +732,44 @@ internal sealed class GitIgnorePattern
         return false;
     }
 
-    private static string TrimTrailingUnescapedWhitespace(string line)
+    /// <summary>
+    /// Drops the run of trailing spaces from <paramref name="line"/> the way git's
+    /// <c>trim_trailing_spaces</c> does: only the space character is trimmed (a trailing tab
+    /// or other whitespace is part of the pattern), and a space escaped by a backslash ends
+    /// the run. Backslashes are read as escape pairs from the start of the line, so in
+    /// <c>foo\\ </c> the space follows an escaped backslash and is still trimmed.
+    /// </summary>
+    /// <param name="line">The raw ignore-file line, without its line terminator.</param>
+    internal static string TrimTrailingSpaces(string line)
     {
-        var end = line.Length;
-        while (end > 0 && char.IsWhiteSpace(line[end - 1]))
+        var trimFrom = -1;
+        for (var i = 0; i < line.Length; i++)
         {
-            // A backslash immediately before the whitespace escapes it.
-            if (end >= 2 && line[end - 2] == '\\')
+            switch (line[i])
             {
-                break;
-            }
+                case ' ':
+                    if (trimFrom < 0)
+                    {
+                        trimFrom = i;
+                    }
 
-            end--;
+                    break;
+                case '\\':
+                    i++;
+                    if (i == line.Length)
+                    {
+                        return line;
+                    }
+
+                    trimFrom = -1;
+                    break;
+                default:
+                    trimFrom = -1;
+                    break;
+            }
         }
 
-        return line[..end];
+        return trimFrom < 0 ? line : line[..trimFrom];
     }
 
     private static bool TryCompileBody(string line, out Regex regex, out bool directoryOnly)
