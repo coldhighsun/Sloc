@@ -88,7 +88,13 @@ public sealed class GitSnapshotExtractor
     /// <summary>
     /// Extracts every blob reachable from <paramref name="commitHash"/> in the git
     /// repository containing <paramref name="repoPathHint"/> into a new temporary
-    /// directory.
+    /// directory. A blob whose path has a smudge filter driver (e.g. Git LFS) or a
+    /// <c>working-tree-encoding</c> attribute is dumped with those conversions applied, as a
+    /// checkout would write it, so its content matches the working tree rather than the
+    /// stored form (an LFS pointer, or UTF-8 text); this runs the filter, which for Git LFS
+    /// may download objects not yet in the local cache. A blob whose filter fails is
+    /// skipped. Other blobs are dumped as stored, without end-of-line conversion, since that
+    /// doesn't change line counts.
     /// </summary>
     /// <param name="repoPathHint">A path inside the git repository to query.</param>
     /// <param name="commitHash">The commit, tag, or tree-ish to extract.</param>
@@ -143,6 +149,7 @@ public sealed class GitSnapshotExtractor
         // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
         // "prefix/" (an empty result means repoPathHint was the repo root itself).
         var relativePrefix = RunGit(hintDirectory, ["rev-parse", "--show-prefix"]).Trim().TrimEnd('/');
+        var treePrefix = TreePathPrefix(commitHash, relativePrefix);
         if (hintFileName is not null)
         {
             relativePrefix = relativePrefix.Length == 0 ? hintFileName : relativePrefix + "/" + hintFileName;
@@ -166,7 +173,8 @@ public sealed class GitSnapshotExtractor
                 relativePrefix = trackedPath;
             }
 
-            var files = ExtractBlobs(repoRoot, tempRoot, blobsToExtract, skipped, cancellationToken);
+            var filtered = FindFilteredBlobs(repoRoot, treePrefix, blobsToExtract, cancellationToken);
+            var files = ExtractBlobs(repoRoot, tempRoot, treePrefix, blobsToExtract, filtered, skipped, cancellationToken);
             return new GitSnapshot(tempRoot, relativePrefix, files, skipped);
         }
         catch
@@ -339,10 +347,276 @@ public sealed class GitSnapshotExtractor
         };
     }
 
+    /// <summary>
+    /// Returns the repository-relative directory the tree named by <paramref name="commitHash"/>
+    /// sits at: empty for a commit or root tree, or the path of a <c>rev:path</c> tree-ish,
+    /// where a path starting with <c>./</c> or <c>../</c> is relative to
+    /// <paramref name="currentPrefix"/>, as git resolves it. Tree entry paths are relative to
+    /// that tree, but attributes are looked up by repository-relative path.
+    /// </summary>
+    /// <param name="commitHash">The commit-ish or tree-ish as given by the caller.</param>
+    /// <param name="currentPrefix">The repository-relative directory git runs in, without a trailing <c>/</c>.</param>
+    internal static string TreePathPrefix(string commitHash, string currentPrefix)
+    {
+        var colon = commitHash.IndexOf(':');
+        if (colon < 0)
+        {
+            return string.Empty;
+        }
+
+        var path = commitHash[(colon + 1)..];
+        var segments = new List<string>();
+        if (path is "." or ".." || path.StartsWith("./", StringComparison.Ordinal) || path.StartsWith("../", StringComparison.Ordinal))
+        {
+            segments.AddRange(currentPrefix.Split('/', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        foreach (var segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == "..")
+            {
+                if (segments.Count > 0)
+                {
+                    segments.RemoveAt(segments.Count - 1);
+                }
+            }
+            else if (segment != ".")
+            {
+                segments.Add(segment);
+            }
+        }
+
+        return string.Join('/', segments);
+    }
+
+    /// <summary>
+    /// Returns the repository-relative path of a tree entry listed below <paramref name="treePrefix"/>.
+    /// </summary>
+    /// <param name="treePrefix">The tree's repository-relative directory (see <see cref="TreePathPrefix"/>).</param>
+    /// <param name="gitPath">The entry's path relative to the tree.</param>
+    private static string RepositoryPath(string treePrefix, string gitPath) =>
+        treePrefix.Length == 0 ? gitPath : treePrefix + "/" + gitPath;
+
+    /// <summary>
+    /// Returns the names of the filter drivers that define a <c>smudge</c> or <c>process</c>
+    /// command in the repository's effective git config. A <c>filter</c> attribute naming any
+    /// other driver leaves checked-out content unchanged, as git does.
+    /// </summary>
+    /// <param name="repoRoot">The repository's working-tree root.</param>
+    private static HashSet<string> ReadSmudgeDrivers(string repoRoot)
+    {
+        string[] arguments = ["config", "-z", "--get-regexp", @"^filter\..+\.(smudge|process)$"];
+        var (stdout, stderr, exitCode) = RunGitCapture(repoRoot, arguments);
+        var drivers = new HashSet<string>(StringComparer.Ordinal);
+
+        // Exit code 1 means no key matched.
+        if (exitCode == 1)
+        {
+            return drivers;
+        }
+
+        if (exitCode != 0)
+        {
+            throw new GitSnapshotException(DescribeFailure(arguments, stderr));
+        }
+
+        // Each record is "<key>\n<value>"; the key's section and variable name are lower-case,
+        // the driver name (the subsection between them) is kept as written and may contain dots.
+        using var stream = new MemoryStream(stdout);
+        foreach (var record in ReadNullTerminatedRecords(stream))
+        {
+            var newline = record.IndexOf('\n');
+            if (newline < 0 || newline == record.Length - 1)
+            {
+                continue;
+            }
+
+            var key = record[..newline];
+            var lastDot = key.LastIndexOf('.');
+            if (key.StartsWith("filter.", StringComparison.Ordinal) && lastDot > "filter.".Length)
+            {
+                drivers.Add(key["filter.".Length..lastDot]);
+            }
+        }
+
+        return drivers;
+    }
+
+    /// <summary>
+    /// Returns the indexes into <paramref name="blobs"/> of the blobs a checkout would convert
+    /// in a way that can change what is counted: a <c>filter</c> attribute naming a driver with
+    /// a smudge command (see <see cref="ReadSmudgeDrivers"/>), or a <c>working-tree-encoding</c>.
+    /// Attributes are resolved by <c>git check-attr</c> the same way <c>git cat-file --filters</c>
+    /// resolves them when the blobs are then dumped.
+    /// </summary>
+    /// <param name="repoRoot">The repository's working-tree root.</param>
+    /// <param name="treePrefix">The tree's repository-relative directory (see <see cref="TreePathPrefix"/>).</param>
+    /// <param name="blobs">The blobs to be dumped.</param>
+    /// <param name="cancellationToken">A token to cancel the lookup.</param>
+    private static HashSet<int> FindFilteredBlobs(
+        string repoRoot,
+        string treePrefix,
+        List<(string Hash, string GitPath)> blobs,
+        CancellationToken cancellationToken)
+    {
+        var filtered = new HashSet<int>();
+
+        // A path git could never check out (one with a "." or ".." segment, which only a
+        // hand-built tree can hold) has no attributes, and check-attr rejects the whole
+        // request if one is outside the repository, so such paths are dumped unconverted.
+        var queried = new List<int>();
+        for (var i = 0; i < blobs.Count; i++)
+        {
+            if (IsCheckoutPath(RepositoryPath(treePrefix, blobs[i].GitPath)))
+            {
+                queried.Add(i);
+            }
+        }
+
+        if (queried.Count == 0)
+        {
+            return filtered;
+        }
+
+        var drivers = ReadSmudgeDrivers(repoRoot);
+        string[] arguments = ["check-attr", "-z", "--stdin", "filter", "working-tree-encoding"];
+        using var process = StartGit(repoRoot, arguments, redirectInput: true);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var stdin = process.StandardInput.BaseStream;
+
+        // Written on a background thread while this thread reads, for the same reason as in
+        // ExtractBlobs: the listing can exceed the pipe buffers in both directions.
+        var writerTask = Task.Run(() =>
+        {
+            try
+            {
+                foreach (var index in queried)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var request = Encoding.UTF8.GetBytes(RepositoryPath(treePrefix, blobs[index].GitPath) + "\0");
+                    stdin.Write(request, 0, request.Length);
+                }
+
+                stdin.Flush();
+            }
+            catch (IOException)
+            {
+                // git exited early; its exit code is checked below.
+            }
+            finally
+            {
+                stdin.Dispose();
+            }
+        }, cancellationToken);
+
+        // The output is "<path>\0<attribute>\0<value>\0" for each requested attribute of each
+        // path, in request order, so the n-th pair of triples belongs to the n-th queried blob. A value
+        // can be empty (e.g. "filter="), so empty records must be kept to stay aligned.
+        using (var stdout = new BufferedStream(process.StandardOutput.BaseStream, 65536))
+        {
+            var fields = new string[3];
+            var field = 0;
+            var triple = 0;
+            foreach (var record in ReadNullTerminatedRecords(stdout, keepEmpty: true))
+            {
+                fields[field++] = record;
+                if (field < fields.Length)
+                {
+                    continue;
+                }
+
+                field = 0;
+                var value = fields[2];
+                var converts = fields[1] == "filter"
+                    ? drivers.Contains(value)
+                    : value is not ("unspecified" or "unset" or "set" or "");
+                if (converts)
+                {
+                    filtered.Add(queried[triple / 2]);
+                }
+
+                triple++;
+            }
+        }
+
+        writerTask.GetAwaiter().GetResult();
+        var stderr = stderrTask.GetAwaiter().GetResult();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new GitSnapshotException(DescribeFailure(arguments, stderr));
+        }
+
+        return filtered;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="repositoryPath"/> is a path a checkout could write:
+    /// one with no empty, <c>.</c>, or <c>..</c> segment. Both <c>/</c> and <c>\</c> separate
+    /// segments, since git on Windows treats either as a directory separator.
+    /// </summary>
+    /// <param name="repositoryPath">A repository-relative tree entry path.</param>
+    private static bool IsCheckoutPath(string repositoryPath) =>
+        repositoryPath.Split('/', '\\').All(segment => segment is not ("" or "." or ".."));
+
+    /// <summary>
+    /// Dumps one blob with the checkout conversions for its path applied, via
+    /// <c>git cat-file --filters</c>. Unlike <c>cat-file --batch --filters</c>, whose header
+    /// reports the unconverted size, this needs no size to know where the content ends.
+    /// </summary>
+    /// <param name="repoRoot">The repository's working-tree root.</param>
+    /// <param name="hash">The blob's object hash.</param>
+    /// <param name="gitPath">The blob's path relative to the extracted tree.</param>
+    /// <param name="repositoryPath">The blob's repository-relative path, which selects the conversions.</param>
+    /// <param name="allocator">Allocates the temporary file to dump into.</param>
+    /// <param name="skipped">Receives the blob, with git's error, when the conversion fails.</param>
+    /// <param name="cancellationToken">A token to cancel the dump.</param>
+    /// <returns>The dumped file, or <see langword="null"/> when the conversion failed.</returns>
+    private static GitSnapshotFile? ExtractFilteredBlob(
+        string repoRoot,
+        string hash,
+        string gitPath,
+        string repositoryPath,
+        SnapshotFileAllocator allocator,
+        List<Models.SkippedEntry> skipped,
+        CancellationToken cancellationToken)
+    {
+        using var process = StartGit(repoRoot, ["cat-file", "--filters", $"--path={repositoryPath}", hash], redirectInput: false);
+        var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        string tempPath;
+        using (var fileStream = allocator.Create(gitPath, out tempPath))
+        {
+            try
+            {
+                process.StandardOutput.BaseStream.CopyToAsync(fileStream, cancellationToken).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                // A filter such as Git LFS can block on a download; don't leave it running.
+                process.Kill(entireProcessTree: true);
+                throw;
+            }
+        }
+
+        var stderr = stderrTask.GetAwaiter().GetResult();
+        process.WaitForExit();
+        if (process.ExitCode == 0)
+        {
+            return new GitSnapshotFile(tempPath, gitPath);
+        }
+
+        File.Delete(tempPath);
+        var message = stderr.Trim().Split('\n', 2)[0].Trim();
+        skipped.Add(new Models.SkippedEntry(gitPath, $"git checkout filter error: {message}"));
+        return null;
+    }
+
     private static List<GitSnapshotFile> ExtractBlobs(
         string repoRoot,
         string tempRoot,
+        string treePrefix,
         List<(string Hash, string GitPath)> blobs,
+        HashSet<int> filtered,
         List<Models.SkippedEntry> skipped,
         CancellationToken cancellationToken)
     {
@@ -373,10 +647,16 @@ public sealed class GitSnapshotExtractor
         {
             try
             {
-                foreach (var (hash, _) in blobs)
+                for (var i = 0; i < blobs.Count; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var request = Encoding.ASCII.GetBytes(hash + "\n");
+                    if (filtered.Contains(i))
+                    {
+                        // Dumped separately, with its checkout conversions applied.
+                        continue;
+                    }
+
+                    var request = Encoding.ASCII.GetBytes(blobs[i].Hash + "\n");
                     stdin.Write(request, 0, request.Length);
                 }
 
@@ -398,6 +678,17 @@ public sealed class GitSnapshotExtractor
         {
             var gitPath = blobs[i].GitPath;
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (filtered.Contains(i))
+            {
+                if (ExtractFilteredBlob(repoRoot, blobs[i].Hash, gitPath, RepositoryPath(treePrefix, gitPath), allocator, skipped, cancellationToken)
+                    is { } filteredFile)
+                {
+                    files.Add(filteredFile);
+                }
+
+                continue;
+            }
 
             string header;
             try
@@ -513,7 +804,9 @@ public sealed class GitSnapshotExtractor
     /// as UTF-8 as soon as its terminator is seen. Splitting on 0x00 is always safe for
     /// UTF-8 text since that byte never appears within or between multi-byte sequences.
     /// </summary>
-    private static IEnumerable<string> ReadNullTerminatedRecords(Stream stream)
+    /// <param name="stream">The stream to read.</param>
+    /// <param name="keepEmpty">Whether to yield empty records between two NUL bytes instead of skipping them.</param>
+    private static IEnumerable<string> ReadNullTerminatedRecords(Stream stream, bool keepEmpty = false)
     {
         var buffer = new byte[4096];
         var length = 0;
@@ -522,7 +815,7 @@ public sealed class GitSnapshotExtractor
         {
             if (b == 0)
             {
-                if (length > 0)
+                if (length > 0 || keepEmpty)
                 {
                     yield return Encoding.UTF8.GetString(buffer, 0, length);
                     length = 0;
@@ -576,19 +869,29 @@ public sealed class GitSnapshotExtractor
 
     private static byte[] RunGitRaw(string workingDirectory, string[] arguments)
     {
+        var (stdout, stderr, exitCode) = RunGitCapture(workingDirectory, arguments);
+        if (exitCode != 0)
+        {
+            throw new GitSnapshotException(DescribeFailure(arguments, stderr));
+        }
+
+        return stdout;
+    }
+
+    /// <summary>
+    /// Runs git to completion, returning its output and exit code without interpreting them.
+    /// </summary>
+    /// <param name="workingDirectory">The directory to run git in.</param>
+    /// <param name="arguments">The git arguments.</param>
+    private static (byte[] Stdout, string Stderr, int ExitCode) RunGitCapture(string workingDirectory, string[] arguments)
+    {
         using var process = StartGit(workingDirectory, arguments, redirectInput: false);
         var stderrTask = process.StandardError.ReadToEndAsync();
         using var stdout = new MemoryStream();
         process.StandardOutput.BaseStream.CopyTo(stdout);
         var stderr = stderrTask.GetAwaiter().GetResult();
         process.WaitForExit();
-
-        if (process.ExitCode != 0)
-        {
-            throw new GitSnapshotException(DescribeFailure(arguments, stderr));
-        }
-
-        return stdout.ToArray();
+        return (stdout.ToArray(), stderr, process.ExitCode);
     }
 
     private static System.Diagnostics.Process StartGit(string workingDirectory, string[] arguments, bool redirectInput)

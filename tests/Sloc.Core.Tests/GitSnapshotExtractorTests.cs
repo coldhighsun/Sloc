@@ -502,6 +502,140 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a blob whose path has a smudge filter driver (as Git LFS configures) is
+    /// dumped with the filter applied, as a checkout writes it, while other blobs keep their
+    /// stored content.
+    /// </summary>
+    [Fact]
+    public void Extract_SmudgeFilter_IsAppliedLikeCheckout()
+    {
+        ConfigureFilter("demo", "sed -e s/stub/expanded/");
+        Write(".gitattributes", "*.cs filter=demo\n");
+        Write("a.cs", "// stub\n");
+        Write("b.py", "# stub\n");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD", TestContext.Current.CancellationToken);
+
+        var byGitPath = snapshot.Files.ToDictionary(f => f.GitPath, f => f.TempPath);
+        Assert.Equal("// expanded\n", File.ReadAllText(byGitPath["a.cs"]));
+        Assert.Equal("# stub\n", File.ReadAllText(byGitPath["b.py"]));
+    }
+
+    /// <summary>
+    /// Verifies that for a <c>rev:path</c> tree-ish, filters are selected by the blob's
+    /// repository-relative path rather than its path relative to the extracted subtree.
+    /// </summary>
+    [Fact]
+    public void Extract_RevPathTreeish_SelectsFiltersByRepositoryPath()
+    {
+        ConfigureFilter("demo", "sed -e s/stub/expanded/");
+        Write(".gitattributes", "sub/*.cs filter=demo\n");
+        Write("sub/a.cs", "// stub\n");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD:sub", TestContext.Current.CancellationToken);
+
+        var file = Assert.Single(snapshot.Files);
+        Assert.Equal("a.cs", file.GitPath);
+        Assert.Equal("// expanded\n", File.ReadAllText(file.TempPath));
+    }
+
+    /// <summary>
+    /// Verifies that a <c>filter</c> attribute naming a driver with no smudge command leaves
+    /// the stored content unchanged, as a checkout does.
+    /// </summary>
+    [Fact]
+    public void Extract_FilterWithoutSmudgeDriver_KeepsStoredContent()
+    {
+        RunGit(_root, "config", "core.autocrlf", "false");
+        Write(".gitattributes", "*.cs filter=undefined\n");
+        Write("a.cs", "// stub\n");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD", TestContext.Current.CancellationToken);
+
+        var byGitPath = snapshot.Files.ToDictionary(f => f.GitPath, f => f.TempPath);
+        Assert.Equal("// stub\n", File.ReadAllText(byGitPath["a.cs"]));
+    }
+
+    /// <summary>
+    /// Verifies that a blob with a <c>working-tree-encoding</c> attribute is dumped in that
+    /// encoding, as a checkout writes it, rather than as the UTF-8 git stores.
+    /// </summary>
+    [Fact]
+    public void Extract_WorkingTreeEncoding_IsApplied()
+    {
+        RunGit(_root, "config", "core.autocrlf", "false");
+        Write(".gitattributes", "*.txt text eol=lf working-tree-encoding=UTF-16LE\n");
+        var utf16 = Encoding.Unicode.GetBytes("a\nb\n");
+        File.WriteAllBytes(Path.Combine(_root, "notes.txt"), utf16);
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD", TestContext.Current.CancellationToken);
+
+        var byGitPath = snapshot.Files.ToDictionary(f => f.GitPath, f => f.TempPath);
+        Assert.Equal(utf16, File.ReadAllBytes(byGitPath["notes.txt"]));
+    }
+
+    /// <summary>
+    /// Verifies that a blob whose required smudge filter fails is reported as skipped rather
+    /// than dumped in its stored form or aborting the extraction.
+    /// </summary>
+    [Fact]
+    public void Extract_FailingRequiredFilter_SkipsBlob()
+    {
+        ConfigureFilter("broken", "false");
+        RunGit(_root, "config", "filter.broken.required", "true");
+        Write(".gitattributes", "*.cs filter=broken\n");
+        Write("a.cs", "// stub\n");
+        Write("b.py", "# stub\n");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD", TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(snapshot.Files, f => f.GitPath == "a.cs");
+        Assert.Contains(snapshot.Files, f => f.GitPath == "b.py");
+        var skipped = Assert.Single(snapshot.Skipped);
+        Assert.Equal("a.cs", skipped.Path);
+        Assert.StartsWith("git checkout filter error", skipped.Reason);
+    }
+
+    /// <summary>
+    /// Verifies that the repository-relative directory of a tree-ish is derived the way git
+    /// resolves <c>rev:path</c>, including <c>./</c> and <c>../</c> relative to the current prefix.
+    /// </summary>
+    /// <param name="commitHash">The commit-ish or tree-ish.</param>
+    /// <param name="currentPrefix">The repository-relative directory git runs in.</param>
+    /// <param name="expected">The expected prefix.</param>
+    [Theory]
+    [InlineData("HEAD", "cur/dir", "")]
+    [InlineData("HEAD:", "cur/dir", "")]
+    [InlineData("HEAD:sub", "cur/dir", "sub")]
+    [InlineData("HEAD~1:sub/deep/", "", "sub/deep")]
+    [InlineData("HEAD:./a", "cur/dir", "cur/dir/a")]
+    [InlineData("HEAD:../b", "cur/dir", "cur/b")]
+    [InlineData("HEAD:.", "cur", "cur")]
+    public void TreePathPrefix_TreeIsh_ResolvesRepositoryDirectory(string commitHash, string currentPrefix, string expected)
+    {
+        Assert.Equal(expected, GitSnapshotExtractor.TreePathPrefix(commitHash, currentPrefix));
+    }
+
+    /// <summary>
+    /// Configures a filter driver whose clean command is a pass-through and whose smudge
+    /// command is <paramref name="smudge"/>, with line-ending conversion off so content is
+    /// compared byte for byte.
+    /// </summary>
+    /// <param name="name">The driver name.</param>
+    /// <param name="smudge">The smudge command.</param>
+    private void ConfigureFilter(string name, string smudge)
+    {
+        RunGit(_root, "config", "core.autocrlf", "false");
+        RunGit(_root, "config", $"filter.{name}.clean", "cat");
+        RunGit(_root, "config", $"filter.{name}.smudge", smudge);
+    }
+
+    /// <summary>
     /// Writes each (name, content) pair as a blob and returns the hash of a tree listing
     /// them, built with <c>git mktree</c> so names a working tree couldn't hold on this
     /// platform can still be committed.
