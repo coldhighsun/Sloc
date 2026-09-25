@@ -246,6 +246,7 @@ sloc ./src
 - Lua long-bracket comments are recognized up to level 4 (`--[====[ … ]====]`), and Perl POD blocks only when opened by a common command (`=pod`, `=head1`–`=head6`, `=over`, `=item`, `=back`, `=begin`, `=end`, `=for`, `=encoding`) at column 0.
 - JavaScript/TypeScript regex literals are recognized, so comment markers inside them (e.g. `/\/*$/`) are counted as code, and PHP 8 attributes (`#[…]`) are code rather than `#` comments.
 - Python triple-quoted strings are counted as comments only when they begin a statement (docstrings, including `r"""…"""`/`u"""…"""`); used as a value (e.g. `x = """…"""`), inside brackets left open by an earlier line, or after a trailing `\` line continuation they are counted as code.
+- The complexity metric counts branch tokens textually, so a token that is not a branch in context still adds to it: TypeScript's optional-member `?:` (`name?: string`), Rust's empty closure parameter list `||` (`|| x`), and C++'s rvalue/forwarding reference `&&` (`T&&`).
 
 ## License
 
@@ -485,6 +486,7 @@ sloc ./src
 - Lua 长括号注释最多识别到第 4 级（`--[====[ … ]====]`）；Perl POD 块仅在第 0 列以常见指令（`=pod`、`=head1`–`=head6`、`=over`、`=item`、`=back`、`=begin`、`=end`、`=for`、`=encoding`）开头时识别。
 - 已识别 JavaScript/TypeScript 正则字面量，因此其中的注释符号（例如 `/\/*$/`）会被计为代码；PHP 8 属性（`#[…]`）计为代码，而不是 `#` 注释。
 - Python 三引号字符串仅在作为语句开头（docstring，包括 `r"""…"""`/`u"""…"""`）时计为注释；作为值使用时（例如 `x = """…"""`）、位于前面行未闭合的括号内或跟在行尾 `\` 续行之后时计为代码。
+- 复杂度指标按文本统计分支记号，因此在上下文中并非分支的同名记号也会计入：TypeScript 可选成员的 `?:`（`name?: string`）、Rust 空参数闭包的 `||`（`|| x`）以及 C++ 右值/转发引用的 `&&`（`T&&`）。
 
 ## 许可证
 
