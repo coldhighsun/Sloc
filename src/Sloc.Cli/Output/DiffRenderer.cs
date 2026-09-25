@@ -49,7 +49,9 @@ internal static class DiffRenderer
             throw new InvalidOperationException($"Baseline '{path}' is not a valid Sloc JSON report: {ex.Message}");
         }
 
-        if (report.ByLanguage is not { Count: > 0 } && report.Files is not { Count: > 0 })
+        // An empty breakdown is still a breakdown: a report of a directory with no source
+        // files (e.g. a new project) has "byLanguage": [] and is a valid baseline.
+        if (report.ByLanguage is null && report.Files is null)
         {
             throw new InvalidOperationException(
                 $"Baseline '{path}' has no per-language or per-file breakdown to diff against.");
