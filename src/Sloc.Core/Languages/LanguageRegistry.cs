@@ -241,6 +241,8 @@ public static class LanguageRegistry
                 Extensions = [".py", ".pyw"],
                 LineCommentTokens = ["#"],
                 StringLiterals = [pyTripleDouble, pyTripleSingle, doubleQuote, singleQuote],
+                // Raw/unicode docstrings (r"""…""", u"""…""").
+                DocStringPrefixes = ["r", "R", "u", "U"],
                 ComplexityKeywords = pythonComplexity
             },
             new()

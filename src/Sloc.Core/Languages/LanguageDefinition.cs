@@ -31,8 +31,10 @@ public sealed record BlockComment(string Open, string Close, bool AllowNested = 
 /// strings, JavaScript template literals, Go raw strings).
 /// </param>
 /// <param name="IsDocComment">
-/// Whether an occurrence that begins a statement (nothing but whitespace precedes it on
-/// the line) should be counted as a comment rather than code, as with Python docstrings.
+/// Whether an occurrence that begins a statement (nothing but whitespace, or one of the
+/// language's <see cref="LanguageDefinition.DocStringPrefixes"/>, precedes it on the line, and
+/// the line does not continue an earlier one inside open brackets or after a trailing
+/// <c>\</c>) should be counted as a comment rather than code, as with Python docstrings.
 /// An occurrence used as an expression (e.g. the right-hand side of an assignment) is
 /// always treated as a string.
 /// </param>
@@ -158,6 +160,13 @@ public sealed class LanguageDefinition
     {
         get; init;
     }
+
+    /// <summary>
+    /// String prefixes (e.g. Python's <c>r</c> and <c>u</c>) that may directly precede a
+    /// <see cref="StringLiteral.IsDocComment">doc-comment literal</see> without making it an
+    /// expression, so <c>r"""…"""</c> beginning a statement is still a docstring.
+    /// </summary>
+    public IReadOnlyList<string> DocStringPrefixes { get; init; } = [];
 
     /// <summary>
     /// Tokens that start with a <see cref="LineCommentTokens">line-comment token</see> but are
