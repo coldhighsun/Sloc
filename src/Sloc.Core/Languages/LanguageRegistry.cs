@@ -182,7 +182,14 @@ public static class LanguageRegistry
                 Extensions = [".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".ipp"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [doubleQuote, singleQuote],
+                // Raw string literals (R"(…)", also u8R"(…)"). Custom delimiters (R"x(…)x")
+                // are not modeled; they would require a variable-length delimiter.
+                StringLiterals =
+                [
+                    new StringLiteral("R\"(", Multiline: true, AllowEscape: false, CloseDelimiter: ")\""),
+                    doubleQuote,
+                    singleQuote
+                ],
                 // C++14 digit separators (1'000).
                 QuoteDigitSeparators = true,
                 ComplexityKeywords = cStyleComplexity

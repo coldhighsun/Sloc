@@ -637,6 +637,21 @@ public class LineClassifierLanguageTests
     }
 
     /// <summary>
+    /// Verifies that a C++ raw string literal hides comment tokens and spans lines.
+    /// </summary>
+    [Fact]
+    public void Classify_CppRawString_HidesCommentTokensAcrossLines()
+    {
+        var classifier = new LineClassifier(Resolve(".cpp"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("auto s = R\"(C:\\ /* not a comment"));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("still \" string // */)\";"));
+        Assert.False(classifier.InMultilineString);
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
     /// Verifies that a raw or unicode docstring (<c>r"""…"""</c>) beginning a statement is
     /// a comment, across lines too.
     /// </summary>
