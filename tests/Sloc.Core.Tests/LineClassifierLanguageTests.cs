@@ -605,4 +605,34 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Comment, classifier.Classify("# a comment"));
         Assert.Equal(LineKind.Comment, classifier.Classify("#comment [not an attribute]"));
     }
+
+    /// <summary>
+    /// Verifies that a C/C++ digit separator (<c>1'000</c>) does not open a character
+    /// literal that would hide a following block-comment opener.
+    /// </summary>
+    /// <param name="extension">The C or C++ file extension.</param>
+    [Theory]
+    [InlineData(".c")]
+    [InlineData(".cpp")]
+    public void Classify_DigitSeparator_DoesNotOpenCharLiteral(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("x = 1'000'000 + 0xFF'FF; /* start"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end */"));
+    }
+
+    /// <summary>
+    /// Verifies that a character literal with an encoding prefix (<c>u8'a'</c>) is still a
+    /// literal, not mistaken for a digit separator.
+    /// </summary>
+    [Fact]
+    public void Classify_CppPrefixedCharLiteral_StillHidesCommentToken()
+    {
+        var classifier = new LineClassifier(Resolve(".cpp"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("auto c = u8'/'; auto d = '*'; int e = 1;"));
+        Assert.False(classifier.InBlockComment);
+    }
 }

@@ -172,6 +172,8 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote],
+                // C23 digit separators (1'000).
+                QuoteDigitSeparators = true,
                 ComplexityKeywords = cComplexity
             },
             new()
@@ -181,6 +183,8 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
                 StringLiterals = [doubleQuote, singleQuote],
+                // C++14 digit separators (1'000).
+                QuoteDigitSeparators = true,
                 ComplexityKeywords = cStyleComplexity
             },
             new()
