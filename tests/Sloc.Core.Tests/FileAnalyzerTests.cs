@@ -304,6 +304,28 @@ public class FileAnalyzerTests
     }
 
     /// <summary>
+    /// Verifies that a UTF-8 byte-order mark does not exempt a file from binary detection:
+    /// unlike UTF-16/UTF-32, UTF-8 text never contains NUL bytes, on either read path.
+    /// </summary>
+    /// <param name="inMemoryThreshold">The analyzer's in-memory threshold (0 forces streaming).</param>
+    [Theory]
+    [InlineData(4 * 1024 * 1024)]
+    [InlineData(0)]
+    public void Analyze_Utf8BomFollowedByNul_ThrowsBinaryFileException(int inMemoryThreshold)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sloc-bin-bom-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllBytes(path, [0xEF, 0xBB, 0xBF, (byte)'a', 0x00, (byte)'b']);
+        try
+        {
+            Assert.Throws<BinaryFileException>(() => new FileAnalyzer { InMemoryThreshold = inMemoryThreshold }.Analyze(path, CSharp));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that analyzing an empty string returns zero for all line counts.
     /// </summary>
     [Fact]
