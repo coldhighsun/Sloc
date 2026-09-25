@@ -185,6 +185,24 @@ public sealed class LineClassifier
                 continue;
             }
 
+            if (MatchBlockCommentException(line, index) is var exceptionLength and > 0)
+            {
+                sawCode = true;
+                if (_trackCodeText)
+                {
+                    line.Slice(index, exceptionLength).CopyTo(codeChars[index..]);
+                }
+
+                if (_trackRegex)
+                {
+                    _lastSignificant = line[index + exceptionLength - 1];
+                    _lastSignificantIndex = index + exceptionLength - 1;
+                }
+
+                index += exceptionLength;
+                continue;
+            }
+
             if (TryMatchBlockOpen(line, index, out var block))
             {
                 sawComment = true;
@@ -341,6 +359,12 @@ public sealed class LineClassifier
         }
 
         index += next;
+
+        if (MatchBlockCommentException(line, index) is var exceptionLength and > 0)
+        {
+            sawComment = true;
+            return index + exceptionLength;
+        }
 
         if (block.AllowNested && MatchesBlockToken(line, index, block.Open, block))
         {
@@ -574,6 +598,24 @@ public sealed class LineClassifier
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns the length of the <see cref="LanguageDefinition.BlockCommentExceptions">block-comment
+    /// exception</see> token at <paramref name="index"/>, or 0 when none matches there.
+    /// </summary>
+    private int MatchBlockCommentException(ReadOnlySpan<char> line, int index)
+    {
+        var exceptions = _language.BlockCommentExceptions;
+        for (var i = 0; i < exceptions.Count; i++)
+        {
+            if (MatchesAt(line, index, exceptions[i]))
+            {
+                return exceptions[i].Length;
+            }
+        }
+
+        return 0;
     }
 
     private bool TryMatchBlockOpen(ReadOnlySpan<char> line, int index, [NotNullWhen(true)] out BlockComment? block)

@@ -157,6 +157,14 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> LineCommentExceptions { get; init; } = [];
 
     /// <summary>
+    /// Tokens that start with a <see cref="BlockComments">block-comment</see> open but are not
+    /// one, such as F#'s <c>(*)</c> multiplication operator (F#'s <c>(*</c> otherwise opens a
+    /// comment). Matched as a unit both in code and inside an open block comment, so the token
+    /// neither opens nor nests a comment and its trailing characters never close one.
+    /// </summary>
+    public IReadOnlyList<string> BlockCommentExceptions { get; init; } = [];
+
+    /// <summary>
     /// Whether the language has JavaScript-style <c>/…/flags</c> regular-expression literals,
     /// so that a <c>/*</c> or <c>//</c> inside one (e.g. <c>/\/*$/</c>) is not mistaken for a
     /// comment. A <c>/</c> is taken to start a regex only where an operand is expected (at the
