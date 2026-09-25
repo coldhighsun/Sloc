@@ -117,6 +117,13 @@ public sealed class DirectoryScanner
     private static readonly string[] DefaultExcludes =
         DefaultExcludeDirectoryNames.Select(name => $"**/{name}/**").ToArray();
 
+    /// <summary>
+    /// Compares full file paths the way the platform's default file system does:
+    /// case-insensitively on Windows and macOS, case-sensitively elsewhere.
+    /// </summary>
+    private static readonly StringComparer FileSystemPathComparer =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
     private static readonly LanguageDefinition UnknownLanguage = new()
     {
         Name = "Other",
@@ -322,7 +329,9 @@ public sealed class DirectoryScanner
     /// </param>
     /// <returns>
     /// A <see cref="ScanResult"/> containing the resolved files and an entry in
-    /// <see cref="ScanResult.Skipped"/> for every path that does not exist.
+    /// <see cref="ScanResult.Skipped"/> for every path that does not exist. A file listed
+    /// more than once (even spelled differently, e.g. <c>a.cs</c> and <c>./a.cs</c>) is
+    /// resolved only once, at its first occurrence, so it is not counted twice.
     /// </returns>
     public ScanResult ScanFiles(IEnumerable<string> paths, ScanOptions options)
     {
@@ -331,6 +340,7 @@ public sealed class DirectoryScanner
 
         var files = new List<ScannedFile>();
         var skipped = new List<SkippedEntry>();
+        var seen = new HashSet<string>(FileSystemPathComparer);
 
         foreach (var path in paths)
         {
@@ -340,7 +350,13 @@ public sealed class DirectoryScanner
                 continue;
             }
 
-            var scanned = Resolve(Path.GetFullPath(path), options.IncludeUnknown);
+            var fullPath = Path.GetFullPath(path);
+            if (!seen.Add(fullPath))
+            {
+                continue;
+            }
+
+            var scanned = Resolve(fullPath, options.IncludeUnknown);
             if (scanned is not null && MatchesLanguageFilter(scanned.Language, options))
             {
                 files.Add(scanned);

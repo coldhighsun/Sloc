@@ -485,6 +485,23 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a file listed more than once, including under a different spelling of
+    /// the same path, is resolved only once so it is not counted twice.
+    /// </summary>
+    [Fact]
+    public void ScanFiles_SameFileListedTwice_ResolvesItOnce()
+    {
+        var path = Write("sub/a.cs", "int a;");
+        var other = Write("b.cs", "int b;");
+        var respelled = Path.Combine(_root, "sub", "..", "sub", "a.cs");
+
+        var result = _scanner.ScanFiles([path, other, respelled, path], new ScanOptions());
+
+        Assert.Equal([Path.GetFullPath(path), Path.GetFullPath(other)], result.Files.Select(f => f.Path));
+        Assert.Empty(result.Skipped);
+    }
+
+    /// <summary>
     /// Verifies that scanning a single existing file returns exactly that file.
     /// </summary>
     [Fact]
