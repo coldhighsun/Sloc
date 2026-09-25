@@ -296,6 +296,63 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
         Assert.Equal(1, total.GetProperty("total").GetInt32());
     }
 
+    /// <summary>
+    /// Verifies that <c>--compare-to</c> on a directory that was a file of the same name at
+    /// the given commit treats that old file as out of scope, reporting every current line
+    /// as added instead of crashing.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToDirectoryThatWasFile_TreatsOldFileAsOutOfScope()
+    {
+        File.WriteAllText(Path.Combine(_root, "lib.c"), "int a;\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        File.Delete(Path.Combine(_root, "lib.c"));
+        Directory.CreateDirectory(Path.Combine(_root, "lib.c"));
+        File.WriteAllText(Path.Combine(_root, "lib.c", "x.c"), "int a;\nint b;\nint c;\n");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "lib.c"),
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        }).GetProperty("total");
+
+        Assert.Equal(3, total.GetProperty("code").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that <c>--compare-to</c> on a file that was a directory of the same name at
+    /// the given commit does not diff against a file from inside that old directory.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToFileThatWasDirectory_DoesNotDiffAgainstFileInsideOldDirectory()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "lib.c"));
+        File.WriteAllText(Path.Combine(_root, "lib.c", "x.c"), "int a;\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+
+        Directory.Delete(Path.Combine(_root, "lib.c"), recursive: true);
+        File.WriteAllText(Path.Combine(_root, "lib.c"), "int a;\nint b;\nint c;\n");
+
+        var total = RunCompareToJson(outputFile => new AnalyzeOptions
+        {
+            Path = Path.Combine(_root, "lib.c"),
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        }).GetProperty("total");
+
+        Assert.Equal(3, total.GetProperty("code").GetInt32());
+    }
+
     private static JsonElement RunCompareToJson(Func<string, AnalyzeOptions> buildOptions)
     {
         var outputFile = Path.Combine(Path.GetTempPath(), "sloc-diff-" + Guid.NewGuid().ToString("N") + ".json");
