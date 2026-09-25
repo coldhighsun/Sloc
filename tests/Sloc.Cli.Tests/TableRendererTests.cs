@@ -80,6 +80,26 @@ public class TableRendererTests
         Assert.DoesNotContain("Complexity", output);
     }
 
+    /// <summary>
+    /// Verifies that a drive root folder (files on a different drive than the current
+    /// directory, so their path can't be made relative) is labeled with the drive, not blank.
+    /// </summary>
+    [Fact]
+    public void BuildFileTable_FileOnOtherDrive_LabelsDriveRootFolder()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Drive letters exist only on Windows.");
+        var otherDrive = char.ToUpperInvariant(Environment.CurrentDirectory[0]) == 'Q' ? 'R' : 'Q';
+        var file = new FileAnalysis { Path = $@"{otherDrive}:\proj\a.cs", Language = "C#", Code = 1, Comment = 0, Blank = 0 };
+        var console = new TestConsole();
+        console.Profile.Width = 160;
+
+        console.Write(new TableRenderer().BuildFileTable(new AnalysisSummary([file]), noHealth: true, noComplexity: true));
+        var output = console.Output;
+
+        Assert.Contains($"📁 {otherDrive}:", output);
+        Assert.Contains("📁 proj", output);
+    }
+
     private static AnalysisSummary BuildSummary()
     {
         var file = new FileAnalysis
