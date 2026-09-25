@@ -445,6 +445,27 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a macro defined in the top-level <c>.gitattributes</c> marks files
+    /// vendored wherever it is set, that a nested file can reset the attribute with
+    /// <c>!attr</c>, and that a macro defined in a nested file is ignored.
+    /// </summary>
+    [Fact]
+    public void Scan_GitattributesMacros_ApplyTopLevelDefinitionsOnly()
+    {
+        Write(".gitattributes", "[attr]thirdparty linguist-vendored\nextern/** thirdparty\n");
+        Write("extern/lib.py", "# vendored");
+        Write("extern/own/.gitattributes", "*.py !linguist-vendored\n");
+        Write("extern/own/mine.py", "# ours");
+        Write("src/.gitattributes", "[attr]local linguist-generated\n*.py local\n");
+        Write("src/app.py", "# app");
+
+        var result = _scanner.Scan(_root, new ScanOptions());
+        var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(["extern/own/mine.py", "src/app.py"], names);
+    }
+
+    /// <summary>
     /// Verifies that a negation pattern re-includes an otherwise ignored file during a scan.
     /// </summary>
     [Fact]

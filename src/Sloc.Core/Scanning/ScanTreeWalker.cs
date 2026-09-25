@@ -115,10 +115,10 @@ internal static class ScanTreeWalker
 
         if (collectGitattributes
             && TryReadRuleFile(Path.Combine(directory, ".gitattributes"), skipped) is { } attributeLines
-            && GitAttributesRules.CompilePatterns(attributeLines, ignoreCase) is { Count: > 0 } attributePatterns)
+            && GitAttributesRules.ParseLines(attributeLines) is { Count: > 0 } parsedAttributeLines)
         {
             var baseDir = GitAttributesRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
-            attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, attributePatterns));
+            attributesFiles.Add(new GitAttributesRules.AttributesFile(baseDir, parsedAttributeLines));
         }
 
         string[] subdirectories;

@@ -186,7 +186,7 @@ public sealed class DirectoryScanner
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
 
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles, ignoreCase) : null;
-        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles) : null;
+        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(walk.AttributesFiles, ignoreCase) : null;
 
         // Ordinal (case-sensitive) comparer: Matcher.Match's OrdinalIgnoreCase comparison is
         // for pattern matching only, its Files results echo back the exact strings it was
@@ -280,14 +280,14 @@ public sealed class DirectoryScanner
                 gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(GitIgnoreRules.NormalizeBase(directory), ignorePatterns));
             }
 
-            if (isGitattributes && GitAttributesRules.CompilePatterns(lines, ignoreCase) is { Count: > 0 } attributePatterns)
+            if (isGitattributes && GitAttributesRules.ParseLines(lines) is { Count: > 0 } attributeLines)
             {
-                attributesFiles.Add(new GitAttributesRules.AttributesFile(GitAttributesRules.NormalizeBase(directory), attributePatterns));
+                attributesFiles.Add(new GitAttributesRules.AttributesFile(GitAttributesRules.NormalizeBase(directory), attributeLines));
             }
         }
 
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, gitignoreFiles, ignoreCase) : null;
-        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(attributesFiles) : null;
+        var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromFiles(attributesFiles, ignoreCase) : null;
 
         var candidates = FilterCandidates(pathByRelative, options, gitignore, gitattributes, onFileFound: null);
         candidates.Sort(static (left, right) => string.CompareOrdinal(left.RelativePath, right.RelativePath));
