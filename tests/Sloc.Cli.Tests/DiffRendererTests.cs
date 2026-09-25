@@ -58,6 +58,29 @@ public class DiffRendererTests
     }
 
     /// <summary>
+    /// Verifies that a baseline saved from a directory with no source files (an empty
+    /// <c>byLanguage</c> array) loads, and that every current language diffs as new.
+    /// </summary>
+    [Fact]
+    public void Load_BaselineWithEmptyLanguageList_LoadsAndDiffsAllAsNew()
+    {
+        var path = WriteBaseline(new AnalysisSummary([]), detailed: false);
+        try
+        {
+            var baseline = DiffRenderer.Load(path);
+            var diff = RenderJsonDiff(BuildSummary(code: 80, comment: 20, blank: 5), baseline);
+
+            var csharp = Assert.Single(diff.GetProperty("byLanguage").EnumerateArray());
+            Assert.Equal("C#", csharp.GetProperty("language").GetString());
+            Assert.Equal(80, csharp.GetProperty("code").GetInt32());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
     /// Verifies that loading a baseline file containing syntactically invalid JSON throws
     /// with a message identifying it as an unparseable Sloc report, rather than propagating
     /// the raw <see cref="System.Text.Json.JsonException"/>.
