@@ -175,7 +175,8 @@ public class LineClassifierLanguageTests
 
     /// <summary>
     /// Verifies that a Rust raw string (<c>r"…"</c>) hides a <c>//</c> token from being
-    /// treated as a line comment.
+    /// treated as a line comment, and closes on the line's own closing quote rather than
+    /// staying open looking for a second <c>r"</c>.
     /// </summary>
     [Fact]
     public void Classify_RustRawString_HidesCommentToken()
@@ -183,6 +184,22 @@ public class LineClassifierLanguageTests
         var classifier = new LineClassifier(Resolve(".rs"));
 
         Assert.Equal(LineKind.Code, classifier.Classify("let s = r\"not // a comment\";"));
+        Assert.False(classifier.InMultilineString);
+    }
+
+    /// <summary>
+    /// Verifies that a Rust raw string closes on the same line it opens on (a bare <c>"</c>,
+    /// not a second <c>r"</c>), so a real comment on the following line is still classified
+    /// as one instead of being swallowed as string content.
+    /// </summary>
+    [Fact]
+    public void Classify_RustRawString_ClosesOnBareQuote_CommentOnNextLineStillRecognized()
+    {
+        var classifier = new LineClassifier(Resolve(".rs"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("let s = r\"hello\";"));
+        Assert.False(classifier.InMultilineString);
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a real comment"));
     }
 
     /// <summary>
@@ -292,6 +309,38 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify(@"$dir = ""C:\"" <# start"));
         Assert.True(classifier.InBlockComment);
         Assert.Equal(LineKind.Comment, classifier.Classify("still comment #>"));
+    }
+
+    /// <summary>
+    /// Verifies that a PowerShell single-quoted string can legitimately embed a literal
+    /// newline before its closing quote, so a <c>#</c> on the continuation line is still
+    /// treated as part of the string, not as a real line comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PowerShellSingleQuotedString_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".ps1"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("$s = 'first line"));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("second line # not a comment'"));
+        Assert.False(classifier.InMultilineString);
+    }
+
+    /// <summary>
+    /// Verifies that a PowerShell double-quoted string can legitimately embed a literal
+    /// newline before its closing quote, so a <c>#</c> on the continuation line is still
+    /// treated as part of the string, not as a real line comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PowerShellDoubleQuotedString_SpansLines()
+    {
+        var classifier = new LineClassifier(Resolve(".ps1"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("$s = \"first line"));
+        Assert.True(classifier.InMultilineString);
+        Assert.Equal(LineKind.Code, classifier.Classify("second line # not a comment\""));
+        Assert.False(classifier.InMultilineString);
     }
 
     /// <summary>

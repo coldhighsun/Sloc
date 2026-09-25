@@ -130,7 +130,11 @@ public static class LanguageRegistry
         var csInterpolatedVerbatimString = csVerbatimString with { Delimiter = "@$\"" };
         // Rust raw strings (`r"…"` / `r#"…"#`). Delimiters with more than one `#` are not
         // modeled; they are rare in practice and would require a variable-length delimiter.
-        var rustRawStringNoHash = new StringLiteral("r\"", Multiline: true, AllowEscape: false);
+        var rustRawStringNoHash = new StringLiteral(
+            "r\"",
+            Multiline: true,
+            AllowEscape: false,
+            CloseDelimiter: "\"");
         var rustRawStringOneHash = new StringLiteral(
             "r#\"",
             Multiline: true,
@@ -333,8 +337,8 @@ public static class LanguageRegistry
                 // ordinary character in both ("C:\").
                 StringLiterals =
                 [
-                    doubleQuote with { EscapeChar = '`' },
-                    singleQuote with { AllowEscape = false, DoubledClosingEscape = true }
+                    doubleQuote with { EscapeChar = '`', Multiline = true },
+                    singleQuote with { AllowEscape = false, DoubledClosingEscape = true, Multiline = true }
                 ]
             },
             new()
