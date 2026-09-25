@@ -81,6 +81,28 @@ public class TableRendererTests
     }
 
     /// <summary>
+    /// Verifies that folders differing only by case (possible in a <c>--git-hash</c> tree
+    /// from a case-sensitive filesystem) are shown as separate folders, not merged.
+    /// </summary>
+    [Fact]
+    public void BuildFileTable_CaseVariantFolders_KeepsThemSeparate()
+    {
+        var summary = new AnalysisSummary(
+        [
+            new FileAnalysis { Path = Path.Combine("Src", "upper.js"), Language = "JavaScript", Code = 1, Comment = 0, Blank = 0 },
+            new FileAnalysis { Path = Path.Combine("src", "lower.js"), Language = "JavaScript", Code = 1, Comment = 0, Blank = 0 }
+        ]);
+        var console = new TestConsole();
+        console.Profile.Width = 160;
+
+        console.Write(new TableRenderer().BuildFileTable(summary, noHealth: true, noComplexity: true));
+        var output = console.Output;
+
+        Assert.Contains("📁 Src", output);
+        Assert.Contains("📁 src", output);
+    }
+
+    /// <summary>
     /// Verifies that a drive root folder (files on a different drive than the current
     /// directory, so their path can't be made relative) is labeled with the drive, not blank.
     /// </summary>

@@ -476,7 +476,9 @@ public sealed class HtmlRenderer : IResultRenderer
 
     private static string NormalizePath(string path)
     {
-        return path.Replace('\\', '/');
+        // Only the platform's own separator is converted: on Unix, '\' is an ordinary file
+        // name character (e.g. in a --git-hash tree) and must not split the path.
+        return Path.DirectorySeparatorChar == '/' ? path : path.Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private static string NumCell(int count, int total, bool noHealth = false)
@@ -658,7 +660,7 @@ public sealed class HtmlRenderer : IResultRenderer
         public Dictionary<string, FolderNode> Children
         {
             get;
-        } = new(StringComparer.OrdinalIgnoreCase);
+        } = new(StringComparer.Ordinal);
 
         public int Code
         {

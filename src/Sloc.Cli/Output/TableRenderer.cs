@@ -322,7 +322,9 @@ public sealed class TableRenderer : IResultRenderer
             for (var i = 0; i < segments.Length; i++)
             {
                 var seg = segments[i];
-                var existing = current.Children.Find(c => c.IsFolder && string.Equals(c.Name, seg, StringComparison.OrdinalIgnoreCase));
+                // Ordinal: folders differing only by case (possible in a --git-hash tree from a
+                // case-sensitive filesystem) are distinct and must not be merged.
+                var existing = current.Children.Find(c => c.IsFolder && string.Equals(c.Name, seg, StringComparison.Ordinal));
                 if (existing is null)
                 {
                     var folderPath = string.Join(Path.DirectorySeparatorChar.ToString(), segments, 0, i + 1);
