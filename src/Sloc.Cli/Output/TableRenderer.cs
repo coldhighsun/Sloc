@@ -129,21 +129,45 @@ public sealed class TableRenderer : IResultRenderer
         }
         else
         {
-            var table = CreateFileTable(noHealth, noComplexity);
-            foreach (var item in grouped)
-            {
-                if (item.IsFolder)
-                {
-                    AddFolderHeaderRow(table, item.FolderPath, noHealth, noComplexity, item.TreePrefix);
-                }
-                else
-                {
-                    AddFileRow(table, item.File!, noHealth, noComplexity, indented: true, item.TreePrefix);
-                }
-            }
-            AddFileTotalRow(table, summary, noHealth, noComplexity);
-            AnsiConsole.Write(table);
+            AnsiConsole.Write(BuildFileTable(summary, grouped, noHealth, noComplexity));
         }
+    }
+
+    /// <summary>
+    /// Builds the unpaged by-file table: every file grouped under its folder tree, followed
+    /// by the total row.
+    /// </summary>
+    /// <param name="summary">The analysis summary to render.</param>
+    /// <param name="noHealth">Whether to omit the Comment Health column.</param>
+    /// <param name="noComplexity">Whether to omit the Complexity column.</param>
+    /// <returns>The table, ready to write to a console.</returns>
+    internal Table BuildFileTable(AnalysisSummary summary, bool noHealth, bool noComplexity = false) =>
+        BuildFileTable(summary, BuildGroupedItems(summary.Files), noHealth, noComplexity);
+
+    /// <summary>
+    /// Builds the unpaged by-file table from already-grouped display items.
+    /// </summary>
+    /// <param name="summary">The analysis summary, for the total row.</param>
+    /// <param name="grouped">The folder and file rows, in display order.</param>
+    /// <param name="noHealth">Whether to omit the Comment Health column.</param>
+    /// <param name="noComplexity">Whether to omit the Complexity column.</param>
+    /// <returns>The table, ready to write to a console.</returns>
+    private Table BuildFileTable(AnalysisSummary summary, List<DisplayItem> grouped, bool noHealth, bool noComplexity)
+    {
+        var table = CreateFileTable(noHealth, noComplexity);
+        foreach (var item in grouped)
+        {
+            if (item.IsFolder)
+            {
+                AddFolderHeaderRow(table, item.FolderPath, noHealth, noComplexity, item.TreePrefix);
+            }
+            else
+            {
+                AddFileRow(table, item.File!, noHealth, noComplexity, indented: true, item.TreePrefix);
+            }
+        }
+        AddFileTotalRow(table, summary, noHealth, noComplexity);
+        return table;
     }
 
     internal void RenderSkipped(AnalysisSummary summary)
@@ -224,9 +248,12 @@ public sealed class TableRenderer : IResultRenderer
 
     private void AddFolderHeaderRow(Table table, string folder, bool noHealth, bool noComplexity, string treePrefix = "")
     {
+        // A drive root (e.g. "C:", for files on a different drive than the current directory)
+        // has no file name of its own, so it is labeled with the whole root instead.
+        var name = Path.GetFileName(folder) is { Length: > 0 } folderName ? folderName : folder;
         var label = string.IsNullOrEmpty(folder)
             ? $"{treePrefix}[grey].[/]"
-            : $"{treePrefix}[bold]📁 {Markup.Escape(Path.GetFileName(folder))}[/]";
+            : $"{treePrefix}[bold]📁 {Markup.Escape(name)}[/]";
         var columnCount = 5 + (noHealth ? 0 : 1) + (noComplexity ? 0 : 1);
         var row = new string[columnCount + 1];
         row[0] = label;
