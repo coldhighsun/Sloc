@@ -173,7 +173,7 @@ sloc . --format markdown --detailed -o -
 | `--watch` | `-w` | Watch the path for file changes and re-run the analysis, refreshing the table (Table format only; press Ctrl+C to stop) |
 | `--min-comment-pct` | | Fail (exit code `2`) if the overall comment percentage is below this value |
 | `--jobs` | `-j` | Max files to analyze in parallel (default: processor count; `1` = sequential) |
-| `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default, including those above `path` in its repository, the repository's `info/exclude`, and the global `core.excludesFile`) |
+| `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default, including those above `path` in its repository, the repository's `info/exclude`, and the global `core.excludesFile`); also scans nested repositories such as submodules, which are otherwise skipped (and listed as skipped) when `path` is inside a repository |
 | `--no-gitattributes` | | Do not honor `.gitattributes` files (`linguist-vendored`/`linguist-generated` files are excluded by default, including by the `.gitattributes` files above `path` in its repository) |
 | `--git-hash` | | Analyze the repository tree as of this commit/tree-ish, without checking it out; `path` is used as the repo root; requires `git` on `PATH`; symlinked and submodule tree entries are skipped; files with a smudge filter (e.g. Git LFS) or a `working-tree-encoding` attribute are converted as a checkout would (Git LFS may download objects), and a file whose filter fails is skipped; `--include`/`--exclude`, `--no-recursive`, `--follow-symlinks`, `--no-gitignore`, and `--no-gitattributes` have no effect in this mode; mutually exclusive with `--list-file` |
 | `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors (or points at a directory containing one) is still skipped, as is a link whose target is already inside `path`; a file reached through several links is counted once |
@@ -412,7 +412,7 @@ sloc . --format markdown --detailed -o -
 | `--watch` | `-w` | 监视路径下的文件变化并自动重新分析,刷新表格(仅支持 Table 格式;按 Ctrl+C 停止) |
 | `--min-comment-pct` | | 若整体注释占比低于该值,则失败(退出码 `2`) |
 | `--jobs` | `-j` | 并行分析的最大文件数(默认为处理器核数;`1` 表示串行) |
-| `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循,包括 `path` 所在仓库中其上层目录的 `.gitignore`、仓库的 `info/exclude` 以及全局 `core.excludesFile`) |
+| `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循,包括 `path` 所在仓库中其上层目录的 `.gitignore`、仓库的 `info/exclude` 以及全局 `core.excludesFile`);同时会扫描子模块等嵌套仓库——默认情况下,`path` 位于仓库内时它们会被跳过(并列入跳过列表) |
 | `--no-gitattributes` | | 不遵循 `.gitattributes` 文件(默认会排除标记为 `linguist-vendored`/`linguist-generated` 的文件,包括由 `path` 所在仓库中其上层目录的 `.gitattributes` 标记的) |
 | `--git-hash` | | 分析仓库在该 commit/tree-ish 时的树状态,无需检出;`path` 作为仓库根目录;需要 `git` 在 `PATH` 中;符号链接与子模块条目会被跳过;带有 smudge 过滤器(如 Git LFS)或 `working-tree-encoding` 属性的文件会像检出时一样转换(Git LFS 可能会下载对象),过滤器失败的文件会被跳过;此模式下 `--include`/`--exclude`、`--no-recursive`、`--follow-symlinks`、`--no-gitignore`、`--no-gitattributes` 均不生效;与 `--list-file` 互斥 |
 | `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录(或包含祖先目录的目录)的循环链接仍会被跳过,目标已位于 `path` 内的链接同样跳过;经多个链接到达的同一文件只统计一次 |

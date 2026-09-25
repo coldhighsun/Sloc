@@ -147,7 +147,8 @@ var jobsOption = new Option<int?>("--jobs", "-j")
 
 var noGitignoreOption = new Option<bool>("--no-gitignore")
 {
-    Description = "Do not honor .gitignore files (they are respected by default)."
+    Description = "Do not honor .gitignore files (they are respected by default), and scan "
+        + "nested repositories such as submodules, which are otherwise skipped inside a repository."
 };
 
 var noGitAttributesOption = new Option<bool>("--no-gitattributes")

@@ -104,12 +104,17 @@ public sealed class ScanOptions
 
     /// <summary>
     /// Whether to exclude files marked <c>linguist-vendored</c> or <c>linguist-generated</c>
-    /// in <c>.gitattributes</c> files discovered under the scan root.
+    /// in <c>.gitattributes</c> files discovered under the scan root or in the directories
+    /// above it up to the root of the repository it belongs to.
     /// </summary>
     public bool RespectGitAttributes { get; init; } = true;
 
     /// <summary>
-    /// Whether to honor <c>.gitignore</c> files discovered under the scan root.
+    /// Whether to honor <c>.gitignore</c> files discovered under the scan root or in the
+    /// directories above it up to the root of the repository it belongs to, along with that
+    /// repository's <c>info/exclude</c> and the global excludes file. When the scan root is
+    /// inside a repository, this also skips nested repositories (submodules), whose files
+    /// are not part of it.
     /// </summary>
     public bool RespectGitignore
     {
@@ -197,10 +202,13 @@ public sealed class DirectoryScanner
 
         // A single tree walk discovers .gitignore files, .gitattributes files, candidate
         // file paths, and symlink/junction loop protection all at once, instead of walking
-        // the same directory tree separately for each concern.
+        // the same directory tree separately for each concern. Inside a repository, git never
+        // descends into a nested repository (a submodule, or a clone it doesn't track), so
+        // with .gitignore honored neither does the walk.
         var walk = ScanTreeWalker.Walk(
             root, DefaultExcludeDirectoryNames, walkRecursive, options.FollowSymlinks, ignoreCase,
-            options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan);
+            options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan,
+            skipNestedRepositories: options.RespectGitignore && GitWorkTree.Find(fullRoot) is not null);
 
         var gitignore = options.RespectGitignore ? GitIgnoreRules.FromWalk(root, walk.GitignoreFiles, ignoreCase) : null;
         var gitattributes = options.RespectGitAttributes ? GitAttributesRules.FromWalk(root, walk.AttributesFiles, ignoreCase) : null;

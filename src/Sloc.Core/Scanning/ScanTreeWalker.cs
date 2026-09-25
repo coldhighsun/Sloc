@@ -25,6 +25,23 @@ internal sealed record ScanTreeWalkResult(
 /// </summary>
 internal static class ScanTreeWalker
 {
+    /// <summary>
+    /// Walks the tree under <paramref name="root"/> once, collecting what the flags request.
+    /// </summary>
+    /// <param name="root">The directory to walk.</param>
+    /// <param name="excludedDirectoryNames">Directory names the walk never descends into.</param>
+    /// <param name="recursive">Whether to descend into subdirectories.</param>
+    /// <param name="followSymlinks">Whether to follow symlinked/junctioned directories and files.</param>
+    /// <param name="ignoreCase">Whether rule patterns match case-insensitively.</param>
+    /// <param name="collectGitignore">Whether to collect <c>.gitignore</c> files.</param>
+    /// <param name="collectGitattributes">Whether to collect <c>.gitattributes</c> files.</param>
+    /// <param name="collectFiles">Whether to collect candidate file paths.</param>
+    /// <param name="onDirectoryVisited">Optional progress callback.</param>
+    /// <param name="skipNestedRepositories">
+    /// Whether to skip, and report as skipped, every subdirectory holding a <c>.git</c> entry
+    /// (a submodule or other nested repository), as git does within a repository.
+    /// </param>
+    /// <returns>Everything the walk collected.</returns>
     public static ScanTreeWalkResult Walk(
         string root,
         IReadOnlySet<string> excludedDirectoryNames,
@@ -34,7 +51,8 @@ internal static class ScanTreeWalker
         bool collectGitignore,
         bool collectGitattributes,
         bool collectFiles,
-        Action<int, string>? onDirectoryVisited)
+        Action<int, string>? onDirectoryVisited,
+        bool skipNestedRepositories = false)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
@@ -62,7 +80,7 @@ internal static class ScanTreeWalker
             fullRoot, realRoot, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
             collectGitignore, collectGitattributes, collectFiles,
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-            onDirectoryVisited, ref visited, ancestors, follow);
+            onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
 
         return new ScanTreeWalkResult(
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped);
@@ -106,6 +124,7 @@ internal static class ScanTreeWalker
     /// <param name="visited">The running count of visited directories.</param>
     /// <param name="ancestors">The real paths of the directories on the current path from the scan root.</param>
     /// <param name="follow">The symlink-following state, or <see langword="null"/> when links are not followed.</param>
+    /// <param name="skipNestedRepositories">Whether to skip subdirectories that are nested repositories.</param>
     private static void Collect(
         string directory,
         string realDirectory,
@@ -125,7 +144,8 @@ internal static class ScanTreeWalker
         Action<int, string>? onDirectoryVisited,
         ref int visited,
         List<string> ancestors,
-        FollowState? follow)
+        FollowState? follow,
+        bool skipNestedRepositories)
     {
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
@@ -242,6 +262,11 @@ internal static class ScanTreeWalker
                 continue;
             }
 
+            if (skipNestedRepositories && IsNestedRepository(subdirectory, skipped))
+            {
+                continue;
+            }
+
             if (!isLink)
             {
                 var realSubdirectory = Path.Combine(realDirectory, Path.GetFileName(subdirectory));
@@ -257,7 +282,7 @@ internal static class ScanTreeWalker
                     subdirectory, realSubdirectory, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                     collectGitignore, collectGitattributes, collectFiles,
                     gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                    onDirectoryVisited, ref visited, ancestors, follow);
+                    onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
@@ -289,7 +314,7 @@ internal static class ScanTreeWalker
                 subdirectory, resolution.Target!, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                 collectGitignore, collectGitattributes, collectFiles,
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                onDirectoryVisited, ref visited, ancestors, follow);
+                onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
     }
@@ -326,6 +351,23 @@ internal static class ScanTreeWalker
         public bool ShouldFollowFile(string linkPath) =>
             SymlinkGuard.GetRealPath(linkPath) is not { } realPath
             || (!SymlinkGuard.IsAncestorOrSelf(RealRoot, realPath) && SeenFiles.Add(realPath));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="directory"/> is the root of a nested repository (it holds a
+    /// <c>.git</c> directory or file), recording it in <paramref name="skipped"/> if so.
+    /// </summary>
+    /// <param name="directory">The subdirectory about to be walked.</param>
+    /// <param name="skipped">The list a nested repository is recorded in.</param>
+    private static bool IsNestedRepository(string directory, List<SkippedEntry> skipped)
+    {
+        if (!Path.Exists(Path.Combine(directory, ".git")))
+        {
+            return false;
+        }
+
+        skipped.Add(new SkippedEntry(directory, "nested git repository (submodule)"));
+        return true;
     }
 
     /// <summary>

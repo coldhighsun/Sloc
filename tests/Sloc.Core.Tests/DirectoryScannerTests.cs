@@ -1076,6 +1076,60 @@ public sealed class DirectoryScannerTests : IDisposable
         Assert.Equal(["store/sub/b.cs"], result.Files.Select(f => Relative(f.Path)));
     }
 
+    /// <summary>
+    /// Verifies that inside a repository, a nested repository (a <c>.git</c> directory or
+    /// file, as a submodule has) is not descended into and is reported as skipped.
+    /// </summary>
+    /// <param name="gitFile">Whether the nested repository's <c>.git</c> is a file rather than a directory.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Scan_NestedRepositoryInsideRepository_IsSkipped(bool gitFile)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write("a.cs", "// a");
+        Write("sub/b.cs", "// submodule");
+        if (gitFile)
+        {
+            Write("sub/.git", "gitdir: ../.git/modules/sub\n");
+        }
+        else
+        {
+            Directory.CreateDirectory(Path.Combine(_root, "sub", ".git"));
+        }
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal("sub", Relative(skipped.Path));
+    }
+
+    /// <summary>
+    /// Verifies that nested repositories are scanned when the scan root is not inside a
+    /// repository (e.g. a folder of clones) or when <c>.gitignore</c> is not honored.
+    /// </summary>
+    /// <param name="insideRepository">Whether the scan root is inside a repository.</param>
+    /// <param name="respectGitignore">Whether <c>.gitignore</c> is honored.</param>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void Scan_NestedRepositoryOutsideRepositoryOrWithoutGitignore_IsScanned(bool insideRepository, bool respectGitignore)
+    {
+        if (insideRepository)
+        {
+            Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        }
+
+        Directory.CreateDirectory(Path.Combine(_root, "clone", ".git"));
+        Write("clone/b.cs", "// clone");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = respectGitignore });
+
+        Assert.Equal(["clone/b.cs"], result.Files.Select(f => Relative(f.Path)));
+        Assert.Empty(result.Skipped);
+    }
+
     private string Relative(string path) =>
         Path.GetRelativePath(_root, path).Replace('\\', '/');
 

@@ -157,6 +157,44 @@ public sealed class AnalyzeHandlerCompareToTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <c>--compare-to</c> on an unchanged tree with a submodule reports no
+    /// delta: the commit records the submodule as a gitlink with no files, so the current
+    /// side must not count the submodule's checked-out files either.
+    /// </summary>
+    [Fact]
+    public void Execute_CompareToUnchangedTreeWithSubmodule_ReportsNoDelta()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "b.cs"), "int y = 1;\nint z = 2;\n");
+        RunGit("-C", "sub", "init", "-q");
+        RunGit("-C", "sub", "add", "-A");
+        RunGit("-C", "sub", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-q", "-m", "inner");
+        RunGit("add", "-A");
+        RunGit("commit", "-q", "-m", "first");
+        var outputFile = Path.Combine(Path.GetTempPath(), "sloc-diff-" + Guid.NewGuid().ToString("N") + ".json");
+
+        var exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            CompareTo = "HEAD",
+            Format = OutputFormat.Json,
+            OutputFile = outputFile,
+            Quiet = true,
+            NoUpdateCheck = true
+        });
+
+        Assert.Equal(ExitCode.Success, exitCode);
+
+        using var document = JsonDocument.Parse(File.ReadAllText(outputFile));
+        var total = document.RootElement.GetProperty("total");
+        Assert.Equal(0, total.GetProperty("code").GetInt32());
+        Assert.Equal(0, total.GetProperty("total").GetInt32());
+
+        File.Delete(outputFile);
+    }
+
+    /// <summary>
     /// Verifies that an invalid commit-ish returns <see cref="ExitCode.Error"/> rather
     /// than throwing.
     /// </summary>
