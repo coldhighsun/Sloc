@@ -43,6 +43,26 @@ public sealed class LineClassifier
     // so a regex literal may start at the beginning of this line.
     private bool _previousLineEndedWithRegexKeyword;
 
+    /// <summary>
+    /// Whether the language has doc-comment string literals (e.g. Python docstrings), so
+    /// bracket depth and line continuations are tracked to tell a docstring from a string
+    /// that continues an expression begun on an earlier line.
+    /// </summary>
+    private readonly bool _trackDocContext;
+
+    /// <summary>
+    /// The number of brackets (<c>(</c>, <c>[</c>, <c>{</c>) opened in code and not yet
+    /// closed, possibly on earlier lines. Only maintained when <see cref="_trackDocContext"/>
+    /// is set.
+    /// </summary>
+    private int _bracketDepth;
+
+    /// <summary>
+    /// Whether the previous line ended with a <c>\</c> line continuation in code. Only
+    /// maintained when <see cref="_trackDocContext"/> is set.
+    /// </summary>
+    private bool _previousLineContinues;
+
     // Stands in for _lastSignificant after a string or regex literal: a value, so a "/" after it is division.
     private const char ValueMarker = '"';
 
@@ -64,6 +84,11 @@ public sealed class LineClassifier
         _language = language;
         _trackCodeText = language.SupportsComplexity;
         _trackRegex = language.RegexLiterals;
+        // Indexed rather than LINQ's Any, which would allocate an enumerator per file.
+        for (var i = 0; i < language.StringLiterals.Count && !_trackDocContext; i++)
+        {
+            _trackDocContext = language.StringLiterals[i].IsDocComment;
+        }
     }
 
     /// <summary>
@@ -116,6 +141,7 @@ public sealed class LineClassifier
         var sawCode = false;
         var sawComment = false;
         var index = 0;
+        var lastCodeIndex = -1;
         _lastSignificantIndex = -1;
         var codeChars = Span<char>.Empty;
         if (_trackCodeText)
@@ -156,6 +182,11 @@ public sealed class LineClassifier
             if (_trackCodeText)
             {
                 run.CopyTo(codeChars[index..]);
+            }
+
+            if (_trackDocContext)
+            {
+                TrackDocContext(run, index, ref lastCodeIndex);
             }
 
             if (_trackRegex)
@@ -222,7 +253,14 @@ public sealed class LineClassifier
             {
                 // A doc-comment literal (e.g. Python docstring) only counts as a comment
                 // when it begins a statement; used as an expression it is a string.
-                _activeStringIsDoc = literal.IsDocComment && !sawCode;
+                _activeStringIsDoc = literal.IsDocComment && BeginsStatement(line, index, sawCode);
+                if (_activeStringIsDoc)
+                {
+                    // At most a string prefix (the "r" of r"""…""") preceded it, and that
+                    // belongs to the docstring.
+                    sawCode = false;
+                }
+
                 MarkString(ref sawCode, ref sawComment);
                 index += literal.Delimiter.Length;
                 _activeString = literal;
@@ -243,6 +281,11 @@ public sealed class LineClassifier
                     _lastSignificant = line[index];
                     _lastSignificantIndex = index;
                 }
+
+                if (_trackDocContext)
+                {
+                    TrackDocContext(line.Slice(index, 1), index, ref lastCodeIndex);
+                }
             }
 
             if (_trackCodeText)
@@ -256,6 +299,13 @@ public sealed class LineClassifier
         if (_trackRegex && _lastSignificantIndex >= 0)
         {
             _previousLineEndedWithRegexKeyword = EndsWithRegexKeyword(line, _lastSignificantIndex);
+        }
+
+        if (_trackDocContext)
+        {
+            _previousLineContinues = lastCodeIndex >= 0
+                && line[lastCodeIndex] == '\\'
+                && line[(lastCodeIndex + 1)..].IsWhiteSpace();
         }
 
         // A single-line string that never closed does not carry over to the next line.
@@ -634,6 +684,71 @@ public sealed class LineClassifier
 
         block = null;
         return false;
+    }
+
+    /// <summary>
+    /// Whether a doc-comment literal opening at <paramref name="index"/> begins a statement:
+    /// nothing but whitespace or one of the language's
+    /// <see cref="LanguageDefinition.DocStringPrefixes"/> precedes it on the line, and the
+    /// line does not continue an earlier one inside open brackets or after a trailing <c>\</c>.
+    /// </summary>
+    /// <param name="line">The line being classified.</param>
+    /// <param name="index">The index at which the literal opens.</param>
+    /// <param name="sawCode">Whether code has been seen earlier on the line.</param>
+    /// <returns>
+    /// <see langword="true"/> if the literal begins a statement; otherwise <see langword="false"/>.
+    /// </returns>
+    private bool BeginsStatement(ReadOnlySpan<char> line, int index, bool sawCode)
+    {
+        if (_bracketDepth > 0 || _previousLineContinues)
+        {
+            return false;
+        }
+
+        if (!sawCode)
+        {
+            return true;
+        }
+
+        var before = line[..index].TrimStart();
+        foreach (var prefix in _language.DocStringPrefixes)
+        {
+            if (before.Equals(prefix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Updates <see cref="_bracketDepth"/> for the brackets in a run of code starting at
+    /// <paramref name="start"/> on the line, and records the index of its last
+    /// non-whitespace character in <paramref name="lastCodeIndex"/>.
+    /// </summary>
+    /// <param name="code">A run of code characters (no string or comment content).</param>
+    /// <param name="start">The index of the run's first character on the line.</param>
+    /// <param name="lastCodeIndex">The index of the last code character seen on the line so far.</param>
+    private void TrackDocContext(ReadOnlySpan<char> code, int start, ref int lastCodeIndex)
+    {
+        for (var i = 0; i < code.Length; i++)
+        {
+            var c = code[i];
+            if (c is '(' or '[' or '{')
+            {
+                _bracketDepth++;
+            }
+            else if (c is ')' or ']' or '}' && _bracketDepth > 0)
+            {
+                _bracketDepth--;
+            }
+
+            if (!char.IsWhiteSpace(c))
+            {
+                lastCodeIndex = start + i;
+            }
+        }
     }
 
     /// <summary>

@@ -635,4 +635,48 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("auto c = u8'/'; auto d = '*'; int e = 1;"));
         Assert.False(classifier.InBlockComment);
     }
+
+    /// <summary>
+    /// Verifies that a raw or unicode docstring (<c>r"""…"""</c>) beginning a statement is
+    /// a comment, across lines too.
+    /// </summary>
+    [Fact]
+    public void Classify_PythonPrefixedDocstring_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".py"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("    r\"\"\"Raw \\d docstring.\"\"\""));
+        Assert.Equal(LineKind.Comment, classifier.Classify("u'''Start"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("end'''"));
+        Assert.Equal(LineKind.Code, classifier.Classify("x = r\"\"\"value\"\"\""));
+    }
+
+    /// <summary>
+    /// Verifies that a triple-quoted string on a line that continues an expression inside
+    /// open brackets is code, while a docstring after the brackets close is a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PythonTripleQuoteInsideOpenBracket_IsCode()
+    {
+        var classifier = new LineClassifier(Resolve(".py"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("x = foo([1, 2],"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\"argument\"\"\""));
+        Assert.Equal(LineKind.Code, classifier.Classify(")"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("\"\"\"docstring\"\"\""));
+    }
+
+    /// <summary>
+    /// Verifies that a triple-quoted string on a line continued with a trailing backslash is
+    /// code, while the next statement's docstring is a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_PythonTripleQuoteAfterBackslashContinuation_IsCode()
+    {
+        var classifier = new LineClassifier(Resolve(".py"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("x = \\"));
+        Assert.Equal(LineKind.Code, classifier.Classify("    \"\"\"value\"\"\""));
+        Assert.Equal(LineKind.Comment, classifier.Classify("\"\"\"docstring\"\"\""));
+    }
 }
