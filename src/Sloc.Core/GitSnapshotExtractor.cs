@@ -590,7 +590,7 @@ public sealed class GitSnapshotExtractor
         CancellationToken cancellationToken)
     {
         using var process = StartGit(repoRoot, ["cat-file", "--filters", $"--path={repositoryPath}", hash], redirectInput: false);
-        var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         string tempPath;
         using (var fileStream = allocator.Create(gitPath, out tempPath))
         {
@@ -606,7 +606,17 @@ public sealed class GitSnapshotExtractor
             }
         }
 
-        var stderr = stderrTask.GetAwaiter().GetResult();
+        string stderr;
+        try
+        {
+            stderr = stderrTask.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+
         process.WaitForExit();
         if (process.ExitCode == 0)
         {
@@ -682,62 +692,73 @@ public sealed class GitSnapshotExtractor
             }
         }, cancellationToken);
 
-        for (var i = 0; i < blobs.Count; i++)
+        try
         {
-            var gitPath = blobs[i].GitPath;
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (filtered.Contains(i))
+            for (var i = 0; i < blobs.Count; i++)
             {
-                if (ExtractFilteredBlob(repoRoot, blobs[i].Hash, gitPath, RepositoryPath(treePrefix, gitPath), allocator, skipped, cancellationToken)
-                    is { } filteredFile)
+                var gitPath = blobs[i].GitPath;
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (filtered.Contains(i))
                 {
-                    files.Add(filteredFile);
+                    if (ExtractFilteredBlob(repoRoot, blobs[i].Hash, gitPath, RepositoryPath(treePrefix, gitPath), allocator, skipped, cancellationToken)
+                        is { } filteredFile)
+                    {
+                        files.Add(filteredFile);
+                    }
+
+                    continue;
                 }
 
-                continue;
-            }
-
-            string header;
-            try
-            {
-                header = ReadLine(stdout);
-            }
-            catch (EndOfStreamException)
-            {
-                // The batch stream closed early; every blob from here on, including this
-                // one, can no longer be read, so all of them must be reported as skipped
-                // rather than silently dropped from both Files and Skipped.
-                for (var j = i; j < blobs.Count; j++)
+                string header;
+                try
                 {
-                    skipped.Add(new Models.SkippedEntry(
-                        blobs[j].GitPath, "git cat-file error: unexpected end of output"));
+                    header = ReadLine(stdout);
+                }
+                catch (EndOfStreamException)
+                {
+                    // The batch stream closed early; every blob from here on, including this
+                    // one, can no longer be read, so all of them must be reported as skipped
+                    // rather than silently dropped from both Files and Skipped.
+                    for (var j = i; j < blobs.Count; j++)
+                    {
+                        skipped.Add(new Models.SkippedEntry(
+                            blobs[j].GitPath, "git cat-file error: unexpected end of output"));
+                    }
+
+                    break;
                 }
 
-                break;
+                // "<hash> <type> <size>" on success, "<hash> missing" when the blob cannot be read.
+                var headerParts = header.Split(' ');
+                if (headerParts.Length != 3 || !long.TryParse(headerParts[2], out var size))
+                {
+                    skipped.Add(new Models.SkippedEntry(gitPath, $"git cat-file error: {header}"));
+                    continue;
+                }
+
+                string tempPath;
+                using (var fileStream = allocator.Create(gitPath, out tempPath))
+                {
+                    CopyExactly(stdout, fileStream, size, cancellationToken);
+                }
+
+                // Consume the trailing newline separator after the blob content.
+                _ = stdout.ReadByte();
+
+                files.Add(new GitSnapshotFile(tempPath, gitPath));
             }
 
-            // "<hash> <type> <size>" on success, "<hash> missing" when the blob cannot be read.
-            var headerParts = header.Split(' ');
-            if (headerParts.Length != 3 || !long.TryParse(headerParts[2], out var size))
-            {
-                skipped.Add(new Models.SkippedEntry(gitPath, $"git cat-file error: {header}"));
-                continue;
-            }
-
-            string tempPath;
-            using (var fileStream = allocator.Create(gitPath, out tempPath))
-            {
-                CopyExactly(stdout, fileStream, size, cancellationToken);
-            }
-
-            // Consume the trailing newline separator after the blob content.
-            _ = stdout.ReadByte();
-
-            files.Add(new GitSnapshotFile(tempPath, gitPath));
+            writerTask.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled mid-batch: the process would otherwise keep running (possibly
+            // blocked on a full stdout pipe) since disposing it only releases the handle.
+            process.Kill(entireProcessTree: true);
+            throw;
         }
 
-        writerTask.GetAwaiter().GetResult();
         if (!process.WaitForExit((int)TimeSpan.FromMinutes(5).TotalMilliseconds))
         {
             process.Kill(entireProcessTree: true);
