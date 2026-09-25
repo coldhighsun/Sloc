@@ -48,10 +48,15 @@ public sealed class ScanOptions
     /// skip them. Defaults to <see langword="false"/>. A directory symlink whose resolved
     /// target would loop back onto a directory already on the path from the scan root is
     /// always skipped regardless of this setting, including cycles formed by two or more
-    /// distinct symlinks chained together. A symlink whose target lies at or under the scan
-    /// root is likewise skipped, since the normal tree walk already covers those files and
-    /// following the link would double-count them; only targets outside the scan root are
-    /// actually followed. Has no effect when the scan <c>root</c> passed
+    /// distinct symlinks chained together, and a directory symlink whose target contains one
+    /// of those directories (e.g. a link to the scan root's parent). A symlink whose target
+    /// lies at or under the scan root is likewise skipped, since the normal tree walk already
+    /// covers those files and following the link would double-count them; only targets
+    /// outside the scan root are actually followed. Paths are compared after resolving every
+    /// link along them, so this also holds when the scan root is itself reached through a
+    /// symlink/junction, and an external file or directory reached through more than one
+    /// link (including links with overlapping targets) is counted only once. Has no effect
+    /// when the scan <c>root</c> passed
     /// to <see cref="DirectoryScanner.Scan"/> is itself an explicit single file, which is
     /// always analyzed regardless of whether it is a symlink.
     /// </summary>

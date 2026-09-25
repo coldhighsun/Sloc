@@ -176,7 +176,7 @@ sloc . --format markdown --detailed -o -
 | `--no-gitignore` | | Do not honor `.gitignore` files (they are respected by default) |
 | `--no-gitattributes` | | Do not honor `.gitattributes` files (`linguist-vendored`/`linguist-generated` files are excluded by default) |
 | `--git-hash` | | Analyze the repository tree as of this commit/tree-ish, without checking it out; `path` is used as the repo root; requires `git` on `PATH`; symlinked and submodule tree entries are skipped; `--include`/`--exclude`, `--no-recursive`, `--follow-symlinks`, `--no-gitignore`, and `--no-gitattributes` have no effect in this mode; mutually exclusive with `--list-file` |
-| `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors is still skipped |
+| `--follow-symlinks` | | Include symlinked/junctioned directories and symlinked files instead of skipping them; a directory symlink that loops back to one of its own ancestors (or points at a directory containing one) is still skipped, as is a link whose target is already inside `path`; a file reached through several links is counted once |
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; `path` may be a directory or a single file; the commit's files are filtered the same way as the working tree (`--include`/`--exclude`, `.gitignore`, `.gitattributes`, …) so unchanged files diff to zero; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, `Name`, or `CommentPct` |
@@ -415,7 +415,7 @@ sloc . --format markdown --detailed -o -
 | `--no-gitignore` | | 不遵循 `.gitignore` 文件(默认遵循) |
 | `--no-gitattributes` | | 不遵循 `.gitattributes` 文件(默认会排除标记为 `linguist-vendored`/`linguist-generated` 的文件) |
 | `--git-hash` | | 分析仓库在该 commit/tree-ish 时的树状态,无需检出;`path` 作为仓库根目录;需要 `git` 在 `PATH` 中;符号链接与子模块条目会被跳过;此模式下 `--include`/`--exclude`、`--no-recursive`、`--follow-symlinks`、`--no-gitignore`、`--no-gitattributes` 均不生效;与 `--list-file` 互斥 |
-| `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录的循环链接目录仍会被跳过 |
+| `--follow-symlinks` | | 包含符号链接/联接目录以及符号链接文件,而不是跳过它们;指向自身祖先目录(或包含祖先目录的目录)的循环链接仍会被跳过,目标已位于 `path` 内的链接同样跳过;经多个链接到达的同一文件只统计一次 |
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;`path` 可以是目录或单个文件;该 commit 的文件会按与工作区相同的规则过滤(`--include`/`--exclude`、`.gitignore`、`.gitattributes` 等),未改动的文件差异为零;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files`、`Name` 或 `CommentPct` |

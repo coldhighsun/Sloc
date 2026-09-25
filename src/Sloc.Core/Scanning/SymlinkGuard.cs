@@ -20,7 +20,8 @@ internal static class SymlinkGuard
     /// <param name="IsLoop">
     /// <see langword="true"/> if following the target would loop back onto a directory
     /// already on the current path from the scan root (directly, or transitively through an
-    /// earlier followed symlink).
+    /// earlier followed symlink), or if the target contains one of those directories, so
+    /// following it would walk the current path all over again.
     /// </param>
     public readonly record struct Resolution(bool Resolved, string? Target, bool IsLoop);
 
@@ -85,12 +86,13 @@ internal static class SymlinkGuard
     }
 
     /// <summary>
-    /// Resolves <paramref name="subdirectory"/>'s symlink/junction target and checks it
-    /// against <paramref name="ancestors"/> for a loop.
+    /// Resolves <paramref name="subdirectory"/>'s symlink/junction target to its real path
+    /// (see <see cref="GetRealPath"/>) and checks it against <paramref name="ancestors"/> for
+    /// a loop.
     /// </summary>
     /// <param name="subdirectory">The directory symlink/junction to resolve.</param>
     /// <param name="ancestors">
-    /// The full paths of directories already on the current path from the scan root
+    /// The real full paths of directories already on the current path from the scan root
     /// (including any earlier followed symlinks' targets).
     /// </param>
     public static Resolution Resolve(string subdirectory, IReadOnlyList<string> ancestors)
@@ -110,10 +112,91 @@ internal static class SymlinkGuard
             return new Resolution(Resolved: false, Target: null, IsLoop: false);
         }
 
-        target = Path.TrimEndingDirectorySeparator(target);
-        var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(ancestor, target));
+        // The final target can still sit below another link (e.g. a junction elsewhere on
+        // its path), which would hide that it is really one of the ancestors.
+        target = Path.TrimEndingDirectorySeparator(GetRealPath(target) ?? target);
+        var isLoop = ancestors.Any(ancestor => IsAncestorOrSelf(ancestor, target) || IsAncestorOrSelf(target, ancestor));
         return new Resolution(Resolved: true, Target: target, IsLoop: isLoop);
     }
+
+    /// <summary>
+    /// The most links <see cref="GetRealPath"/> follows before giving up, matching Linux's
+    /// <c>MAXSYMLINKS</c>, so a cycle of links fails instead of spinning forever.
+    /// </summary>
+    private const int MaxLinkHops = 40;
+
+    /// <summary>
+    /// Resolves every symlink/junction along <paramref name="path"/>, not just its last
+    /// component, returning the path the filesystem really addresses (like POSIX
+    /// <c>realpath</c>), or <see langword="null"/> when a component does not exist, cannot
+    /// be read, or the links loop.
+    /// </summary>
+    /// <param name="path">The file or directory path to resolve.</param>
+    public static string? GetRealPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var current = Path.GetPathRoot(full)!;
+        var pending = new Stack<string>(SplitSegments(full, current).Reverse());
+        var hops = 0;
+
+        while (pending.TryPop(out var segment))
+        {
+            var next = Path.Combine(current, segment);
+            string? linkTarget;
+            try
+            {
+                FileSystemInfo entry = new DirectoryInfo(next);
+                if (!entry.Exists)
+                {
+                    entry = new FileInfo(next);
+                    if (!entry.Exists)
+                    {
+                        return null;
+                    }
+                }
+
+                linkTarget = entry.Attributes.HasFlag(FileAttributes.ReparsePoint) ? entry.LinkTarget : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+
+            if (linkTarget is null)
+            {
+                current = next;
+                continue;
+            }
+
+            if (++hops > MaxLinkHops)
+            {
+                return null;
+            }
+
+            // A relative target is relative to the directory holding the link, which is
+            // already fully resolved; the resolved target's own components are then checked
+            // for links in turn before the rest of the original path.
+            var resolved = Path.GetFullPath(linkTarget, current);
+            current = Path.GetPathRoot(resolved)!;
+            foreach (var targetSegment in SplitSegments(resolved, current).Reverse())
+            {
+                pending.Push(targetSegment);
+            }
+        }
+
+        return Path.TrimEndingDirectorySeparator(current);
+    }
+
+    /// <summary>
+    /// Splits the part of <paramref name="fullPath"/> after <paramref name="root"/> into its
+    /// non-empty path segments.
+    /// </summary>
+    /// <param name="fullPath">A full, normalized path.</param>
+    /// <param name="root">The root of <paramref name="fullPath"/>, as returned by <see cref="Path.GetPathRoot(string)"/>.</param>
+    private static string[] SplitSegments(string fullPath, string root) =>
+        fullPath[root.Length..].Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
 
     /// <summary>
     /// Determines whether <paramref name="path"/> is <paramref name="ancestor"/> itself, or

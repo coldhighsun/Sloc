@@ -746,26 +746,155 @@ public sealed class DirectoryScannerTests : IDisposable
     [Fact]
     public void Scan_SymlinkedFile_IsSkippedUnlessFollowSymlinksIsSet()
     {
-        Write("real.cs", "// real");
-        var targetPath = Path.Combine(_root, "real.cs");
-        var linkPath = Path.Combine(_root, "linked.cs");
-
+        var external = Directory.CreateTempSubdirectory("sloc-ext-");
         try
         {
-            File.CreateSymbolicLink(linkPath, targetPath);
+            Write("repo/real.cs", "// real");
+            var targetPath = Path.Combine(external.FullName, "shared.cs");
+            File.WriteAllText(targetPath, "// shared");
+            if (!TryCreateFileSymlink(Path.Combine(_root, "repo", "linked.cs"), targetPath))
+            {
+                return;
+            }
+
+            var repo = Path.Combine(_root, "repo");
+            var defaultResult = _scanner.Scan(repo, new ScanOptions());
+            var defaultNames = defaultResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+            Assert.Equal(["real.cs"], defaultNames);
+
+            var followedResult = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true });
+            var followedNames = followedResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+            Assert.Equal(["linked.cs", "real.cs"], followedNames);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        finally
+        {
+            external.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that with <c>FollowSymlinks</c> set, a file symlink whose target is inside
+    /// the scan root is not counted a second time alongside its target.
+    /// </summary>
+    [Fact]
+    public void Scan_FollowSymlinksFileLinkIntoRoot_IsNotDoubleCounted()
+    {
+        var targetPath = Write("real.cs", "// real");
+        if (!TryCreateFileSymlink(Path.Combine(_root, "linked.cs"), targetPath))
         {
             return;
         }
 
-        var defaultResult = _scanner.Scan(_root, new ScanOptions());
-        var defaultNames = defaultResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
-        Assert.Equal(["real.cs"], defaultNames);
+        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
 
-        var followedResult = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
-        var followedNames = followedResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
-        Assert.Equal(["linked.cs", "real.cs"], followedNames);
+        Assert.Equal(["real.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
+    }
+
+    /// <summary>
+    /// Verifies that with <c>FollowSymlinks</c> set, an external file reached through several
+    /// file symlinks and a followed directory symlink is counted only once.
+    /// </summary>
+    [Fact]
+    public void Scan_FollowSymlinksSameExternalFileViaSeveralLinks_IsCountedOnce()
+    {
+        var external = Directory.CreateTempSubdirectory("sloc-ext-");
+        try
+        {
+            var targetPath = Path.Combine(external.FullName, "shared.cs");
+            File.WriteAllText(targetPath, "// shared");
+            if (!TryCreateFileSymlink(Path.Combine(_root, "one.cs"), targetPath)
+                || !TryCreateFileSymlink(Path.Combine(_root, "two.cs"), targetPath)
+                || !TryCreateDirectorySymlink(Path.Combine(_root, "lib"), external.FullName))
+            {
+                return;
+            }
+
+            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+
+            Assert.Single(result.Files);
+        }
+        finally
+        {
+            external.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that with <c>FollowSymlinks</c> set, a directory symlink pointing at an
+    /// ancestor of the scan root is skipped, rather than walking the scan root again below it.
+    /// </summary>
+    [Fact]
+    public void Scan_FollowSymlinksLinkToRootAncestor_IsSkipped()
+    {
+        Write("repo/a.cs", "// a");
+        Write("other/b.cs", "// b");
+        var repo = Path.Combine(_root, "repo");
+        if (!TryCreateDirectorySymlink(Path.Combine(repo, "up"), _root))
+        {
+            return;
+        }
+
+        var result = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true });
+
+        Assert.Equal(["repo/a.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
+    }
+
+    /// <summary>
+    /// Verifies that with <c>FollowSymlinks</c> set and the scan root itself given through a
+    /// symlink, a link to a directory inside the root's real location is still recognized as
+    /// inside the scan root and not followed, so its files are not double-counted.
+    /// </summary>
+    [Fact]
+    public void Scan_FollowSymlinksRootGivenThroughLink_SkipsLinkIntoRealRoot()
+    {
+        Write("real/a.cs", "// a");
+        Write("real/sub/b.cs", "// b");
+        var alias = Path.Combine(_root, "alias");
+        if (!TryCreateDirectorySymlink(alias, Path.Combine(_root, "real"))
+            || !TryCreateDirectorySymlink(Path.Combine(_root, "real", "link"), Path.Combine(_root, "real", "sub")))
+        {
+            return;
+        }
+
+        var result = _scanner.Scan(alias, new ScanOptions { FollowSymlinks = true });
+
+        var paths = result.Files.Select(f => Path.GetRelativePath(alias, f.Path).Replace('\\', '/')).ToArray();
+        Assert.Equal(["a.cs", "sub/b.cs"], paths);
+    }
+
+    /// <summary>
+    /// Verifies that with <c>FollowSymlinks</c> set, two directory symlinks whose external
+    /// targets overlap (one inside the other) do not count the shared files twice, whichever
+    /// link the walk reaches first.
+    /// </summary>
+    /// <param name="outerLink">The name of the link to the outer directory.</param>
+    /// <param name="innerLink">The name of the link to the directory nested inside it.</param>
+    [Theory]
+    [InlineData("a", "b")]
+    [InlineData("b", "a")]
+    public void Scan_FollowSymlinksOverlappingTargets_CountsSharedFilesOnce(string outerLink, string innerLink)
+    {
+        var external = Directory.CreateTempSubdirectory("sloc-ext-");
+        try
+        {
+            File.WriteAllText(Path.Combine(external.FullName, "top.cs"), "// top");
+            var inner = external.CreateSubdirectory("inner");
+            File.WriteAllText(Path.Combine(inner.FullName, "deep.cs"), "// deep");
+            if (!TryCreateDirectorySymlink(Path.Combine(_root, outerLink), external.FullName)
+                || !TryCreateDirectorySymlink(Path.Combine(_root, innerLink), inner.FullName))
+            {
+                return;
+            }
+
+            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+
+            var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+            Assert.Equal(["deep.cs", "top.cs"], names);
+        }
+        finally
+        {
+            external.Delete(recursive: true);
+        }
     }
 
     /// <summary>
@@ -825,5 +954,43 @@ public sealed class DirectoryScannerTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
         return full;
+    }
+
+    /// <summary>
+    /// Creates a directory symlink, returning <see langword="false"/> instead of throwing when
+    /// the environment does not grant the privilege required.
+    /// </summary>
+    /// <param name="linkPath">The path of the link to create.</param>
+    /// <param name="targetPath">The directory the link points at.</param>
+    private static bool TryCreateDirectorySymlink(string linkPath, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates a file symlink, returning <see langword="false"/> instead of throwing when the
+    /// environment does not grant the privilege required.
+    /// </summary>
+    /// <param name="linkPath">The path of the link to create.</param>
+    /// <param name="targetPath">The file the link points at.</param>
+    private static bool TryCreateFileSymlink(string linkPath, string targetPath)
+    {
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }
