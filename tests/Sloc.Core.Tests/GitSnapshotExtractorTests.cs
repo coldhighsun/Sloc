@@ -281,6 +281,27 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a path with an empty, <c>.</c>, or <c>..</c> segment is not a checkout
+    /// path, and that a backslash only separates segments on Windows (elsewhere it is an
+    /// ordinary file name character, so <c>a\..\b.txt</c> is a single segment).
+    /// </summary>
+    /// <param name="path">The repository-relative path.</param>
+    /// <param name="expectedOnWindows">The expected result on Windows.</param>
+    /// <param name="expectedElsewhere">The expected result on other platforms.</param>
+    [Theory]
+    [InlineData("src/a.c", true, true)]
+    [InlineData("src/../a.c", false, false)]
+    [InlineData("./a.c", false, false)]
+    [InlineData("src//a.c", false, false)]
+    [InlineData("docs/a\\..\\b.txt", false, true)]
+    public void IsCheckoutPath_Segments_MatchesPlatformSeparators(string path, bool expectedOnWindows, bool expectedElsewhere)
+    {
+        var result = GitSnapshotExtractor.IsCheckoutPath(path);
+
+        Assert.Equal(OperatingSystem.IsWindows() ? expectedOnWindows : expectedElsewhere, result);
+    }
+
+    /// <summary>
     /// Verifies that tree entries whose paths differ only by case each keep their own
     /// content, even on a case-insensitive filesystem where they would otherwise be dumped
     /// onto the same file.
