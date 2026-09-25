@@ -302,7 +302,9 @@ public static class LanguageRegistry
             {
                 Name = "Visual Basic",
                 Extensions = [".vb"],
-                LineCommentTokens = ["'"],
+                // REM is a line comment (case-insensitive, whole-word), like ' .
+                LineCommentTokens = ["'", "REM"],
+                CaseInsensitiveLineComments = true,
                 StringLiterals = [doubleQuote]
             },
             new()
@@ -356,7 +358,8 @@ public static class LanguageRegistry
             {
                 Name = "HTML",
                 Extensions = [".html", ".htm", ".cshtml", ".vbhtml"],
-                BlockComments = [htmlBlock],
+                // @* … *@ is a Razor comment (.cshtml/.vbhtml).
+                BlockComments = [htmlBlock, new BlockComment("@*", "*@")],
                 ShowHealth = false
             },
             new()
@@ -413,7 +416,16 @@ public static class LanguageRegistry
                 Name = "Lua",
                 Extensions = [".lua"],
                 LineCommentTokens = ["--"],
-                BlockComments = [new BlockComment("--[[", "]]")],
+                // Long-bracket comments of level 0–4 (--[[ … ]], --[==[ … ]==]); higher
+                // levels are not modeled.
+                BlockComments =
+                [
+                    new BlockComment("--[[", "]]"),
+                    new BlockComment("--[=[", "]=]"),
+                    new BlockComment("--[==[", "]==]"),
+                    new BlockComment("--[===[", "]===]"),
+                    new BlockComment("--[====[", "]====]")
+                ],
                 StringLiterals = [doubleQuote, singleQuote]
             },
             new()
@@ -421,6 +433,16 @@ public static class LanguageRegistry
                 Name = "Perl",
                 Extensions = [".pl", ".pm"],
                 LineCommentTokens = ["#"],
+                // POD documentation: a command paragraph at column 0 through "=cut". Only
+                // these common commands are recognized as starting a POD block.
+                BlockComments =
+                [
+                    .. new[]
+                    {
+                        "=pod", "=head1", "=head2", "=head3", "=head4", "=head5", "=head6",
+                        "=over", "=item", "=back", "=begin", "=end", "=for", "=encoding"
+                    }.Select(open => new BlockComment(open, "=cut", RequireLineStart: true))
+                ],
                 StringLiterals = [doubleQuote, singleQuote]
             },
             new()
@@ -549,8 +571,9 @@ public static class LanguageRegistry
             {
                 Name = "Batch",
                 Extensions = [".bat", ".cmd"],
-                // REM is a line comment (case-insensitive, whole-word); :: is the idiomatic label-comment trick.
-                LineCommentTokens = ["REM", "::"],
+                // REM is a line comment (case-insensitive, whole-word), also as @REM (echo
+                // suppressed); :: is the idiomatic label-comment trick.
+                LineCommentTokens = ["@REM", "REM", "::"],
                 CaseInsensitiveLineComments = true,
                 StringLiterals = [doubleQuote]
             },
@@ -607,7 +630,12 @@ public static class LanguageRegistry
                 Name = "Nim",
                 Extensions = [".nim", ".nims"],
                 LineCommentTokens = ["#"],
-                BlockComments = [new BlockComment("#[", "]#", AllowNested: true)],
+                // ##[ … ]## is a (nestable) multi-line doc comment.
+                BlockComments =
+                [
+                    new BlockComment("##[", "]##", AllowNested: true),
+                    new BlockComment("#[", "]#", AllowNested: true)
+                ],
                 StringLiterals = [rawTripleDouble, doubleQuote]
             },
             new()

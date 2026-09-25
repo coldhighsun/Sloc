@@ -327,19 +327,6 @@ public sealed class LineClassifier
         return LineKind.Blank;
     }
 
-    private static bool IsWordToken(string token)
-    {
-        foreach (var c in token)
-        {
-            if (!char.IsLetterOrDigit(c))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static bool MatchesAt(
@@ -633,13 +620,13 @@ public sealed class LineClassifier
                 continue;
             }
 
-            // A token made entirely of letters/digits (e.g. "REM") must be a whole word,
-            // so it doesn't match inside a longer identifier (e.g. "REMOVE", "XREM", or
-            // "REM_VALUE" — '_' counts as an identifier character too).
+            // A token that starts or ends with a letter/digit (e.g. "REM", "@REM") must be on
+            // a word boundary at that end, so it doesn't match inside a longer identifier
+            // (e.g. "REMOVE", "XREM", "@REMOVE", or "REM_VALUE" — '_' counts as an
+            // identifier character too).
             var end = index + token.Length;
-            if (IsWordToken(token)
-                && ((end < line.Length && IsIdentifierChar(line[end]))
-                    || (index > 0 && IsIdentifierChar(line[index - 1]))))
+            if ((char.IsLetterOrDigit(token[^1]) && end < line.Length && IsIdentifierChar(line[end]))
+                || (char.IsLetterOrDigit(token[0]) && index > 0 && IsIdentifierChar(line[index - 1])))
             {
                 continue;
             }

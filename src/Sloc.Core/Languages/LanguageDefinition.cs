@@ -145,9 +145,9 @@ public sealed class LanguageDefinition
 
     /// <summary>
     /// The tokens that start a single-line comment (e.g. <c>//</c> or <c>#</c>).
-    /// A token consisting entirely of letters/digits (e.g. <c>REM</c>) is only recognized
-    /// as a whole word: it must be followed by whitespace or the end of the line, so it
-    /// does not match inside a longer identifier.
+    /// A token that starts or ends with a letter/digit (e.g. <c>REM</c>, <c>@REM</c>) is only
+    /// recognized on a word boundary at that end, so it does not match inside a longer
+    /// identifier (e.g. <c>REMOVE</c> or <c>@REMOVE</c>).
     /// </summary>
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
 
