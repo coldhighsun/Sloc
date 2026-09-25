@@ -15,9 +15,13 @@ internal static class RelativePathResolver
     /// </summary>
     /// <param name="baseDirectory">The rule file's base directory, or <see cref="string.Empty"/> for the root.</param>
     /// <param name="path">The path to rebase.</param>
+    /// <param name="ignoreCase">
+    /// Whether the nesting check matches case-insensitively (git's <c>core.ignoreCase</c>),
+    /// matching the case-sensitivity the rule file's own patterns are compiled with.
+    /// </param>
     /// <param name="relativeToBase">The path relative to <paramref name="baseDirectory"/>, if it is nested under it.</param>
     /// <returns><see langword="true"/> if <paramref name="path"/> is <paramref name="baseDirectory"/> or nested under it.</returns>
-    public static bool TryGetRelativePath(string baseDirectory, string path, out string relativeToBase)
+    public static bool TryGetRelativePath(string baseDirectory, string path, bool ignoreCase, out string relativeToBase)
     {
         if (baseDirectory.Length == 0)
         {
@@ -26,7 +30,7 @@ internal static class RelativePathResolver
         }
 
         if (path.Length > baseDirectory.Length
-            && path.StartsWith(baseDirectory, StringComparison.Ordinal)
+            && path.StartsWith(baseDirectory, IgnoreCaseComparer.Comparison(ignoreCase))
             && path[baseDirectory.Length] == '/')
         {
             relativeToBase = path[(baseDirectory.Length + 1)..];

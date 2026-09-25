@@ -50,6 +50,28 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that the repository's <c>core.ignoreCase</c> setting decides whether a
+    /// built-in excluded directory name (e.g. <c>bin</c>) matches a differently-cased
+    /// directory (<c>Bin</c>), the same way it already decides <c>.gitignore</c>/
+    /// <c>.gitattributes</c> pattern matching.
+    /// </summary>
+    /// <param name="ignoreCase">The <c>core.ignoreCase</c> value written to <c>.git/config</c>.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Scan_RepoIgnoreCaseSetting_ControlsBuiltinExcludeCaseSensitivity(bool ignoreCase)
+    {
+        Write(".git/config", $"[core]\n\tignorecase = {ignoreCase}\n");
+        Write("Bin/app.cs", "// app");
+        Write("keep.cs", "// keep");
+
+        var result = _scanner.Scan(_root, new ScanOptions());
+        var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(ignoreCase ? ["keep.cs"] : ["Bin/app.cs", "keep.cs"], names);
+    }
+
+    /// <summary>
     /// Verifies that user-supplied exclude globs drop matching files.
     /// </summary>
     [Fact]

@@ -159,7 +159,7 @@ internal static class ScanTreeWalker
             && GitIgnoreRules.CompilePatterns(ignoreLines, ignoreCase) is { Count: > 0 } ignorePatterns)
         {
             var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
-            gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, ignorePatterns));
+            gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, ignorePatterns, ignoreCase));
         }
 
         if (collectGitattributes

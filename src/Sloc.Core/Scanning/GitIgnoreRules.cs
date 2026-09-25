@@ -68,7 +68,7 @@ public sealed class GitIgnoreRules
         var patterns = CompilePatterns(lines, ignoreCase);
         return new GitIgnoreRules(patterns.Count == 0
             ? []
-            : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns)]);
+            : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns, ignoreCase)]);
     }
 
     /// <summary>
@@ -247,7 +247,7 @@ public sealed class GitIgnoreRules
         AddIfPresent(files, LoadRepoExcludeFile(workTree, ignoreCase));
         files.AddRange(ancestorFiles);
         files.AddRange(walkedFiles.Select(file =>
-            new GitIgnoreFile(RelativePathResolver.Combine(scanPrefix, file.BaseDirectory), file.Patterns)));
+            new GitIgnoreFile(RelativePathResolver.Combine(scanPrefix, file.BaseDirectory), file.Patterns, ignoreCase)));
 
         return new GitIgnoreRules(files.OrderBy(file => file.BaseDirectory.Length).ToList(), scanPrefix);
     }
@@ -701,7 +701,7 @@ public sealed class GitIgnoreRules
         }
 
         var patterns = CompilePatterns(lines, ignoreCase);
-        return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns);
+        return patterns.Count == 0 ? null : new GitIgnoreFile(string.Empty, patterns, ignoreCase);
     }
 
     private bool? Evaluate(string path, bool isDirectory)
@@ -740,14 +740,14 @@ public sealed class GitIgnoreRules
     /// <param name="Value">The decoded value, or <see langword="null"/> for a key with no <c>=</c>.</param>
     internal readonly record struct ConfigEntry(string Section, string? Subsection, string Key, string? Value);
 
-    internal sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
+    internal sealed class GitIgnoreFile(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns, bool ignoreCase)
     {
         public string BaseDirectory { get; } = baseDirectory;
 
         public IReadOnlyList<GitIgnorePattern> Patterns { get; } = patterns;
 
         public bool TryGetRelativePath(string path, out string relativeToBase) =>
-            RelativePathResolver.TryGetRelativePath(BaseDirectory, path, out relativeToBase);
+            RelativePathResolver.TryGetRelativePath(BaseDirectory, path, ignoreCase, out relativeToBase);
     }
 }
 
