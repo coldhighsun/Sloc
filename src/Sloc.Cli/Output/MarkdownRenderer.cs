@@ -1,4 +1,5 @@
 using Sloc.Core.Models;
+using System.Buffers;
 using System.Text;
 
 namespace Sloc.Cli.Output;
@@ -10,6 +11,14 @@ namespace Sloc.Cli.Output;
 /// </summary>
 public sealed class MarkdownRenderer : IResultRenderer
 {
+    /// <summary>
+    /// The characters with inline Markdown meaning that <see cref="Escape"/> backslash-escapes:
+    /// emphasis (<c>__init__.py</c> would otherwise render as bold), code spans, links, HTML
+    /// tags and entities, strikethrough, table cell separators, and the backslash itself
+    /// (so a Windows path separator can't escape the character after it).
+    /// </summary>
+    private static readonly SearchValues<char> MarkdownSpecialChars = SearchValues.Create("\\`*_[]<>&~|");
+
     private readonly DateTimeOffset _generatedAt;
     private readonly TextWriter _writer;
 
@@ -40,7 +49,7 @@ public sealed class MarkdownRenderer : IResultRenderer
         sb.AppendLine();
 
         var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        var sourceMeta = string.IsNullOrEmpty(sourcePath) ? string.Empty : $" | **Source:** {sourcePath}";
+        var sourceMeta = string.IsNullOrEmpty(sourcePath) ? string.Empty : $" | **Source:** {Escape(sourcePath)}";
         sb.AppendLine($"**Generated:** {generated} | **Files:** {summary.FileCount:N0} | **Total Lines:** {summary.Total:N0}{sourceMeta}");
         sb.AppendLine();
 
@@ -179,6 +188,32 @@ public sealed class MarkdownRenderer : IResultRenderer
     private static string ComplexityCell(int? complexity) =>
         complexity?.ToString("N0") ?? string.Empty;
 
-    private static string Escape(string cell) =>
-            cell.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+    /// <summary>
+    /// Escapes <paramref name="cell"/> for use as literal text in a Markdown table cell or
+    /// list item, backslash-escaping <see cref="MarkdownSpecialChars"/> and replacing line
+    /// breaks with spaces.
+    /// </summary>
+    /// <param name="cell">The raw text, e.g. a file path.</param>
+    /// <returns>The escaped text.</returns>
+    private static string Escape(string cell)
+    {
+        var sb = new StringBuilder(cell.Length + 8);
+        foreach (var c in cell)
+        {
+            if (c is '\r' or '\n')
+            {
+                sb.Append(' ');
+                continue;
+            }
+
+            if (MarkdownSpecialChars.Contains(c))
+            {
+                sb.Append('\\');
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
+    }
 }
