@@ -150,6 +150,16 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> LineCommentTokens { get; init; } = [];
 
     /// <summary>
+    /// Whether a <c>'</c> inside a numeric literal (e.g. <c>1'000'000</c>, <c>0xFF'FF</c>) is a
+    /// digit separator, as in C++14 and C23, rather than the start of a character literal.
+    /// A <c>'</c> counts as one when it directly follows a token that starts with a digit.
+    /// </summary>
+    public bool QuoteDigitSeparators
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// Tokens that start with a <see cref="LineCommentTokens">line-comment token</see> but are
     /// not comments, such as PHP 8's <c>#[</c> attribute syntax (PHP's <c>#</c> is otherwise a
     /// line comment).

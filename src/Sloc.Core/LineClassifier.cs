@@ -636,8 +636,36 @@ public sealed class LineClassifier
         return false;
     }
 
+    /// <summary>
+    /// Whether the <c>'</c> at <paramref name="index"/> is a digit separator: it directly
+    /// follows a token (letters, digits, <c>_</c>, <c>.</c>, and earlier separators) that
+    /// starts with a digit, as in <c>1'000</c> or <c>0xFF'FF</c>, unlike the
+    /// character-literal prefix in <c>u8'a'</c>.
+    /// </summary>
+    /// <param name="line">The line being classified.</param>
+    /// <param name="index">The index of the <c>'</c>.</param>
+    /// <returns>
+    /// <see langword="true"/> if the quote separates digits; otherwise <see langword="false"/>.
+    /// </returns>
+    private static bool IsInNumericLiteral(ReadOnlySpan<char> line, int index)
+    {
+        var start = index;
+        while (start > 0 && (IsIdentifierChar(line[start - 1]) || line[start - 1] is '\'' or '.'))
+        {
+            start--;
+        }
+
+        return start < index && char.IsAsciiDigit(line[start]);
+    }
+
     private bool TryMatchStringOpen(ReadOnlySpan<char> line, int index, [NotNullWhen(true)] out StringLiteral? literal)
     {
+        if (_language.QuoteDigitSeparators && line[index] == '\'' && IsInNumericLiteral(line, index))
+        {
+            literal = null;
+            return false;
+        }
+
         if (_language.StringLiteralsByFirstChar.TryGetValue(line[index], out var candidates))
         {
             foreach (var candidate in candidates)
