@@ -476,6 +476,66 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Comment, classifier.Classify("# a nix comment"));
     }
 
+    /// <summary>
+    /// Verifies that a backslash-escaped closing delimiter inside a triple-quoted string does
+    /// not end it early in Dart, Groovy, and Starlark, so a following comment stays a comment.
+    /// </summary>
+    /// <param name="extension">The file extension selecting the language.</param>
+    /// <param name="commentToken">The language's line-comment token.</param>
+    /// <param name="line">A line holding a triple-quoted string with an escaped delimiter.</param>
+    [Theory]
+    [InlineData(".groovy", "//", "def s = \"\"\"a \\\"\"\" b\"\"\"")]
+    [InlineData(".groovy", "//", "def s = '''a \\''' b'''")]
+    [InlineData(".dart", "//", "var s = '''a \\''' b''';")]
+    [InlineData(".bzl", "#", "s = \"\"\"a \\\"\"\" b\"\"\"")]
+    public void Classify_TripleQuotedStringWithEscapedDelimiter_DoesNotLeakIntoNextLine(string extension, string commentToken, string line)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(line));
+        Assert.Equal(LineKind.Comment, classifier.Classify($"{commentToken} real comment"));
+    }
+
+    /// <summary>
+    /// Verifies that the character literal <c>'"'</c> does not open a string, so a block
+    /// comment opened later on the same line is still recognized.
+    /// </summary>
+    /// <param name="extension">The file extension selecting the language.</param>
+    /// <param name="line">A line with a <c>'"'</c> literal followed by an open block comment.</param>
+    [Theory]
+    [InlineData(".rs", "let q = '\"'; /* note")]
+    [InlineData(".rs", "let q = '\\\"'; /* note")]
+    [InlineData(".scala", "val q = '\"'; /* note")]
+    [InlineData(".ml", "let q = '\"'; (* note")]
+    [InlineData(".fs", "let q = '\"'; (* note")]
+    public void Classify_DoubleQuoteCharLiteral_DoesNotOpenString(string extension, string line)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(line));
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment"));
+    }
+
+    /// <summary>
+    /// Verifies that Haskell's <c>--</c> only starts a comment when it is not part of a longer
+    /// operator such as <c>--&gt;</c> or <c>|--</c>.
+    /// </summary>
+    /// <param name="line">The line to classify.</param>
+    /// <param name="expected">The expected classification.</param>
+    [Theory]
+    [InlineData("-- a comment", LineKind.Comment)]
+    [InlineData("--- a comment", LineKind.Comment)]
+    [InlineData("-- | haddock", LineKind.Comment)]
+    [InlineData("  --> next", LineKind.Code)]
+    [InlineData("  |-- next", LineKind.Code)]
+    [InlineData("x = 1 -- trailing", LineKind.Code)]
+    public void Classify_HaskellDashes_OnlyPlainRunsAreComments(string line, LineKind expected)
+    {
+        var classifier = new LineClassifier(Resolve(".hs"));
+
+        Assert.Equal(expected, classifier.Classify(line));
+    }
+
     private static LanguageDefinition Resolve(string extension)
     {
         LanguageRegistry.TryGetByExtension(extension, out var language);

@@ -631,11 +631,46 @@ public sealed class LineClassifier
                 continue;
             }
 
+            if (_language.SymbolAwareLineComments && IsSymbolOperatorAdjacent(line, index, token))
+            {
+                continue;
+            }
+
             return true;
         }
 
         return false;
     }
+
+    /// <summary>
+    /// Whether the run of <paramref name="token"/>'s first character at <paramref name="index"/>
+    /// is glued to a symbol character, making it part of an operator (Haskell's <c>--&gt;</c>
+    /// or <c>|--</c>) rather than a line comment.
+    /// </summary>
+    /// <param name="line">The line being classified.</param>
+    /// <param name="index">The index where the line-comment token matched.</param>
+    /// <param name="token">The matched line-comment token.</param>
+    private static bool IsSymbolOperatorAdjacent(ReadOnlySpan<char> line, int index, string token)
+    {
+        if (index > 0 && IsOperatorSymbol(line[index - 1]))
+        {
+            return true;
+        }
+
+        var end = index + token.Length;
+        while (end < line.Length && line[end] == token[0])
+        {
+            end++;
+        }
+
+        return end < line.Length && IsOperatorSymbol(line[end]);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="c"/> is one of Haskell's ASCII operator symbol characters.
+    /// </summary>
+    /// <param name="c">The character to test.</param>
+    private static bool IsOperatorSymbol(char c) => "!#$%&*+./<=>?@\\^|-~:".Contains(c);
 
     /// <summary>
     /// Returns the length of the <see cref="LanguageDefinition.BlockCommentExceptions">block-comment
@@ -760,9 +795,32 @@ public sealed class LineClassifier
         return start < index && char.IsAsciiDigit(line[start]);
     }
 
+    /// <summary>
+    /// Whether the <c>"</c> at <paramref name="index"/> is the content of the character
+    /// literal <c>'"'</c> or <c>'\"'</c>.
+    /// </summary>
+    /// <param name="line">The line being classified.</param>
+    /// <param name="index">The index of the <c>"</c>.</param>
+    private static bool IsQuotedDoubleQuoteChar(ReadOnlySpan<char> line, int index)
+    {
+        if (line[index] != '"' || index + 1 >= line.Length || line[index + 1] != '\'')
+        {
+            return false;
+        }
+
+        return (index >= 1 && line[index - 1] == '\'')
+            || (index >= 2 && line[index - 1] == '\\' && line[index - 2] == '\'');
+    }
+
     private bool TryMatchStringOpen(ReadOnlySpan<char> line, int index, [NotNullWhen(true)] out StringLiteral? literal)
     {
         if (_language.QuoteDigitSeparators && line[index] == '\'' && IsInNumericLiteral(line, index))
+        {
+            literal = null;
+            return false;
+        }
+
+        if (_language.DoubleQuoteCharLiteral && IsQuotedDoubleQuoteChar(line, index))
         {
             literal = null;
             return false;
