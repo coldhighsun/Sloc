@@ -56,10 +56,10 @@ public sealed class CsvRenderer : IResultRenderer
         complexity?.ToString() ?? string.Empty;
 
     // Spreadsheet apps (Excel, Google Sheets, LibreOffice) treat a cell starting with
-    // =, +, -, @, or tab as a formula. A file path or skip-reason with such a leading
+    // =, +, -, @, tab, or carriage return as a formula. A file path or skip-reason with such a leading
     // character would otherwise execute as a formula when the CSV is opened; prefixing
     // it with a quote neutralizes that without changing the visible text.
-    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@', '\t'];
+    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@', '\t', '\r'];
 
     private static string Escape(string field)
     {
