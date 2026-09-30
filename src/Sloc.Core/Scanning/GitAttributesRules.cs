@@ -588,6 +588,16 @@ internal sealed class AttributeLine
             var tokenEnd = FindBlank(rawLine, start);
             pattern = rawLine[start..tokenEnd];
             statesStart = tokenEnd;
+
+            // Git allows blanks between the "[attr]" prefix and the macro name, so the name is
+            // the next token rather than a separate attribute state.
+            if (pattern == MacroPrefix)
+            {
+                var nameStart = SkipBlanks(rawLine, tokenEnd);
+                var nameEnd = FindBlank(rawLine, nameStart);
+                pattern = MacroPrefix + rawLine[nameStart..nameEnd];
+                statesStart = nameEnd;
+            }
         }
 
         string? macroName = null;

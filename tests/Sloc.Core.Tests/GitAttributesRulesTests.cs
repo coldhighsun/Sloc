@@ -162,6 +162,21 @@ public class GitAttributesRulesTests
     }
 
     /// <summary>
+    /// Verifies that blanks between the <c>[attr]</c> prefix and the macro name are accepted.
+    /// </summary>
+    [Fact]
+    public void IsVendoredOrGenerated_MacroWithBlankAfterPrefix_ExpandsMacro()
+    {
+        var rules = GitAttributesRules.FromLines(string.Empty,
+        [
+            "[attr] thirdparty linguist-vendored",
+            "v/** thirdparty"
+        ]);
+
+        Assert.True(rules.IsVendoredOrGenerated("v/lib.js"));
+    }
+
+    /// <summary>
     /// Verifies that a later macro definition replaces an earlier one.
     /// </summary>
     [Fact]
