@@ -75,6 +75,19 @@ public sealed class GitWorkTreeTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a <c>.git</c> file with an empty <c>gitdir:</c> is treated as unusable
+    /// instead of throwing.
+    /// </summary>
+    [Fact]
+    public void Find_EmptyGitdirTarget_ReturnsNull()
+    {
+        var sub = Directory.CreateDirectory(Path.Combine(_root, "sub")).FullName;
+        File.WriteAllText(Path.Combine(sub, ".git"), "gitdir:\n");
+
+        Assert.Null(GitWorkTree.Find(sub));
+    }
+
+    /// <summary>
     /// Verifies that a <c>.git</c> file pointing nowhere stops the search instead of
     /// continuing to a repository further up.
     /// </summary>
