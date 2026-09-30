@@ -123,6 +123,40 @@ public sealed class GitSnapshotExtractorTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that <see cref="GitSnapshotExtractor.DeletePendingTempRoot"/> leaves a finished
+    /// extraction alone, since the returned snapshot owns its directory from then on.
+    /// </summary>
+    [Fact]
+    public void DeletePendingTempRoot_AfterExtractReturned_KeepsSnapshotDirectory()
+    {
+        Write("a.cs", "int x;");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(_root, "HEAD", TestContext.Current.CancellationToken);
+        _extractor.DeletePendingTempRoot();
+
+        Assert.True(Directory.Exists(snapshot.TempRoot));
+    }
+
+    /// <summary>
+    /// Verifies that a <c>./</c>-relative <c>rev:path</c> is resolved against the directory the
+    /// caller passed as the repo path (as the tree-prefix bookkeeping assumes), not the
+    /// repository root.
+    /// </summary>
+    [Fact]
+    public void Extract_RevPathRelativeToSubdirectory_ResolvesAgainstThatDirectory()
+    {
+        Write("cur/dir/a/x.cs", "int x;");
+        Write("a/y.py", "print(1)");
+        Commit("first");
+
+        using var snapshot = _extractor.Extract(Path.Combine(_root, "cur", "dir"), "HEAD:./a", TestContext.Current.CancellationToken);
+
+        var file = Assert.Single(snapshot.Files);
+        Assert.Equal("x.cs", file.GitPath);
+    }
+
+    /// <summary>
     /// Verifies that a <c>rev:path</c> naming a blob rather than a tree is still rejected.
     /// </summary>
     [Fact]

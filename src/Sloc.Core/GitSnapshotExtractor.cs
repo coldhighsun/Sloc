@@ -86,6 +86,37 @@ public sealed class GitSnapshotExtractor
         SearchValues.Create([.. Path.GetInvalidFileNameChars(), '/', '\\']);
 
     /// <summary>
+    /// The temporary directory of an <see cref="Extract"/> call that has not returned yet, so
+    /// <see cref="DeletePendingTempRoot"/> can remove it when the process is interrupted.
+    /// </summary>
+    private string? _pendingTempRoot;
+
+    /// <summary>
+    /// Deletes the temporary directory of an <see cref="Extract"/> call that is still running,
+    /// ignoring errors. Meant for an interrupt handler, since Ctrl+C ends the process without
+    /// running the <c>catch</c> block that normally cleans up. Does nothing when no extraction
+    /// is in progress, including once <see cref="Extract"/> has returned and the caller owns
+    /// (and must dispose) the resulting <see cref="GitSnapshot"/>.
+    /// </summary>
+    public void DeletePendingTempRoot()
+    {
+        var tempRoot = Interlocked.Exchange(ref _pendingTempRoot, null);
+        if (tempRoot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort cleanup while the process is shutting down.
+        }
+    }
+
+    /// <summary>
     /// Extracts every blob reachable from <paramref name="commitHash"/> in the git
     /// repository containing <paramref name="repoPathHint"/> into a new temporary
     /// directory. A blob whose path has a smudge filter driver (e.g. Git LFS) or a
@@ -144,7 +175,9 @@ public sealed class GitSnapshotExtractor
         // Resolve the revision on its own before peeling it to a tree: appending "^{tree}"
         // directly would make git read a "rev:path" tree-ish (e.g. "HEAD:src") as the path
         // "src^{tree}". The resolved object is a full hash, so the peel below is unambiguous.
-        var objectHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", commitHash]).Trim();
+        // Run from hintDirectory: git resolves a "rev:./path" or "rev:../path" relative to the working
+        // directory, which is what TreePathPrefix below assumes; root-relative paths are unaffected.
+        var objectHash = RunGit(hintDirectory, ["rev-parse", "--verify", "--quiet", commitHash]).Trim();
         var treeHash = RunGit(repoRoot, ["rev-parse", "--verify", "--quiet", $"{objectHash}^{{tree}}"]).Trim();
         // Trailing slash trimmed so a subdirectory match is "prefix" or "prefix/...", never
         // "prefix/" (an empty result means repoPathHint was the repo root itself).
@@ -157,6 +190,7 @@ public sealed class GitSnapshotExtractor
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "sloc-git-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
+        Volatile.Write(ref _pendingTempRoot, tempRoot);
 
         try
         {
@@ -175,10 +209,15 @@ public sealed class GitSnapshotExtractor
 
             var filtered = FindFilteredBlobs(repoRoot, treePrefix, blobsToExtract, cancellationToken);
             var files = ExtractBlobs(repoRoot, tempRoot, treePrefix, blobsToExtract, filtered, skipped, cancellationToken);
-            return new GitSnapshot(tempRoot, relativePrefix, files, skipped);
+            var snapshot = new GitSnapshot(tempRoot, relativePrefix, files, skipped);
+
+            // From here on the caller owns the directory through the snapshot.
+            Volatile.Write(ref _pendingTempRoot, null);
+            return snapshot;
         }
         catch
         {
+            Volatile.Write(ref _pendingTempRoot, null);
             try
             {
                 Directory.Delete(tempRoot, recursive: true);
@@ -609,20 +648,19 @@ public sealed class GitSnapshotExtractor
         using var process = StartGit(repoRoot, ["cat-file", "--filters", $"--path={repositoryPath}", hash], redirectInput: false);
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         string tempPath;
-        using (var fileStream = allocator.Create(gitPath, out tempPath))
+        try
         {
-            try
-            {
-                process.StandardOutput.BaseStream.CopyToAsync(fileStream, cancellationToken).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                // A filter such as Git LFS can block on a download, and disposing the process
-                // on any other failure (e.g. a disk-full IOException) only releases the handle
-                // without stopping it; don't leave it running either way.
-                process.Kill(entireProcessTree: true);
-                throw;
-            }
+            using var fileStream = allocator.Create(gitPath, out tempPath);
+            process.StandardOutput.BaseStream.CopyToAsync(fileStream, cancellationToken).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // A filter such as Git LFS can block on a download, and disposing the process
+            // on any other failure (e.g. a disk-full IOException, including one raised while
+            // creating the temp file) only releases the handle without stopping it; don't
+            // leave it running either way.
+            process.Kill(entireProcessTree: true);
+            throw;
         }
 
         string stderr;
