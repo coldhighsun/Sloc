@@ -33,7 +33,7 @@ internal static class DiffRenderer
         {
             json = File.ReadAllText(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             throw new InvalidOperationException($"Could not read baseline '{path}': {ex.Message}");
         }

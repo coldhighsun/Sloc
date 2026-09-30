@@ -24,6 +24,18 @@ public sealed partial class AnalyzeHandler
     private readonly DirectoryScanner _scanner = new();
 
     /// <summary>
+    /// Guards <see cref="_interruptCleanups"/>, which the Ctrl+C handler reads from another thread.
+    /// </summary>
+    private readonly Lock _cleanupLock = new();
+
+    /// <summary>
+    /// Deleters for the git snapshot temp directories that still exist (or are being
+    /// extracted), so an interrupt (which skips <c>finally</c>/<c>using</c>) can remove them
+    /// before the process exits.
+    /// </summary>
+    private readonly List<Action> _interruptCleanups = [];
+
+    /// <summary>
     /// Runs the analysis described by <paramref name="options"/>.
     /// </summary>
     /// <param name="options">The parsed options.</param>
@@ -41,12 +53,105 @@ public sealed partial class AnalyzeHandler
             return ExecuteWatch(options, ctx.ScanOptions, ctx.TableRenderer, ctx.SourcePath);
         }
 
+        // A one-shot run has no cancellation of its own: Ctrl+C terminates the process without
+        // running finally/using blocks, which would leave extracted snapshots in the temp directory.
+        Console.CancelKeyPress += OnInterrupt;
+        try
+        {
+            return ExecuteOnce(options, ctx);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnInterrupt;
+        }
+    }
+
+    /// <summary>
+    /// Deletes any git snapshot temp directories still on disk when the user interrupts the
+    /// run. Does not cancel the event, so the process still terminates as usual.
+    /// </summary>
+    /// <param name="sender">The event source.</param>
+    /// <param name="e">The event data.</param>
+    private void OnInterrupt(object? sender, ConsoleCancelEventArgs e)
+    {
+        Action[] cleanups;
+        lock (_cleanupLock)
+        {
+            cleanups = [.. _interruptCleanups];
+        }
+
+        foreach (var cleanup in cleanups)
+        {
+            cleanup();
+        }
+    }
+
+    /// <summary>
+    /// Registers <paramref name="cleanup"/> to run if the user interrupts the process.
+    /// </summary>
+    /// <param name="cleanup">The temp-directory deleter to run on interrupt.</param>
+    private void TrackCleanup(Action cleanup)
+    {
+        lock (_cleanupLock)
+        {
+            _interruptCleanups.Add(cleanup);
+        }
+    }
+
+    /// <summary>
+    /// Stops tracking <paramref name="cleanup"/> once its directory has been handled normally.
+    /// </summary>
+    /// <param name="cleanup">The deleter previously passed to <see cref="TrackCleanup"/>.</param>
+    private void UntrackCleanup(Action cleanup)
+    {
+        lock (_cleanupLock)
+        {
+            _interruptCleanups.Remove(cleanup);
+        }
+    }
+
+    /// <summary>
+    /// Extracts <paramref name="gitRef"/> with an interrupt cleanup registered for the whole
+    /// extraction, so Ctrl+C mid-extraction also removes the partly written temp directory.
+    /// The finished snapshot's own cleanup is registered before the extractor's is removed, so
+    /// the directory is never uncovered in between. The caller must pass the returned cleanup
+    /// to <see cref="UntrackCleanup"/> once it has disposed the snapshot.
+    /// </summary>
+    /// <param name="repoPath">The path inside the repository to query.</param>
+    /// <param name="gitRef">The commit/tree-ish to extract.</param>
+    /// <returns>The snapshot and the interrupt cleanup registered for it.</returns>
+    private (GitSnapshot Snapshot, Action Cleanup) ExtractTracked(string repoPath, string gitRef)
+    {
+        var extractor = new GitSnapshotExtractor();
+        Action extractorCleanup = extractor.DeletePendingTempRoot;
+        TrackCleanup(extractorCleanup);
+        try
+        {
+            var snapshot = extractor.Extract(repoPath, gitRef);
+            Action snapshotCleanup = snapshot.Dispose;
+            TrackCleanup(snapshotCleanup);
+            return (snapshot, snapshotCleanup);
+        }
+        finally
+        {
+            UntrackCleanup(extractorCleanup);
+        }
+    }
+
+    /// <summary>
+    /// Runs a single (non-watch) analysis using the already-built <paramref name="ctx"/>.
+    /// </summary>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="ctx">The run context built by <see cref="BuildRunContext"/>.</param>
+    private int ExecuteOnce(AnalyzeOptions options, RunContext ctx)
+    {
         GitSnapshot? gitSnapshot = null;
+        Action? snapshotCleanup = null;
         if (options.GitHash is { } gitHash)
         {
             try
             {
-                gitSnapshot = new GitSnapshotExtractor().Extract(options.Path, gitHash);
+                (gitSnapshot, snapshotCleanup) = ExtractTracked(options.Path, gitHash);
             }
             catch (Exception ex) when (ex is GitSnapshotException or IOException or UnauthorizedAccessException)
             {
@@ -149,7 +254,11 @@ public sealed partial class AnalyzeHandler
         }
         finally
         {
-            gitSnapshot?.Dispose();
+            if (gitSnapshot is not null && snapshotCleanup is not null)
+            {
+                gitSnapshot.Dispose();
+                UntrackCleanup(snapshotCleanup);
+            }
         }
     }
 
@@ -247,8 +356,28 @@ public sealed partial class AnalyzeHandler
     /// <param name="options">The parsed options.</param>
     private AnalysisSummary AnalyzeGitRef(string repoPath, string gitRef, ScanOptions scanOptions, AnalyzeOptions options)
     {
-        using var snapshot = new GitSnapshotExtractor().Extract(repoPath, gitRef);
+        var (snapshot, cleanup) = ExtractTracked(repoPath, gitRef);
+        try
+        {
+            return AnalyzeSnapshot(snapshot, repoPath, scanOptions, options);
+        }
+        finally
+        {
+            snapshot.Dispose();
+            UntrackCleanup(cleanup);
+        }
+    }
 
+    /// <summary>
+    /// Scans and analyzes an extracted <paramref name="snapshot"/> for
+    /// <see cref="AnalyzeGitRef"/>.
+    /// </summary>
+    /// <param name="snapshot">The extracted snapshot of the compared ref.</param>
+    /// <param name="repoPath">The path passed as <c>path</c>.</param>
+    /// <param name="scanOptions">The scan options to apply to the extracted snapshot.</param>
+    /// <param name="options">The parsed options.</param>
+    private AnalysisSummary AnalyzeSnapshot(GitSnapshot snapshot, string repoPath, ScanOptions scanOptions, AnalyzeOptions options)
+    {
         var isFilePath = File.Exists(repoPath);
         var filesInScope = snapshot.Files;
         IEnumerable<SkippedEntry> skippedInScope = snapshot.Skipped;
@@ -424,6 +553,14 @@ public sealed partial class AnalyzeHandler
             return ExitCode.Error;
         }
 
+        // The live table is redrawn in place with cursor movement, which Spectre.Console cannot
+        // do (and may throw on) when stdout is piped or redirected.
+        if (Console.IsOutputRedirected)
+        {
+            Console.Error.WriteLine("sloc: --watch requires an interactive terminal; stdout is redirected.");
+            return ExitCode.Error;
+        }
+
         if (!options.Quiet)
         {
             var version = typeof(AnalyzeHandler).Assembly
@@ -519,7 +656,7 @@ public sealed partial class AnalyzeHandler
             }
 
             AnsiConsole.Live(tableRenderer.BuildLanguageTable(lastSummary, noHealth: options.NoHealth, noComplexity: options.NoComplexity))
-                .AutoClear(true)
+                .AutoClear(false)
                 .Start(ctx =>
                 {
                     ctx.Refresh();
@@ -686,7 +823,19 @@ public sealed partial class AnalyzeHandler
 
         if (options.ListFile is { } listFile)
         {
-            return _scanner.ScanFiles(ReadListFile(listFile), scanOptions);
+            IEnumerable<string> entries;
+            try
+            {
+                entries = ReadListFile(listFile);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                // An empty or malformed path is a user input error, reported like any other
+                // unreadable list file rather than as an unexpected failure.
+                throw new IOException($"Invalid --list-file path '{listFile}': {ex.Message}", ex);
+            }
+
+            return _scanner.ScanFiles(entries, scanOptions);
         }
 
         if (!showProgress)

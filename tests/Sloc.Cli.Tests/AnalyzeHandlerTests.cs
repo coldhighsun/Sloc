@@ -97,6 +97,45 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that an empty <c>--baseline</c> path is reported as a path error (exit 1)
+    /// rather than crashing with an unhandled <see cref="ArgumentException"/>.
+    /// </summary>
+    [Fact]
+    public void Execute_EmptyBaselinePath_ReturnsError()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            BaselinePath = "",
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that an empty <c>--list-file</c> path is reported as a path error (exit 1).
+    /// </summary>
+    [Fact]
+    public void Execute_EmptyListFilePath_ReturnsError()
+    {
+        var exitCode = 0;
+        CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            ListFile = "",
+            Quiet = true
+        }));
+
+        Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
     /// Verifies that the comment-percentage threshold gate returns the threshold exit
     /// code when the comment percentage is below the requested minimum.
     /// </summary>
@@ -565,6 +604,31 @@ public sealed class AnalyzeHandlerTests : IDisposable
         var parallel = Run(8);
 
         Assert.Equal(NormalizeGeneratedAt(sequential), NormalizeGeneratedAt(parallel));
+    }
+
+    /// <summary>
+    /// Verifies that a non-positive <c>--jobs</c> value falls back to the processor count
+    /// instead of failing, as <see cref="AnalyzeOptions.Jobs"/> documents.
+    /// </summary>
+    /// <param name="jobs">The non-positive job count.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Execute_NonPositiveJobs_FallsBackToAutomatic(int jobs)
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "int x = 1;\n");
+
+        var exitCode = 0;
+        var stdout = CaptureStdout(() => exitCode = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Format = OutputFormat.Json,
+            Quiet = true,
+            Jobs = jobs
+        }));
+
+        Assert.Equal(ExitCode.Success, exitCode);
+        Assert.Contains("\"fileCount\": 1", stdout);
     }
 
     private static string NormalizeGeneratedAt(string json) =>
