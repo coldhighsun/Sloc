@@ -13,7 +13,7 @@ internal sealed class LiveAggregator(LanguageSort sortBy, int? top, bool unique 
 {
     private readonly Dictionary<string, Counts> _byLanguage = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _seenHashes = [];
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private int _processed;
     private int _files;
 
