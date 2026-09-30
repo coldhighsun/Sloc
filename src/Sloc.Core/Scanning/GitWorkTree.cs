@@ -131,8 +131,21 @@ internal sealed record GitWorkTree(string Root, string CommonDirectory)
             return null;
         }
 
-        var gitDirectory = Path.GetFullPath(line[Prefix.Length..].Trim(), workTreeRoot);
-        return Directory.Exists(gitDirectory) ? gitDirectory : null;
+        var target = line[Prefix.Length..].Trim();
+        if (target.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var gitDirectory = Path.GetFullPath(target, workTreeRoot);
+            return Directory.Exists(gitDirectory) ? gitDirectory : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
