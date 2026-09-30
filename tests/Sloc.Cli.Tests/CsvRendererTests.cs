@@ -113,6 +113,21 @@ public class CsvRendererTests
     }
 
     /// <summary>
+    /// Verifies that a path starting with a carriage return is neutralized too; the field is
+    /// also quoted because it contains a line break.
+    /// </summary>
+    [Fact]
+    public void Render_ByFile_NeutralizesLeadingCarriageReturn()
+    {
+        var summary = BuildSummary("\r=1+1");
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: true, noHealth: true, noComplexity: true);
+
+        Assert.Contains("\"'\r=1+1\"", writer.ToString());
+    }
+
+    /// <summary>
     /// Verifies that a skip-reason starting with a formula-trigger character is also
     /// neutralized, not just file paths.
     /// </summary>
