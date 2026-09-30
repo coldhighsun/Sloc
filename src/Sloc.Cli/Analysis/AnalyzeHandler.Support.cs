@@ -3,6 +3,7 @@ using Sloc.Cli.Updates;
 using Sloc.Core.Models;
 using Sloc.Core.Scanning;
 using Spectre.Console;
+using System.Globalization;
 using System.Reflection;
 
 namespace Sloc.Cli.Analysis;
@@ -298,9 +299,12 @@ public sealed partial class AnalyzeHandler
 
             if (gitPathByTempPath.TryGetValue(entry.Path, out var gitPath))
             {
+                // An IO error message quotes the temp path it failed on ("Access to the path
+                // '...' is denied"), so rewrite that too.
                 entry = entry with
                 {
-                    Path = gitPath
+                    Path = gitPath,
+                    Reason = entry.Reason.Replace(entry.Path, gitPath, StringComparison.Ordinal)
                 };
             }
 
@@ -429,10 +433,26 @@ public sealed partial class AnalyzeHandler
     /// <param name="summary">The summary to check the comment percentage of.</param>
     private static int ThresholdResult(AnalyzeOptions options, AnalysisSummary summary)
     {
-        if (options.MinCommentPct is { } min && summary.FileCount > 0 && summary.CommentPct < min)
+        if (options.MinCommentPct is not { } min)
         {
+            return ExitCode.Success;
+        }
+
+        if (summary.FileCount == 0)
+        {
+            // There is no percentage to judge, but a silent pass would let a mistyped glob or
+            // path slip through a CI gate unnoticed.
+            Console.Error.WriteLine("sloc: warning: no files were analyzed, so --min-comment-pct was not evaluated.");
+            return ExitCode.Success;
+        }
+
+        if (summary.CommentPct < min)
+        {
+            // Up to three decimals so a value that rounds up to the threshold (4.96 -> "5.0")
+            // is not reported as "5.0% is below 5.0%".
             Console.Error.WriteLine(
-                $"sloc: comment percentage {summary.CommentPct:F1}% is below the required {min:F1}%.");
+                $"sloc: comment percentage {summary.CommentPct.ToString("0.0##", CultureInfo.InvariantCulture)}% "
+                + $"is below the required {min.ToString("0.0##", CultureInfo.InvariantCulture)}%.");
             return ExitCode.ThresholdNotMet;
         }
 

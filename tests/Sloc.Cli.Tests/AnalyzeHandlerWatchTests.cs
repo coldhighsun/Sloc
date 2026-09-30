@@ -45,6 +45,56 @@ public class AnalyzeHandlerWatchTests
     }
 
     /// <summary>
+    /// Verifies that a percentage which rounds up to the threshold at one decimal is not
+    /// reported as "5.0% is below the required 5.0%".
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_BelowThresholdByFraction_MessageShowsDistinctValues()
+    {
+        var summary = new AnalysisSummary([
+            new FileAnalysis { Path = "a.cs", Language = "C#", Code = 2500, Comment = 130, Blank = 0 }
+        ]);
+        var original = Console.Error;
+        using var writer = new StringWriter();
+        Console.SetError(writer);
+        int exitCode;
+        try
+        {
+            exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 5 }, summary);
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        Assert.Equal(ExitCode.ThresholdNotMet, exitCode);
+        Assert.DoesNotContain("5.0% is below the required 5.0%", writer.ToString());
+    }
+
+    /// <summary>
+    /// Verifies that an empty result set warns on stderr instead of silently passing the gate.
+    /// </summary>
+    [Fact]
+    public void WatchExitCode_NoFilesAnalyzed_WarnsAndSucceeds()
+    {
+        var original = Console.Error;
+        using var writer = new StringWriter();
+        Console.SetError(writer);
+        int exitCode;
+        try
+        {
+            exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, new AnalysisSummary([]));
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        Assert.Equal(ExitCode.Success, exitCode);
+        Assert.Contains("no files were analyzed", writer.ToString());
+    }
+
+    /// <summary>
     /// Verifies that no threshold was ever configured, or the watch loop ended before
     /// completing a single pass, still yields success rather than throwing.
     /// </summary>
