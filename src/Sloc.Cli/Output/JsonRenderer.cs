@@ -96,7 +96,7 @@ public sealed class JsonRenderer : IResultRenderer
         noHealth || health == CommentHealthLevel.NotApplicable ? null : health.ToString();
 
     private static double Pct(int count, int total) =>
-            total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1);
+            total == 0 ? 0.0 : Math.Round((double)count / total * 100, 1, MidpointRounding.AwayFromZero);
 }
 
 /// <summary>
