@@ -114,6 +114,8 @@ public static class LanguageRegistry
         var pyTripleSingle = new StringLiteral("'''", Multiline: true, IsDocComment: true);
         var rawTripleDouble = new StringLiteral("\"\"\"", Multiline: true, AllowEscape: false);
         var rawTripleSingle = new StringLiteral("'''", Multiline: true, AllowEscape: false);
+        // Dart, Groovy, and Starlark treat a backslash as an escape in triple-single-quoted strings too.
+        var escapedTripleSingle = rawTripleSingle with { AllowEscape = true };
         // Unlike rawTripleDouble, these languages' """-strings support a backslash escape
         // to embed the closing delimiter (e.g. Swift's \""", TOML's \""" before the closing
         // quotes, GraphQL block strings' documented \""" escape, Elixir heredocs, Dart
@@ -274,6 +276,7 @@ public static class LanguageRegistry
                 // Single quotes denote lifetimes as well as char literals in Rust, so they
                 // are not treated as string delimiters here.
                 StringLiterals = [rustRawStringOneHash, rustRawStringNoHash, doubleQuote],
+                DoubleQuoteCharLiteral = true,
                 ComplexityKeywords = rustComplexity
             },
             new()
@@ -307,7 +310,8 @@ public static class LanguageRegistry
                 BlockCommentExceptions = ["(*)"],
                 // Single quotes appear in generic type parameters (e.g. 'a), so only
                 // double quotes are treated as string delimiters.
-                StringLiterals = [doubleQuote]
+                StringLiterals = [doubleQuote],
+                DoubleQuoteCharLiteral = true
             },
             new()
             {
@@ -403,7 +407,7 @@ public static class LanguageRegistry
                 Extensions = [".dart"],
                 LineCommentTokens = ["//"],
                 BlockComments = [nestedCStyleBlock],
-                StringLiterals = [escapedTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+                StringLiterals = [escapedTripleDouble, escapedTripleSingle, doubleQuote, singleQuote]
             },
             new()
             {
@@ -413,7 +417,8 @@ public static class LanguageRegistry
                 BlockComments = [nestedCStyleBlock],
                 // Single quotes denote char literals and symbols (e.g. 'sym), so only
                 // double and triple-double quotes are treated as string delimiters.
-                StringLiterals = [rawTripleDouble, doubleQuote]
+                StringLiterals = [rawTripleDouble, doubleQuote],
+                DoubleQuoteCharLiteral = true
             },
             new()
             {
@@ -469,7 +474,9 @@ public static class LanguageRegistry
                 Extensions = [".hs"],
                 LineCommentTokens = ["--"],
                 BlockComments = [new BlockComment("{-", "-}", AllowNested: true)],
-                StringLiterals = [doubleQuote]
+                StringLiterals = [doubleQuote],
+                DoubleQuoteCharLiteral = true,
+                SymbolAwareLineComments = true
             },
             new()
             {
@@ -535,7 +542,7 @@ public static class LanguageRegistry
                 Extensions = [".groovy", ".gradle"],
                 LineCommentTokens = ["//"],
                 BlockComments = [cStyleBlock],
-                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+                StringLiterals = [escapedTripleDouble, escapedTripleSingle, doubleQuote, singleQuote]
             },
             new()
             {
@@ -654,7 +661,8 @@ public static class LanguageRegistry
                 Name = "OCaml",
                 Extensions = [".ml", ".mli"],
                 BlockComments = [new BlockComment("(*", "*)", AllowNested: true)],
-                StringLiterals = [doubleQuote]
+                StringLiterals = [doubleQuote],
+                DoubleQuoteCharLiteral = true
             },
             new()
             {
@@ -694,7 +702,7 @@ public static class LanguageRegistry
                 // "build"/"workspace" are common names for unrelated scripts and directories.
                 CaseSensitiveFilenames = true,
                 LineCommentTokens = ["#"],
-                StringLiterals = [rawTripleDouble, rawTripleSingle, doubleQuote, singleQuote]
+                StringLiterals = [escapedTripleDouble, escapedTripleSingle, doubleQuote, singleQuote]
             },
             new()
             {

@@ -162,6 +162,27 @@ public sealed class LanguageDefinition
     }
 
     /// <summary>
+    /// Whether a <c>"</c> written as the character literal <c>'"'</c> (or <c>'\"'</c>) is a
+    /// character rather than the start of a string, for languages whose <c>'</c> is not a
+    /// <see cref="StringLiterals">string delimiter</see> (Rust, Scala, Haskell, F#, OCaml).
+    /// </summary>
+    public bool DoubleQuoteCharLiteral
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// Whether a <see cref="LineCommentTokens">line-comment token</see> made of a repeated
+    /// character (Haskell's <c>--</c>) only starts a comment when the run of that character is
+    /// not adjacent to a symbol character, so operators such as <c>--&gt;</c> and <c>|--</c>
+    /// are not comments.
+    /// </summary>
+    public bool SymbolAwareLineComments
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// String prefixes (e.g. Python's <c>r</c> and <c>u</c>) that may directly precede a
     /// <see cref="StringLiteral.IsDocComment">doc-comment literal</see> without making it an
     /// expression, so <c>r"""…"""</c> beginning a statement is still a docstring.
