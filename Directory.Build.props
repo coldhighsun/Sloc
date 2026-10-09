@@ -5,7 +5,7 @@
         <Nullable>enable</Nullable>
         <UseArtifactsOutput>true</UseArtifactsOutput>
         <LangVersion>latest</LangVersion>
-        <WarningsAsErrors>true</WarningsAsErrors>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
         <DebugType>embedded</DebugType>
     </PropertyGroup>
