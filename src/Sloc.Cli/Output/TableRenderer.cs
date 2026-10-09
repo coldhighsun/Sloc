@@ -46,9 +46,11 @@ public sealed class TableRenderer : IResultRenderer
     {
         var table = new Table().Border(TableBorder.Rounded);
 
-        if (caption is not null)
+        var note = ColumnLayout.TruncationNote(summary) is { } text ? $"[grey]{Markup.Escape(text)}[/]" : null;
+        var fullCaption = caption is not null && note is not null ? $"{caption}{Environment.NewLine}{note}" : caption ?? note;
+        if (fullCaption is not null)
         {
-            table.Caption(new TableTitle(caption));
+            table.Caption(new TableTitle(fullCaption));
         }
 
         table.AddColumn("Language");

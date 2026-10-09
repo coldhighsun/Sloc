@@ -180,7 +180,7 @@ internal static class SlocCommandFactory
 
         var topOption = new Option<int?>("--top")
         {
-            Description = "Show only the top N languages in the summary."
+            Description = "Show only the top N languages in the summary. The totals still cover every language; Table, Markdown, and Html output say so, Csv does not."
         };
 
         var noUpdateCheckOption = new Option<bool>("--no-update-check")

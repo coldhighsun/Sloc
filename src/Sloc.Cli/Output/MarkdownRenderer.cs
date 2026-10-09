@@ -161,6 +161,12 @@ public sealed class MarkdownRenderer : IResultRenderer
         ColumnLayout.AddOptional(totalRow, noHealth, noComplexity, string.Empty, ComplexityCell(summary.ComplexityTotal));
 
         AppendRow(sb, totalRow);
+
+        if (ColumnLayout.TruncationNote(summary) is { } note)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"_{note}_");
+        }
     }
 
     private static void AppendRow(StringBuilder sb, IReadOnlyList<string> cells)

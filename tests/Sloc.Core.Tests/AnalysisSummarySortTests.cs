@@ -66,6 +66,34 @@ public class AnalysisSummarySortTests
         Assert.Equal(3, summary.ByLanguage.Count);
     }
 
+    /// <summary>
+    /// Verifies that <see cref="AnalysisSummary.LanguageCount"/> counts every language even when
+    /// <c>top</c> trims <see cref="AnalysisSummary.ByLanguage"/>.
+    /// </summary>
+    [Fact]
+    public void LanguageCount_WithTop_CoversTrimmedLanguages()
+    {
+        var summary = new AnalysisSummary(Sample(), top: 2);
+
+        Assert.Equal(2, summary.ByLanguage.Count);
+        Assert.Equal(3, summary.LanguageCount);
+        Assert.True(summary.ByLanguageTruncated);
+    }
+
+    /// <summary>
+    /// Verifies that the pre-aggregated constructor also reports the untrimmed language count.
+    /// </summary>
+    [Fact]
+    public void LanguageCount_PreAggregatedWithTop_CoversTrimmedLanguages()
+    {
+        var byLanguage = new AnalysisSummary(Sample()).ByLanguage;
+
+        var summary = new AnalysisSummary(byLanguage, fileCount: 3, top: 1);
+
+        Assert.Single(summary.ByLanguage);
+        Assert.Equal(3, summary.LanguageCount);
+    }
+
     private static IReadOnlyList<FileAnalysis> Sample() =>
     [
         new() { Path = "a.cs", Language = "C#", Code = 100, Comment = 5, Blank = 0 },

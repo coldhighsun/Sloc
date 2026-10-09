@@ -26,6 +26,22 @@ public class JsonRendererTests
     }
 
     /// <summary>
+    /// Verifies that a <c>top</c>-truncated report records how many languages the totals cover,
+    /// and that a complete one omits the field.
+    /// </summary>
+    [Fact]
+    public void Render_TruncatedLanguages_EmitsLanguageCount()
+    {
+        var files = TestData.TwoLanguageFiles();
+
+        var truncated = Render(new AnalysisSummary(files, top: 1), byFile: false, noHealth: true);
+        var complete = Render(new AnalysisSummary(files), byFile: false, noHealth: true);
+
+        Assert.Equal(2, truncated.GetProperty("languageCount").GetInt32());
+        Assert.False(complete.TryGetProperty("languageCount", out _));
+    }
+
+    /// <summary>
     /// Verifies that the by-language payload includes totals, percentages, and health,
     /// and omits the per-file array.
     /// </summary>

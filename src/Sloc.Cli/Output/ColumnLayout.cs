@@ -51,6 +51,17 @@ internal static class ColumnLayout
     }
 
     /// <summary>
+    /// Describes a <c>--top</c>-truncated language table, whose Total row still covers every
+    /// language, so a reader does not take the listed rows for the whole.
+    /// </summary>
+    /// <param name="summary">The summary whose language table is rendered.</param>
+    /// <returns>The note, or <see langword="null"/> when every language is listed.</returns>
+    public static string? TruncationNote(AnalysisSummary summary) =>
+        summary.ByLanguageTruncated
+            ? $"Showing top {summary.ByLanguage.Count} of {summary.LanguageCount} languages; totals cover all languages."
+            : null;
+
+    /// <summary>
     /// Renders a comment-health bucket as plain text, or an empty cell when the language
     /// does not support comment-health classification.
     /// </summary>

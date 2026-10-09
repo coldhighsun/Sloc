@@ -31,6 +31,26 @@ public class LiveAggregatorTests
     }
 
     /// <summary>
+    /// Verifies that a <c>top</c> limit trims the listed rows while the summary still reports
+    /// every language, so the live table can show its truncation note.
+    /// </summary>
+    [Fact]
+    public void ToSummary_WithTop_KeepsFullLanguageCount()
+    {
+        var aggregator = new LiveAggregator(LanguageSort.Total, top: 1);
+
+        aggregator.Add(new FileAnalysis { Language = "C#", Path = "a.cs", Code = 10, Comment = 0, Blank = 0 });
+        aggregator.Add(new FileAnalysis { Language = "Python", Path = "a.py", Code = 2, Comment = 0, Blank = 0 });
+
+        var summary = aggregator.ToSummary();
+
+        Assert.Single(summary.ByLanguage);
+        Assert.Equal(2, summary.LanguageCount);
+        Assert.True(summary.ByLanguageTruncated);
+        Assert.Equal(12, summary.Code);
+    }
+
+    /// <summary>
     /// Verifies that files in different languages are aggregated into separate rows.
     /// </summary>
     [Fact]

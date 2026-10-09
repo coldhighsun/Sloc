@@ -22,6 +22,8 @@ public sealed class HtmlRenderer : IResultRenderer
         h1 { font-size: 1.75rem; border-bottom: 1px solid #e1e4e8; padding-bottom: 10px; margin: 0 0 4px 0; }
         h2 { font-size: 1.1rem; margin-top: 32px; margin-bottom: 10px; }
         .meta { color: #586069; font-size: .875rem; margin-bottom: 24px; }
+        /* Pulled up against the preceding table: the -20px cancels most of table's 28px margin-bottom, leaving 8px. */
+        .table-note { color: #586069; font-size: .8rem; margin: -20px 0 28px 0; }
         table { border-collapse: collapse; width: 100%; margin-bottom: 28px; font-size: .875rem; }
         th { background: #f6f8fa; border: 1px solid #d0d7de; padding: 8px 12px; white-space: nowrap; font-weight: 600; }
         td { border: 1px solid #d0d7de; padding: 8px 12px; }
@@ -63,7 +65,7 @@ public sealed class HtmlRenderer : IResultRenderer
         @media (prefers-color-scheme: dark) {
             body { color: #e6edf3; background: #0d1117; }
             h1 { border-bottom-color: #30363d; }
-            .meta { color: #8b949e; }
+            .meta, .table-note { color: #8b949e; }
             th { background: #161b22; border-color: #30363d; }
             td { border-color: #30363d; }
             tr:hover > td { background: #161b22; }
@@ -367,6 +369,11 @@ public sealed class HtmlRenderer : IResultRenderer
         }
         sb.AppendLine("</tr></tfoot>");
         sb.AppendLine("</table>");
+
+        if (ColumnLayout.TruncationNote(summary) is { } note)
+        {
+            sb.AppendLine($"<p class=\"table-note\">{Encode(note)}</p>");
+        }
     }
 
     private static void BuildSkippedSection(StringBuilder sb, AnalysisSummary summary)
