@@ -26,6 +26,24 @@ public class CsvRendererTests
     }
 
     /// <summary>
+    /// Verifies that a <c>top</c>-truncated summary renders as a plain table with no extra
+    /// note line, so fixed-column consumers keep parsing it.
+    /// </summary>
+    [Fact]
+    public void Render_TruncatedLanguages_HasNoNoteRow()
+    {
+        var summary = new AnalysisSummary(TestData.TwoLanguageFiles(), top: 1);
+        using var writer = new StringWriter();
+
+        new CsvRenderer(writer).Render(summary, byFile: false, noHealth: true, noComplexity: true);
+        var lines = writer.ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal(3, lines.Length);
+        Assert.All(lines, line => Assert.Equal(5, line.Count(c => c == ',')));
+        Assert.DoesNotContain("Showing top", writer.ToString());
+    }
+
+    /// <summary>
     /// Verifies that <c>noHealth</c> drops the Health column from the header and rows.
     /// </summary>
     [Fact]

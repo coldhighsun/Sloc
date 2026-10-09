@@ -122,6 +122,35 @@ public class TableRendererTests
         Assert.Contains("📁 proj", output);
     }
 
+    /// <summary>
+    /// Verifies that a <c>top</c>-truncated language table carries the truncation note, also
+    /// alongside a caller-supplied caption, and that an untruncated one has none.
+    /// </summary>
+    [Fact]
+    public void BuildLanguageTable_TruncatedLanguages_ShowsNoteWithCaption()
+    {
+        var files = TestData.TwoLanguageFiles();
+        var renderer = new TableRenderer();
+
+        string Output(AnalysisSummary summary, string? caption)
+        {
+            var console = new TestConsole();
+            console.Profile.Width = 120;
+            console.Write(renderer.BuildLanguageTable(summary, caption, noHealth: true, noComplexity: true));
+            // The caption wraps to the table's width; compare it as a single line.
+            return string.Join(' ', console.Output.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        var truncated = Output(new AnalysisSummary(files, top: 1), caption: null);
+        var captioned = Output(new AnalysisSummary(files, top: 1), caption: "Last update");
+        var complete = Output(new AnalysisSummary(files), caption: null);
+
+        Assert.Contains("Showing top 1 of 2 languages; totals cover all languages.", truncated);
+        Assert.Contains("Last update", captioned);
+        Assert.Contains("Showing top 1 of 2 languages", captioned);
+        Assert.DoesNotContain("Showing top", complete);
+    }
+
     private static AnalysisSummary BuildSummary()
     {
         var file = new FileAnalysis

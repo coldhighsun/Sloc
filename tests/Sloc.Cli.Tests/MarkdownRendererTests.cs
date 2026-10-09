@@ -168,6 +168,22 @@ public class MarkdownRendererTests
         Assert.Contains("- bad.bin — binary file", text);
     }
 
+    /// <summary>
+    /// Verifies that a <c>top</c>-truncated language table is followed by a note that the
+    /// totals cover all languages, and that an untruncated one has no note.
+    /// </summary>
+    [Fact]
+    public void Render_TruncatedLanguages_WritesNote()
+    {
+        var files = TestData.TwoLanguageFiles();
+
+        var truncated = Render(new AnalysisSummary(files, top: 1), byFile: false, noHealth: true);
+        var complete = Render(new AnalysisSummary(files), byFile: false, noHealth: true);
+
+        Assert.Contains("_Showing top 1 of 2 languages; totals cover all languages._", truncated);
+        Assert.DoesNotContain("Showing top", complete);
+    }
+
     private static string Render(AnalysisSummary summary, bool byFile, bool noHealth, bool noComplexity = false)
     {
         using var writer = new StringWriter();

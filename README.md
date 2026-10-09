@@ -180,7 +180,7 @@ sloc . --format markdown --detailed -o -
 | `--baseline` | | Compare against a previously saved JSON report and show the line-count diff |
 | `--compare-to` | | Diff the current analysis against `path` as of this other commit/tree-ish, without checking it out or saving a baseline file first; requires `git` on `PATH`; `path` may be a directory or a single file; the commit's files are filtered the same way as the working tree (`--include`/`--exclude`, `.gitignore`, `.gitattributes`, …) so unchanged files diff to zero; combine with `--git-hash` to diff two commits directly; mutually exclusive with `--baseline`, `--watch`, and `--list-file` |
 | `--sort` | | Order the language summary by `Total` (default), `Code`, `Comment`, `Blank`, `Files`, `Name`, or `CommentPct` |
-| `--top` | | Show only the top N languages in the summary |
+| `--top` | | Show only the top N languages in the summary; totals still cover all languages (noted in Table/Markdown/Html output, and as `languageCount` in Json) |
 | `--no-update-check` | | Do not check GitHub for a newer release (checked by default, with a 2 second timeout) |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version |
@@ -420,7 +420,7 @@ sloc . --format markdown --detailed -o -
 | `--baseline` | | 与之前保存的 JSON 报告对比,显示行数增减 |
 | `--compare-to` | | 将当前分析与 `path` 在另一个 commit/tree-ish 时的状态对比,无需检出该 commit 或先保存基线文件;需要 `git` 在 `PATH` 中;`path` 可以是目录或单个文件;该 commit 的文件会按与工作区相同的规则过滤(`--include`/`--exclude`、`.gitignore`、`.gitattributes` 等),未改动的文件差异为零;可与 `--git-hash` 组合直接对比两个 commit;与 `--baseline`、`--watch`、`--list-file` 互斥 |
 | `--sort` | | 语言汇总排序依据:`Total`(默认)、`Code`、`Comment`、`Blank`、`Files`、`Name` 或 `CommentPct` |
-| `--top` | | 仅显示汇总中排名前 N 的语言 |
+| `--top` | | 仅显示汇总中排名前 N 的语言；合计仍包含所有语言（Table/Markdown/Html 输出会注明，Json 输出为 `languageCount` 字段） |
 | `--no-update-check` | | 不检查 GitHub 上是否有新版本(默认检查,超时时间为 2 秒) |
 | `--help` | `-h` | 显示帮助 |
 | `--version` | | 显示版本 |

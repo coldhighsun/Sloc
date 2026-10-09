@@ -66,6 +66,7 @@ public sealed class JsonRenderer : IResultRenderer
             }).ToList(),
             // Recorded so a --baseline diff knows the breakdown is partial (see DiffRenderer).
             ByLanguageTruncated = includeLanguages && summary.ByLanguageTruncated ? true : null,
+            LanguageCount = includeLanguages && summary.ByLanguageTruncated ? summary.LanguageCount : null,
             Files = includeFiles
                 ? summary.Files.Select(file => new JsonFile
                 {
@@ -276,6 +277,15 @@ internal sealed class JsonReport
     }
 
     public int FileCount
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// The number of languages the totals cover, written only when <see cref="ByLanguage"/>
+    /// was cut short by <c>--top</c>.
+    /// </summary>
+    public int? LanguageCount
     {
         get; init;
     }

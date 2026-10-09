@@ -87,6 +87,22 @@ public class ColumnLayoutTests
     }
 
     /// <summary>
+    /// Verifies that the truncation note appears only when <c>top</c> left languages out, and
+    /// names both the listed and total language counts.
+    /// </summary>
+    [Fact]
+    public void TruncationNote_OnlyWhenLanguagesWereTrimmed()
+    {
+        var files = TestData.TwoLanguageFiles();
+
+        Assert.Null(ColumnLayout.TruncationNote(new AnalysisSummary(files)));
+        Assert.Null(ColumnLayout.TruncationNote(new AnalysisSummary(files, top: 2)));
+        Assert.Equal(
+            "Showing top 1 of 2 languages; totals cover all languages.",
+            ColumnLayout.TruncationNote(new AnalysisSummary(files, top: 1)));
+    }
+
+    /// <summary>
     /// Verifies that <see cref="CommentHealthLevel.NotApplicable"/> renders as an empty
     /// cell, and every other level renders as its own name.
     /// </summary>

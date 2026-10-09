@@ -195,6 +195,7 @@ public sealed class AnalysisSummary
             .ToList();
 
         ByLanguage = OrderAndLimit(grouped, sortBy, descending, top);
+        LanguageCount = grouped.Count;
         ByLanguageTruncated = ByLanguage.Count < grouped.Count;
     }
 
@@ -309,7 +310,17 @@ public sealed class AnalysisSummary
         ByLanguage = top is { } limit && limit >= 1 && limit < byLanguage.Count
             ? byLanguage.Take(limit).ToList()
             : byLanguage;
+        LanguageCount = byLanguage.Count;
         ByLanguageTruncated = ByLanguage.Count < byLanguage.Count;
+    }
+
+    /// <summary>
+    /// The number of distinct languages the overall totals cover, including any that a
+    /// <c>top</c> limit left out of <see cref="ByLanguage"/>.
+    /// </summary>
+    public int LanguageCount
+    {
+        get;
     }
 
     /// <summary>

@@ -96,6 +96,44 @@ public class HtmlRendererTests
         Assert.Contains("<span>src</span>", html);
     }
 
+    /// <summary>
+    /// Verifies that a <c>top</c>-truncated language table is followed by a note that the
+    /// totals cover all languages, and that an untruncated one has no note.
+    /// </summary>
+    [Fact]
+    public void Render_TruncatedLanguages_WritesNote()
+    {
+        var files = TestData.TwoLanguageFiles();
+        using var truncated = new StringWriter();
+        using var complete = new StringWriter();
+
+        new HtmlRenderer(truncated).Render(new AnalysisSummary(files, top: 1), byFile: false, noHealth: true);
+        new HtmlRenderer(complete).Render(new AnalysisSummary(files), byFile: false, noHealth: true);
+
+        Assert.Contains("Showing top 1 of 2 languages; totals cover all languages.", truncated.ToString());
+        Assert.DoesNotContain("Showing top", complete.ToString());
+    }
+
+    /// <summary>
+    /// Verifies that in detailed output the truncation note is a <c>table-note</c> paragraph
+    /// placed after the language table and before the By File section.
+    /// </summary>
+    [Fact]
+    public void Render_DetailedTruncatedLanguages_PlacesNoteBetweenTables()
+    {
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(
+            new AnalysisSummary(TestData.TwoLanguageFiles(), top: 1), byFile: false, noHealth: true, detailed: true);
+        var html = writer.ToString();
+
+        var languageTable = html.IndexOf("<h2>By Language</h2>", StringComparison.Ordinal);
+        var note = html.IndexOf("<p class=\"table-note\">Showing top 1 of 2 languages", StringComparison.Ordinal);
+        var fileSection = html.IndexOf("<h2>By File</h2>", StringComparison.Ordinal);
+        Assert.True(languageTable >= 0 && languageTable < note, "note should follow the language table");
+        Assert.True(note < fileSection, "note should precede the By File section");
+    }
+
     private static AnalysisSummary BuildSummary()
     {
         var file = new FileAnalysis
