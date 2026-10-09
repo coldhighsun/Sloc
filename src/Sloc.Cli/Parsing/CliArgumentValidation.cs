@@ -1,4 +1,5 @@
 using Sloc.Cli.Analysis;
+using Sloc.Core.Languages;
 
 namespace Sloc.Cli.Parsing;
 
@@ -25,6 +26,38 @@ internal static class CliArgumentValidation
     /// <returns><see langword="true"/> if the value is valid; otherwise <see langword="false"/>.</returns>
     public static bool IsValidTop(int? value) =>
         value is null or >= 1;
+
+    /// <summary>
+    /// Determines whether a <c>--format</c> value names a defined <see cref="OutputFormat"/>.
+    /// System.CommandLine also accepts numeric text such as <c>99</c> for an enum option, which
+    /// would otherwise silently fall back to Table output. A <see langword="null"/> value (the
+    /// option was not supplied) is always valid.
+    /// </summary>
+    /// <param name="value">The parsed <c>--format</c> value, if any.</param>
+    /// <returns><see langword="true"/> if the value is valid; otherwise <see langword="false"/>.</returns>
+    public static bool IsValidFormat(OutputFormat? value) =>
+        value is not { } format || Enum.IsDefined(format);
+
+    /// <summary>
+    /// Finds the first language name that is neither a built-in language nor <c>Other</c> (the
+    /// group <c>--all</c> puts unrecognized extensions in), compared case-insensitively.
+    /// </summary>
+    /// <param name="names">The values given to <c>--include-lang</c> or <c>--exclude-lang</c>.</param>
+    /// <returns>The first unknown name as written, or <see langword="null"/> if all are known.</returns>
+    public static string? FindUnknownLanguage(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            var known = string.Equals(name, "Other", StringComparison.OrdinalIgnoreCase)
+                || LanguageRegistry.Languages.Any(language => string.Equals(language.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (!known)
+            {
+                return name;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Validates <c>--watch</c>'s mutual exclusivity with <c>--git-hash</c>, <c>--list-file</c>,

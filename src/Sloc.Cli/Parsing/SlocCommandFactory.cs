@@ -238,6 +238,11 @@ internal static class SlocCommandFactory
         {
             var outputFile = parseResult.GetValue(outputOption);
             var explicitFormat = parseResult.GetValue(formatOption);
+            if (!CliArgumentValidation.IsValidFormat(explicitFormat))
+            {
+                Console.Error.WriteLine("sloc: --format must be Table, Json, Html, Csv, or Markdown.");
+                return ExitCode.Error;
+            }
 
             var format = FormatResolver.Resolve(explicitFormat, outputFile);
 
@@ -266,6 +271,15 @@ internal static class SlocCommandFactory
             if (!Enum.IsDefined(parseResult.GetValue(sortOption)))
             {
                 Console.Error.WriteLine("sloc: --sort must be Total, Code, Comment, Blank, Files, Name, or CommentPct.");
+                return ExitCode.Error;
+            }
+
+            var includeLangs = parseResult.GetValue(includeLangOption) ?? [];
+            var excludeLangs = parseResult.GetValue(excludeLangOption) ?? [];
+            if (CliArgumentValidation.FindUnknownLanguage([.. includeLangs, .. excludeLangs]) is { } unknownLanguage)
+            {
+                Console.Error.WriteLine(
+                    $"sloc: unknown language '{unknownLanguage}' for --include-lang/--exclude-lang. See --help for the supported names.");
                 return ExitCode.Error;
             }
 
@@ -305,8 +319,8 @@ internal static class SlocCommandFactory
                     .. parseResult.GetValue(excludeOption) ?? [],
                     .. (parseResult.GetValue(excludeDirOption) ?? []).Select(name => $"**/{name}/**")
                 ],
-                IncludeLangs = parseResult.GetValue(includeLangOption) ?? [],
-                ExcludeLangs = parseResult.GetValue(excludeLangOption) ?? [],
+                IncludeLangs = includeLangs,
+                ExcludeLangs = excludeLangs,
                 Format = format,
                 NoRecursive = parseResult.GetValue(noRecursiveOption),
                 ByFile = parseResult.GetValue(byFileOption),

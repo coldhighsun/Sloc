@@ -40,6 +40,34 @@ public class CliArgumentValidationTests
     }
 
     /// <summary>
+    /// Verifies that <c>--format</c> accepts a missing value and every defined format, and
+    /// rejects an undefined numeric value.
+    /// </summary>
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(OutputFormat.Table, true)]
+    [InlineData(OutputFormat.Markdown, true)]
+    [InlineData((OutputFormat)99, false)]
+    [InlineData((OutputFormat)(-1), false)]
+    public void IsValidFormat_RequiresDefinedValue(OutputFormat? value, bool expected)
+    {
+        Assert.Equal(expected, CliArgumentValidation.IsValidFormat(value));
+    }
+
+    /// <summary>
+    /// Verifies that built-in language names (any case) and <c>Other</c> are known, and that
+    /// the first unrecognized name is reported as written.
+    /// </summary>
+    [Theory]
+    [InlineData(new[] { "C#", "python", "OTHER" }, null)]
+    [InlineData(new string[0], null)]
+    [InlineData(new[] { "C#", "csharp", "nope" }, "csharp")]
+    public void FindUnknownLanguage_ReportsFirstUnknownName(string[] names, string? expected)
+    {
+        Assert.Equal(expected, CliArgumentValidation.FindUnknownLanguage(names));
+    }
+
+    /// <summary>
     /// When <c>--watch</c> is not supplied, no other option combination should be rejected.
     /// </summary>
     [Fact]
