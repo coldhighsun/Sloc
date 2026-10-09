@@ -106,6 +106,48 @@ public sealed class SlocCommandFactoryTests
     }
 
     /// <summary>
+    /// Verifies that an undefined numeric <c>--format</c> is rejected before the analysis runs
+    /// instead of silently rendering a table.
+    /// </summary>
+    [Fact]
+    public void Create_UndefinedFormatNumber_ReturnsErrorWithoutExecuting()
+    {
+        var (options, exitCode) = Run(["--format", "99"]);
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.Null(options);
+    }
+
+    /// <summary>
+    /// Verifies that a misspelled language name for <c>--include-lang</c> or
+    /// <c>--exclude-lang</c> is rejected before the analysis runs.
+    /// </summary>
+    /// <param name="option">The language option.</param>
+    [Theory]
+    [InlineData("--include-lang")]
+    [InlineData("--exclude-lang")]
+    public void Create_UnknownLanguage_ReturnsErrorWithoutExecuting(string option)
+    {
+        var (options, exitCode) = Run([option, "csharp"]);
+
+        Assert.Equal(ExitCode.Error, exitCode);
+        Assert.Null(options);
+    }
+
+    /// <summary>
+    /// Verifies that language names are matched case-insensitively and <c>Other</c> is accepted.
+    /// </summary>
+    [Fact]
+    public void Create_KnownLanguagesInAnyCase_AreAccepted()
+    {
+        var (options, exitCode) = Run(["--include-lang", "c#", "--exclude-lang", "other"]);
+
+        Assert.Equal(ExitCode.Success, exitCode);
+        Assert.NotNull(options);
+        Assert.Equal(["c#"], options.IncludeLangs);
+    }
+
+    /// <summary>
     /// Parses <paramref name="args"/> against a command whose action records the options it
     /// receives instead of analyzing anything.
     /// </summary>
