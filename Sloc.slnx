@@ -12,6 +12,7 @@
     <File Path="LICENSE.txt" />
     <File Path="NuGet.Config" />
     <File Path="README.md" />
+    <File Path="README.zh-CN.md" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Sloc.Benchmarks/Sloc.Benchmarks.csproj" />
