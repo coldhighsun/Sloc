@@ -208,16 +208,25 @@ public sealed class DirectoryScanner
         // the same directory tree separately for each concern. Inside a repository, git never
         // descends into a nested repository (a submodule, or a clone it doesn't track), so
         // with .gitignore honored neither does the walk.
-        var walk = ScanTreeWalker.Walk(
-            root, ExcludeDirectoryNames(ignoreCase), walkRecursive, options.FollowSymlinks, ignoreCase,
-            options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan,
-            skipNestedRepositories: (options.RespectGitignore || options.SkipNestedRepositories) && workTree is not null);
-
         var scanPrefix = workTree?.RelativeDirectory(fullRoot) ?? string.Empty;
         var ancestors = CreateRuleFiles(ignoreCase, options);
         ancestors.ReadAncestorsFromDisk(workTree, scanPrefix);
+
+        // The walk consults the ignore rules as it goes and does not descend into a directory
+        // they ignore (a .venv or target directory can hold far more files than the project).
+        var pruneRules = options.RespectGitignore
+            ? GitIgnoreRules.CreateWalkBuilder(workTree, ignoreCase, scanPrefix, ancestors.GitignoreFiles)
+            : null;
+        var walk = ScanTreeWalker.Walk(
+            root, ExcludeDirectoryNames(ignoreCase), walkRecursive, options.FollowSymlinks, ignoreCase,
+            options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan,
+            skipNestedRepositories: (options.RespectGitignore || options.SkipNestedRepositories) && workTree is not null,
+            pruneRules);
+
+        // The walk added every .gitignore it read to pruneRules, so those files are reused instead
+        // of re-read.
         var (gitignore, gitattributes) = BuildRules(
-            workTree, ignoreCase, scanPrefix, walk.GitignoreFiles, walk.AttributesFiles, ancestors, options);
+            workTree, ignoreCase, scanPrefix, walk.GitignoreFiles, walk.AttributesFiles, ancestors, options, pruneRules);
 
         // Ordinal (case-sensitive) comparer: Matcher.Match's OrdinalIgnoreCase comparison is
         // for pattern matching only, its Files results echo back the exact strings it was
@@ -432,6 +441,10 @@ public sealed class DirectoryScanner
     /// <param name="walkedAttributesFiles">The <c>.gitattributes</c> files under the scan root, with scan-root-relative bases.</param>
     /// <param name="ancestors">The rule files above the scan root, with repository-relative bases.</param>
     /// <param name="options">The scan options.</param>
+    /// <param name="grownGitignore">
+    /// The rule set a walk grew while pruning, finished and used instead of rebuilding one from
+    /// <paramref name="walkedGitignoreFiles"/>; <see langword="null"/> when the walk did not prune.
+    /// </param>
     private static (GitIgnoreRules? Gitignore, GitAttributesRules? Gitattributes) BuildRules(
         GitWorkTree? workTree,
         bool ignoreCase,
@@ -439,9 +452,11 @@ public sealed class DirectoryScanner
         IReadOnlyList<GitIgnoreRules.GitIgnoreFile> walkedGitignoreFiles,
         IReadOnlyList<GitAttributesRules.AttributesFile> walkedAttributesFiles,
         GitRuleFiles ancestors,
-        ScanOptions options) =>
+        ScanOptions options,
+        GitIgnoreRules.WalkBuilder? grownGitignore = null) =>
         (options.RespectGitignore
-                ? GitIgnoreRules.FromWalk(workTree, walkedGitignoreFiles, ignoreCase, scanPrefix, ancestors.GitignoreFiles)
+                ? grownGitignore?.Complete()
+                    ?? GitIgnoreRules.FromWalk(workTree, walkedGitignoreFiles, ignoreCase, scanPrefix, ancestors.GitignoreFiles)
                 : null,
             options.RespectGitAttributes
                 ? GitAttributesRules.FromWalk(walkedAttributesFiles, ignoreCase, scanPrefix, ancestors.AttributesFiles)
