@@ -42,6 +42,14 @@ internal static class ScanTreeWalker
     /// nested repository (a submodule or other clone, see <see cref="GitWorkTree.IsRepositoryRoot"/>),
     /// as git does within a repository. An unfollowed directory link is reported as a link instead.
     /// </param>
+    /// <param name="pruneRules">
+    /// When set, a rule set seeded with the <c>.gitignore</c> files above the root, to which the
+    /// walk adds each <c>.gitignore</c> it reads. A subdirectory it ignores is not descended into,
+    /// as git does not either, so nothing under it (files, rule files, nested repositories)
+    /// is collected. Has no effect unless <paramref name="collectGitignore"/> is set. The files
+    /// read are added to this rule set as well as to <see cref="ScanTreeWalkResult.GitignoreFiles"/>,
+    /// which is populated either way.
+    /// </param>
     /// <returns>Everything the walk collected.</returns>
     public static ScanTreeWalkResult Walk(
         string root,
@@ -53,7 +61,8 @@ internal static class ScanTreeWalker
         bool collectGitattributes,
         bool collectFiles,
         Action<int, string>? onDirectoryVisited,
-        bool skipNestedRepositories = false)
+        bool skipNestedRepositories = false,
+        GitIgnoreRules.WalkBuilder? pruneRules = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
@@ -81,7 +90,7 @@ internal static class ScanTreeWalker
             fullRoot, realRoot, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
             collectGitignore, collectGitattributes, collectFiles,
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-            onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
+            onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, collectGitignore ? pruneRules : null);
 
         return new ScanTreeWalkResult(
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped);
@@ -126,6 +135,7 @@ internal static class ScanTreeWalker
     /// <param name="ancestors">The real paths of the directories on the current path from the scan root.</param>
     /// <param name="follow">The symlink-following state, or <see langword="null"/> when links are not followed.</param>
     /// <param name="skipNestedRepositories">Whether to skip subdirectories that are nested repositories.</param>
+    /// <param name="pruneRules">The growing rule set that decides which subdirectories to skip, or <see langword="null"/>.</param>
     private static void Collect(
         string directory,
         string realDirectory,
@@ -146,7 +156,8 @@ internal static class ScanTreeWalker
         ref int visited,
         List<string> ancestors,
         FollowState? follow,
-        bool skipNestedRepositories)
+        bool skipNestedRepositories,
+        GitIgnoreRules.WalkBuilder? pruneRules)
     {
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
@@ -160,6 +171,7 @@ internal static class ScanTreeWalker
         {
             var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
             gitignoreFiles.Add(new GitIgnoreRules.GitIgnoreFile(baseDir, ignorePatterns, ignoreCase));
+            pruneRules?.Add(baseDir, ignorePatterns);
         }
 
         if (collectGitattributes
@@ -265,6 +277,13 @@ internal static class ScanTreeWalker
 
             if (!isLink)
             {
+                // Git never descends into an ignored directory, so a pattern deeper down cannot
+                // re-include anything in it: its files and rule files can all be left unread.
+                if (IsPruned(pruneRules, normalizedRoot, subdirectory))
+                {
+                    continue;
+                }
+
                 var realSubdirectory = Path.Combine(realDirectory, Path.GetFileName(subdirectory));
                 if (outsideRoot && !follow!.VisitedDirectories.Add(realSubdirectory))
                 {
@@ -283,7 +302,7 @@ internal static class ScanTreeWalker
                     subdirectory, realSubdirectory, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                     collectGitignore, collectGitattributes, collectFiles,
                     gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                    onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
+                    onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
@@ -292,6 +311,13 @@ internal static class ScanTreeWalker
             {
                 // The caller opted out of following symlinked directories entirely.
                 symlinkedDirectories.Add(subdirectory);
+                continue;
+            }
+
+            // A followed link into an ignored directory is pruned like a real directory: the
+            // ignore filter would drop everything under it anyway.
+            if (IsPruned(pruneRules, normalizedRoot, subdirectory))
+            {
                 continue;
             }
 
@@ -320,9 +346,28 @@ internal static class ScanTreeWalker
                 subdirectory, resolution.Target!, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                 collectGitignore, collectGitattributes, collectFiles,
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories);
+                onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
+    }
+
+    /// <summary>
+    /// Determines whether the walk should skip a subdirectory because the growing ignore rules ignore it.
+    /// </summary>
+    /// <param name="pruneRules">The growing rule set, or <see langword="null"/> when not pruning.</param>
+    /// <param name="normalizedRoot">The scan root the rules' paths are relative to.</param>
+    /// <param name="subdirectory">The subdirectory under consideration.</param>
+    /// <returns><see langword="true"/> if the subdirectory is ignored and must not be descended into.</returns>
+    private static bool IsPruned(GitIgnoreRules.WalkBuilder? pruneRules, string normalizedRoot, string subdirectory)
+    {
+        if (pruneRules is not { IsEmpty: false })
+        {
+            return false;
+        }
+
+        // Every subdirectory is enumerated beneath the root (a followed link keeps its path under
+        // it); the rules normalize the separators of the relative path themselves.
+        return pruneRules.IsDirectoryIgnored(Path.GetRelativePath(normalizedRoot, subdirectory));
     }
 
     /// <summary>

@@ -21,13 +21,19 @@ namespace Sloc.Core.Scanning;
 /// </remarks>
 public sealed class GitIgnoreRules
 {
-    // Caches the cumulative ignored/not-ignored state through each ancestor directory, so
-    // sibling files under the same directory only re-evaluate patterns for their own leaf
-    // name instead of re-walking every ancestor directory's patterns each time. Not safe
-    // for concurrent use; IsIgnored is only called from the scanner's sequential file walk.
-    private readonly Dictionary<string, bool> _directoryIgnoreCache = new();
+    /// <summary>
+    /// Caches the cumulative ignored/not-ignored state through each ancestor directory, so
+    /// sibling files under the same directory only re-evaluate patterns for their own leaf
+    /// name instead of re-walking every ancestor directory's patterns each time. Not safe
+    /// for concurrent use; IsIgnored, IsDirectoryIgnored, and WalkBuilder.Add are only called from
+    /// the scanner's sequential directory and file walks.
+    /// </summary>
+    private readonly Dictionary<string, bool> _directoryIgnoreCache;
 
-    private readonly IReadOnlyList<GitIgnoreFile> _files;
+    /// <summary>
+    /// The ignore files, lowest precedence first.
+    /// </summary>
+    private readonly List<GitIgnoreFile> _files;
 
     /// <summary>
     /// The scan root's <c>/</c>-separated path relative to the root of the repository the
@@ -36,14 +42,29 @@ public sealed class GitIgnoreRules
     private readonly string _scanPrefix;
 
     /// <summary>
+    /// Whether patterns added through <see cref="WalkBuilder.Add"/> match case-insensitively.
+    /// </summary>
+    private readonly bool _ignoreCase;
+
+    /// <summary>
+    /// The number of path segments of <see cref="_scanPrefix"/>, i.e. the depth of the scan
+    /// root, above which (and at which) directories are never treated as ignored.
+    /// </summary>
+    private readonly int _firstDepth;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GitIgnoreRules"/> class.
     /// </summary>
     /// <param name="files">The ignore files, lowest precedence first.</param>
     /// <param name="scanPrefix">The scan root's repository-relative directory.</param>
-    private GitIgnoreRules(IReadOnlyList<GitIgnoreFile> files, string scanPrefix = "")
+    /// <param name="ignoreCase">Whether patterns added later by <see cref="WalkBuilder.Add"/> match case-insensitively.</param>
+    private GitIgnoreRules(List<GitIgnoreFile> files, string scanPrefix = "", bool ignoreCase = false)
     {
         _files = files;
         _scanPrefix = scanPrefix;
+        _ignoreCase = ignoreCase;
+        _directoryIgnoreCache = new Dictionary<string, bool>(ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        _firstDepth = scanPrefix.Length == 0 ? 0 : scanPrefix.Count(static c => c == '/') + 1;
     }
 
     /// <summary>
@@ -68,7 +89,7 @@ public sealed class GitIgnoreRules
         var patterns = CompilePatterns(lines, ignoreCase);
         return new GitIgnoreRules(patterns.Count == 0
             ? []
-            : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns, ignoreCase)]);
+            : [new GitIgnoreFile(NormalizeBase(baseDirectory), patterns, ignoreCase)], ignoreCase: ignoreCase);
     }
 
     /// <summary>
@@ -135,7 +156,134 @@ public sealed class GitIgnoreRules
     /// </summary>
     /// <param name="relativePath">The path relative to the scan root.</param>
     /// <returns><see langword="true"/> if the path is ignored.</returns>
-    public bool IsIgnored(string relativePath)
+    public bool IsIgnored(string relativePath) => IsIgnored(relativePath, leafIsDirectory: false);
+
+    /// <summary>
+    /// Determines whether the given directory (relative to the scan root, using either
+    /// separator) is ignored, i.e. whether git would not descend into it. Unlike
+    /// <see cref="IsIgnored(string)"/>, the last segment is matched as a directory, so
+    /// patterns ending in <c>/</c> apply to it.
+    /// </summary>
+    /// <param name="relativePath">The directory path relative to the scan root.</param>
+    /// <returns><see langword="true"/> if the directory is ignored.</returns>
+    internal bool IsDirectoryIgnored(string relativePath) => IsIgnored(relativePath, leafIsDirectory: true);
+
+    /// <summary>
+    /// Starts a rule set that grows as a directory walk discovers <c>.gitignore</c> files
+    /// (see <see cref="WalkBuilder.Add"/>), so the walk can ask <see cref="WalkBuilder.IsDirectoryIgnored"/>
+    /// about a directory before descending into it. Holds the same lowest-precedence sources
+    /// as <see cref="FromWalk"/>: the global excludes file, <c>info/exclude</c>, and the files
+    /// above the scan root.
+    /// </summary>
+    /// <param name="workTree">The working tree the scan root belongs to, if any.</param>
+    /// <param name="ignoreCase">Whether patterns match case-insensitively (git's <c>core.ignoreCase</c>).</param>
+    /// <param name="scanPrefix">The scan root's <c>/</c>-separated repository-relative directory.</param>
+    /// <param name="ancestorFiles">The <c>.gitignore</c> files above the scan root, with repository-relative bases.</param>
+    /// <returns>A builder that must be finished with <see cref="WalkBuilder.Complete"/>.</returns>
+    internal static WalkBuilder CreateWalkBuilder(
+        GitWorkTree? workTree,
+        bool ignoreCase,
+        string scanPrefix,
+        IReadOnlyList<GitIgnoreFile> ancestorFiles)
+    {
+        var files = new List<GitIgnoreFile>();
+        AddIfPresent(files, LoadGlobalExcludesFile(workTree, ignoreCase));
+        AddIfPresent(files, LoadRepoExcludeFile(workTree, ignoreCase));
+        files.AddRange(ancestorFiles);
+        return new WalkBuilder(new GitIgnoreRules(files, scanPrefix, ignoreCase));
+    }
+
+    /// <summary>
+    /// A rule set under construction by a directory walk. It is the only way to add files to a
+    /// <see cref="GitIgnoreRules"/> after creation, and <see cref="Complete"/> ends its life, so
+    /// the walk-time state (insertion order, partially filled cache) can never leak into the
+    /// rules the scan applies afterwards.
+    /// </summary>
+    internal sealed class WalkBuilder
+    {
+        /// <summary>
+        /// The growing rule set; never exposed.
+        /// </summary>
+        private readonly GitIgnoreRules _rules;
+
+        /// <summary>
+        /// Whether <see cref="Complete"/> has been called.
+        /// </summary>
+        private bool _completed;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="WalkBuilder"/> class.
+        /// </summary>
+        /// <param name="rules">The rule set to grow.</param>
+        internal WalkBuilder(GitIgnoreRules rules)
+        {
+            _rules = rules;
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether no patterns have been loaded or added yet.
+        /// </summary>
+        internal bool IsEmpty => _rules.IsEmpty;
+
+        /// <summary>
+        /// Adds a <c>.gitignore</c> file found by a directory walk. Files must be added parents
+        /// first (as a depth-first walk visits them) so that a deeper file takes precedence. No
+        /// cached directory state needs dropping: the walk adds a directory's file before it queries
+        /// anything below that directory, and a directory's own state does not depend on its own file.
+        /// </summary>
+        /// <param name="baseDirectory">The file's directory relative to the scan root, in <see cref="NormalizeBase"/> form.</param>
+        /// <param name="patterns">The file's compiled patterns.</param>
+        internal void Add(string baseDirectory, IReadOnlyList<GitIgnorePattern> patterns)
+        {
+            ThrowIfCompleted();
+            var combinedBase = RelativePathResolver.Combine(_rules._scanPrefix, baseDirectory);
+            _rules._files.Add(new GitIgnoreFile(combinedBase, patterns, _rules._ignoreCase));
+        }
+
+        /// <summary>
+        /// Determines whether git would not descend into the given directory, using the files
+        /// added so far.
+        /// </summary>
+        /// <param name="relativePath">The directory path relative to the scan root.</param>
+        /// <returns><see langword="true"/> if the directory is ignored.</returns>
+        internal bool IsDirectoryIgnored(string relativePath)
+        {
+            ThrowIfCompleted();
+            return _rules.IsDirectoryIgnored(relativePath);
+        }
+
+        /// <summary>
+        /// Finishes the rule set and returns it. The directory states cached during the walk are
+        /// kept: they were computed from exactly these files, added parents first. The builder
+        /// cannot be used afterwards.
+        /// </summary>
+        /// <returns>The finished rule set.</returns>
+        internal GitIgnoreRules Complete()
+        {
+            ThrowIfCompleted();
+            _completed = true;
+            return _rules;
+        }
+
+        /// <summary>
+        /// Throws if <see cref="Complete"/> has already been called.
+        /// </summary>
+        private void ThrowIfCompleted()
+        {
+            if (_completed)
+            {
+                throw new InvalidOperationException("The rule set has already been completed.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shared implementation of <see cref="IsIgnored(string)"/> and <see cref="IsDirectoryIgnored"/>.
+    /// </summary>
+    /// <param name="relativePath">The path relative to the scan root.</param>
+    /// <param name="leafIsDirectory">Whether the last segment is matched as a directory.</param>
+    /// <returns><see langword="true"/> if the path is ignored.</returns>
+    private bool IsIgnored(string relativePath, bool leafIsDirectory)
     {
         ArgumentNullException.ThrowIfNull(relativePath);
 
@@ -150,7 +298,8 @@ public sealed class GitIgnoreRules
             return false;
         }
 
-        var segments = RelativePathResolver.Combine(_scanPrefix, normalized).Split('/');
+        var path = RelativePathResolver.Combine(_scanPrefix, normalized);
+        var cache = _directoryIgnoreCache.GetAlternateLookup<ReadOnlySpan<char>>();
         var ignored = false;
 
         // Evaluate each ancestor directory then the leaf, last match wins within a given
@@ -161,13 +310,25 @@ public sealed class GitIgnoreRules
         // state is cached, since many files typically share the same parent directories.
         // The scan root and the directories above it are skipped: the scan was explicitly
         // asked for, so it is not dropped as a whole even when the repository ignores it.
-        var firstDepth = _scanPrefix.Length == 0 ? 0 : _scanPrefix.Count(static c => c == '/') + 1;
-        for (var depth = firstDepth; depth < segments.Length; depth++)
+        // Segments are walked by index and the cache is probed with a span, so the only
+        // allocation per uncached segment is its own path string (shared with the cache key).
+        var depth = 0;
+        var start = 0;
+        while (start < path.Length)
         {
-            var isDirectory = depth < segments.Length - 1;
-            var partial = string.Join('/', segments, 0, depth + 1);
+            var slash = path.IndexOf('/', start);
+            var end = slash < 0 ? path.Length : slash;
+            var currentDepth = depth++;
+            start = end + 1;
+            if (currentDepth < _firstDepth)
+            {
+                continue;
+            }
 
-            if (isDirectory && _directoryIgnoreCache.TryGetValue(partial, out var cached))
+            var isDirectory = leafIsDirectory || slash >= 0;
+            var partial = path.AsSpan(0, end);
+
+            if (isDirectory && cache.TryGetValue(partial, out var cached))
             {
                 ignored = cached;
                 continue;
@@ -177,13 +338,15 @@ public sealed class GitIgnoreRules
             {
                 if (isDirectory)
                 {
-                    _directoryIgnoreCache[partial] = true;
+                    cache[partial] = true;
                 }
 
                 continue;
             }
 
-            var decision = Evaluate(partial, isDirectory);
+            // One string serves both the pattern match and the cache key.
+            var partialPath = path[..end];
+            var decision = Evaluate(partialPath, isDirectory);
             if (decision.HasValue)
             {
                 ignored = decision.Value;
@@ -191,7 +354,7 @@ public sealed class GitIgnoreRules
 
             if (isDirectory)
             {
-                _directoryIgnoreCache[partial] = ignored;
+                _directoryIgnoreCache[partialPath] = ignored;
             }
         }
 
@@ -240,16 +403,16 @@ public sealed class GitIgnoreRules
         // Lowest precedence first: the user's global excludesFile, then the repository's
         // info/exclude, then the per-directory .gitignore files from the repository root
         // down (the ones above the scan root, then the scan root's, then nested ones). The
-        // first three all share BaseDirectory "", so a stable sort (not List<T>.Sort, which
-        // isn't stable) is required to preserve this relative order.
-        var files = new List<GitIgnoreFile>();
-        AddIfPresent(files, LoadGlobalExcludesFile(workTree, ignoreCase));
-        AddIfPresent(files, LoadRepoExcludeFile(workTree, ignoreCase));
-        files.AddRange(ancestorFiles);
-        files.AddRange(walkedFiles.Select(file =>
-            new GitIgnoreFile(RelativePathResolver.Combine(scanPrefix, file.BaseDirectory), file.Patterns, ignoreCase)));
+        // first three all share BaseDirectory "", so they are added first, in that order. The
+        // walked files may arrive in any order, so they are sorted shallowest first (stable, as
+        // the builder expects parents before children).
+        var builder = CreateWalkBuilder(workTree, ignoreCase, scanPrefix, ancestorFiles);
+        foreach (var file in walkedFiles.OrderBy(file => file.BaseDirectory.Length))
+        {
+            builder.Add(file.BaseDirectory, file.Patterns);
+        }
 
-        return new GitIgnoreRules(files.OrderBy(file => file.BaseDirectory.Length).ToList(), scanPrefix);
+        return builder.Complete();
     }
 
     /// <summary>

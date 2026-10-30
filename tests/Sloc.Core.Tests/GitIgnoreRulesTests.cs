@@ -20,6 +20,247 @@ public class GitIgnoreRulesTests
     }
 
     /// <summary>
+    /// Verifies that <see cref="GitIgnoreRules.IsDirectoryIgnored"/> matches the path as a
+    /// directory, so a directory-only pattern ignores it while <see cref="GitIgnoreRules.IsIgnored"/>
+    /// treats the same path as a file, and that anything below an ignored directory stays ignored.
+    /// </summary>
+    [Fact]
+    public void IsDirectoryIgnored_DirectoryOnlyPattern_MatchesDirectoryButNotFile()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["build/", "!build/keep/"]);
+
+        Assert.True(rules.IsDirectoryIgnored("build"));
+        Assert.True(rules.IsDirectoryIgnored("src/build"));
+        Assert.True(rules.IsDirectoryIgnored("build/keep"));
+        Assert.False(rules.IsDirectoryIgnored("src"));
+        Assert.False(rules.IsIgnored("build"));
+    }
+
+    /// <summary>
+    /// Verifies that querying a path as a directory and as a file, in either order, never leaks
+    /// the cached directory state into the other kind of query.
+    /// </summary>
+    /// <param name="directoryFirst">Whether the directory query runs before the file query.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void IsIgnored_SamePathQueriedAsFileAndDirectory_KeepsResultsIndependent(bool directoryFirst)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["build/"]);
+
+        bool asDirectory;
+        bool asFile;
+        if (directoryFirst)
+        {
+            asDirectory = rules.IsDirectoryIgnored("build");
+            asFile = rules.IsIgnored("build");
+        }
+        else
+        {
+            asFile = rules.IsIgnored("build");
+            asDirectory = rules.IsDirectoryIgnored("build");
+        }
+
+        Assert.True(asDirectory);
+        Assert.False(asFile);
+        Assert.True(rules.IsIgnored("build/x.cs"));
+    }
+
+    /// <summary>
+    /// Verifies that rule files added while walking apply to the directories below their own
+    /// base only, and that a later (deeper) file overrides an earlier one.
+    /// </summary>
+    [Fact]
+    public void WalkBuilderAdd_DeeperFile_AppliesBelowItsBaseAndOverridesParent()
+    {
+        var rules = GitIgnoreRules.CreateWalkBuilder(workTree: null, ignoreCase: false, scanPrefix: string.Empty, ancestorFiles: []);
+        rules.Add(string.Empty, GitIgnoreRules.CompilePatterns(["cache/"], ignoreCase: false));
+        rules.Add("pkg", GitIgnoreRules.CompilePatterns(["!cache/", "out/"], ignoreCase: false));
+
+        Assert.True(rules.IsDirectoryIgnored("cache"));
+        Assert.False(rules.IsDirectoryIgnored("pkg/cache"));
+        Assert.True(rules.IsDirectoryIgnored("pkg/out"));
+        Assert.False(rules.IsDirectoryIgnored("other/out"));
+    }
+
+    /// <summary>
+    /// Verifies the order a depth-first walk uses: a directory is queried (to decide whether to
+    /// descend) before its own rule file is added, and that file then applies to everything below
+    /// it, while unrelated directories (including one sharing the base as a name prefix) are unaffected.
+    /// </summary>
+    [Fact]
+    public void WalkBuilderAdd_AfterDirectoryItselfQueried_AppliesBelowItsBase()
+    {
+        var rules = GitIgnoreRules.CreateWalkBuilder(workTree: null, ignoreCase: false, scanPrefix: string.Empty, ancestorFiles: []);
+        rules.Add(string.Empty, GitIgnoreRules.CompilePatterns(["*.tmp/"], ignoreCase: false));
+        Assert.False(rules.IsDirectoryIgnored("pkg"));
+        Assert.False(rules.IsDirectoryIgnored("pkg2/cache"));
+        Assert.True(rules.IsDirectoryIgnored("pkg2/x.tmp"));
+
+        rules.Add("pkg", GitIgnoreRules.CompilePatterns(["cache/"], ignoreCase: false));
+
+        Assert.True(rules.IsDirectoryIgnored("pkg/cache"));
+        Assert.True(rules.IsDirectoryIgnored("pkg/sub/cache"));
+        Assert.False(rules.IsDirectoryIgnored("pkg2/cache"));
+        Assert.True(rules.IsDirectoryIgnored("pkg2/x.tmp"));
+    }
+
+    /// <summary>
+    /// Verifies that with case-insensitive rules a differently-cased spelling of a directory
+    /// reuses (and agrees with) the cached state.
+    /// </summary>
+    [Fact]
+    public void IsDirectoryIgnored_IgnoreCase_DifferentlyCasedDirectoriesAgree()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["venv/"], ignoreCase: true);
+
+        Assert.True(rules.IsDirectoryIgnored("venv"));
+        Assert.True(rules.IsDirectoryIgnored("VENV"));
+        Assert.True(rules.IsIgnored("Venv/mod.cs"));
+    }
+
+    /// <summary>
+    /// Verifies that a trailing or doubled separator does not change the answer for a path.
+    /// </summary>
+    [Theory]
+    [InlineData("build/")]
+    [InlineData("build\\")]
+    [InlineData("/build/")]
+    public void IsDirectoryIgnored_TrailingSeparator_SameAsBarePath(string path)
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["build/"]);
+
+        Assert.True(rules.IsDirectoryIgnored(path));
+        Assert.False(rules.IsIgnored(path));
+    }
+
+    /// <summary>
+    /// Verifies that a rule set created for a case-insensitive file system matches directories
+    /// regardless of case, including ones below a scan prefix, and queries stay consistent when
+    /// repeated (answered from the directory cache).
+    /// </summary>
+    [Fact]
+    public void IsDirectoryIgnored_IgnoreCaseWithScanPrefix_MatchesRegardlessOfCase()
+    {
+        var rules = GitIgnoreRules.CreateWalkBuilder(workTree: null, ignoreCase: true, scanPrefix: "repo", ancestorFiles: []);
+        rules.Add(string.Empty, GitIgnoreRules.CompilePatterns(["Build/"], ignoreCase: true));
+
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.True(rules.IsDirectoryIgnored("build"));
+            Assert.True(rules.IsDirectoryIgnored("sub/BUILD"));
+            Assert.True(rules.IsDirectoryIgnored("BUILD/sub"));
+            Assert.False(rules.IsDirectoryIgnored("src"));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that repeated queries, which are answered from the cached state of shared parent
+    /// directories, give the same answers as the first: an ignored directory locks its contents
+    /// even against a negation, and unrelated siblings are unaffected.
+    /// </summary>
+    [Fact]
+    public void IsIgnored_RepeatedQueriesUnderCachedDirectories_StayConsistent()
+    {
+        var rules = GitIgnoreRules.FromLines(string.Empty, ["out/", "!out/keep.txt", "*.log"]);
+
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.True(rules.IsIgnored("out/a.txt"));
+            Assert.True(rules.IsIgnored("out/keep.txt"));
+            Assert.True(rules.IsIgnored("out/deep/er/b.txt"));
+            Assert.True(rules.IsIgnored("src/x.log"));
+            Assert.False(rules.IsIgnored("src/x.cs"));
+            Assert.False(rules.IsIgnored("src/deep/er/y.cs"));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a rule set grown parent-first by <see cref="GitIgnoreRules.WalkBuilder.Add"/>
+    /// (as the scanner's walk does, and then uses as is) decides exactly like one built by
+    /// <see cref="GitIgnoreRules.FromWalk"/> from the same files in a scrambled order, which sorts
+    /// them: deeper files override shallower ones, ancestors above the scan root come first.
+    /// </summary>
+    [Fact]
+    public void WalkBuilderAdd_ParentFirst_MatchesFromWalkWithScrambledOrder()
+    {
+        // The scan root is "repo/sub"; the two ancestors lie strictly above it, shallowest first.
+        GitIgnoreRules.GitIgnoreFile[] ancestors =
+        [
+            new(string.Empty, GitIgnoreRules.CompilePatterns(["*.gen.cs"], ignoreCase: false), ignoreCase: false),
+            new("repo", GitIgnoreRules.CompilePatterns(["!keep.gen.cs"], ignoreCase: false), ignoreCase: false)
+        ];
+        GitIgnoreRules.GitIgnoreFile[] walked =
+        [
+            new(string.Empty, GitIgnoreRules.CompilePatterns(["!a.gen.cs"], ignoreCase: false), ignoreCase: false),
+            new("inner", GitIgnoreRules.CompilePatterns(["a.gen.cs"], ignoreCase: false), ignoreCase: false),
+            new("inner/deep", GitIgnoreRules.CompilePatterns(["!a.gen.cs"], ignoreCase: false), ignoreCase: false)
+        ];
+
+        var builder = GitIgnoreRules.CreateWalkBuilder(workTree: null, ignoreCase: false, scanPrefix: "repo/sub", ancestorFiles: ancestors);
+        foreach (var file in walked)
+        {
+            builder.Add(file.BaseDirectory, file.Patterns);
+        }
+
+        var grown = builder.Complete();
+
+        var sorted = GitIgnoreRules.FromWalk(
+            workTree: null, [walked[2], walked[0], walked[1]], ignoreCase: false, scanPrefix: "repo/sub", ancestorFiles: ancestors);
+
+        string[] paths =
+        [
+            "keep.gen.cs", "other.gen.cs", "a.gen.cs", "inner/a.gen.cs", "inner/keep.gen.cs",
+            "inner/other.gen.cs", "inner/deep/a.gen.cs", "inner/deep/other.gen.cs"
+        ];
+        Assert.All(paths, path => Assert.Equal(sorted.IsIgnored(path), grown.IsIgnored(path)));
+        Assert.False(grown.IsIgnored("keep.gen.cs"));
+        Assert.True(grown.IsIgnored("other.gen.cs"));
+        Assert.False(grown.IsIgnored("a.gen.cs"));
+        Assert.True(grown.IsIgnored("inner/a.gen.cs"));
+        Assert.False(grown.IsIgnored("inner/keep.gen.cs"));
+        Assert.False(grown.IsIgnored("inner/deep/a.gen.cs"));
+        Assert.True(grown.IsIgnored("inner/deep/other.gen.cs"));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="GitIgnoreRules.FromWalk"/> restores precedence when rule files
+    /// are given deepest first: deeper files still override shallower ones.
+    /// </summary>
+    [Fact]
+    public void FromWalk_FilesDeepestFirst_DeeperFilesStillOverrideParents()
+    {
+        GitIgnoreRules.GitIgnoreFile[] walked =
+        [
+            new("inner/deep", GitIgnoreRules.CompilePatterns(["!a.gen.cs"], ignoreCase: false), ignoreCase: false),
+            new("inner", GitIgnoreRules.CompilePatterns(["a.gen.cs"], ignoreCase: false), ignoreCase: false),
+            new(string.Empty, GitIgnoreRules.CompilePatterns(["*.gen.cs"], ignoreCase: false), ignoreCase: false)
+        ];
+
+        var completed = GitIgnoreRules.FromWalk(
+            workTree: null, walked, ignoreCase: false, scanPrefix: string.Empty, ancestorFiles: []);
+
+        Assert.True(completed.IsIgnored("x.gen.cs"));
+        Assert.True(completed.IsIgnored("inner/a.gen.cs"));
+        Assert.False(completed.IsIgnored("inner/deep/a.gen.cs"));
+        Assert.True(completed.IsIgnored("inner/deep/b.gen.cs"));
+    }
+
+    /// <summary>
+    /// Verifies that a builder cannot be used once it has produced its rule set.
+    /// </summary>
+    [Fact]
+    public void WalkBuilder_UsedAfterComplete_Throws()
+    {
+        var builder = GitIgnoreRules.CreateWalkBuilder(workTree: null, ignoreCase: false, scanPrefix: string.Empty, ancestorFiles: []);
+        builder.Complete();
+
+        Assert.Throws<InvalidOperationException>(() => builder.Add(string.Empty, GitIgnoreRules.CompilePatterns(["a"], ignoreCase: false)));
+        Assert.Throws<InvalidOperationException>(() => builder.IsDirectoryIgnored("a"));
+        Assert.Throws<InvalidOperationException>(() => builder.Complete());
+    }
+
+    /// <summary>
     /// Verifies that a leading slash anchors the pattern to the base directory root.
     /// </summary>
     [Theory]

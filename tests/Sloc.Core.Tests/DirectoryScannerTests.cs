@@ -505,6 +505,173 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that the walk does not descend into a directory a <c>.gitignore</c> ignores
+    /// (neither its files nor its subdirectories are visited), while a scan that does not honor
+    /// <c>.gitignore</c> still visits it.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignore_DoesNotDescendIntoIgnoredDirectory()
+    {
+        Write(".gitignore", "venv/\n");
+        Write("keep.cs", "// keep");
+        Write("venv/lib/pkg/mod.cs", "// ignored");
+        Write("src/app.cs", "// app");
+
+        var pruned = new List<string>();
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => pruned.Add(Relative(path)));
+        var unpruned = new List<string>();
+        _scanner.Scan(_root, new ScanOptions { RespectGitignore = false }, onGitignoreScan: (_, path) => unpruned.Add(Relative(path)));
+
+        Assert.Equal(["keep.cs", "src/app.cs"], result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain(pruned, p => p.StartsWith("venv", StringComparison.Ordinal));
+        Assert.Contains(unpruned, p => p == "venv/lib/pkg");
+    }
+
+    /// <summary>
+    /// Verifies that a <c>.gitignore</c> in a subdirectory prunes its own subdirectories, relative
+    /// to its base, and that a negation deeper inside an ignored directory cannot re-include
+    /// anything (git never descends into it).
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignore_NestedIgnoreFilePrunesRelativeToItsBase()
+    {
+        Write("app/.gitignore", "/generated/\nvendor/\n");
+        Write("app/generated/.gitignore", "!*.cs\n");
+        Write("app/generated/out.cs", "// ignored");
+        Write("app/vendor/deep/lib.cs", "// ignored");
+        Write("app/src/generated/kept.cs", "// not anchored, so kept");
+        Write("generated/top.cs", "// outside app, kept");
+
+        var visited = new List<string>();
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+
+        Assert.Equal(
+            ["app/src/generated/kept.cs", "generated/top.cs"],
+            result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain(visited, p => p.StartsWith("app/generated", StringComparison.Ordinal) || p.StartsWith("app/vendor", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies that a followed symlinked directory that a <c>.gitignore</c> ignores is not
+    /// descended into either, so nothing behind it is read.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignoreFollowSymlinks_DoesNotDescendIntoIgnoredLink()
+    {
+        Write(".gitignore", "venv\n");
+        Write("keep.cs", "// keep");
+        Write("external/lib/mod.cs", "// behind the link");
+        var external = Path.Combine(_root, "external");
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(_root, "venv"), external);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Creating symbolic links requires elevated privileges or developer mode.");
+        }
+
+        var visited = new List<string>();
+        var result = _scanner.Scan(
+            _root,
+            new ScanOptions { RespectGitignore = true, FollowSymlinks = true },
+            onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+
+        Assert.DoesNotContain(visited, p => p.StartsWith("venv", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Files, f => Relative(f.Path).StartsWith("venv", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies that a scan of a subdirectory prunes directories ignored by a <c>.gitignore</c>
+    /// above the scan root, with the pattern anchored at the repository root.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignoreSubdirectory_AncestorIgnoreFilePrunesDirectories()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "/app/venv/\ngenerated/\n");
+        Write("app/keep.cs", "// keep");
+        Write("app/venv/mod.cs", "// ignored");
+        Write("app/src/generated/out.cs", "// ignored");
+        Write("app/src/real.cs", "// keep");
+
+        var visited = new List<string>();
+        var result = _scanner.Scan(
+            Path.Combine(_root, "app"),
+            new ScanOptions { RespectGitignore = true },
+            onGitignoreScan: (_, path) => visited.Add(path));
+
+        Assert.Equal(["keep.cs", "src/real.cs"], result.Files.Select(f => Path.GetRelativePath(Path.Combine(_root, "app"), f.Path).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain(visited, p => p.Contains("venv", StringComparison.Ordinal) || p.Contains("generated", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies that with the repository's <c>core.ignoreCase</c> on, a directory pattern also
+    /// prunes a differently-cased directory, and with it off, it does not.
+    /// </summary>
+    /// <param name="ignoreCase">The <c>core.ignoreCase</c> value written to <c>.git/config</c>.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Scan_RespectGitignore_IgnoreCaseSettingControlsPruning(bool ignoreCase)
+    {
+        Write(".git/config", $"[core]\n\tignorecase = {ignoreCase}\n");
+        Write(".gitignore", "venv/\n");
+        Write("keep.cs", "// keep");
+        Write("VENV/mod.cs", "// ignored only when case-insensitive");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(ignoreCase ? ["keep.cs"] : ["VENV/mod.cs", "keep.cs"], names);
+    }
+
+    /// <summary>
+    /// Verifies that a non-recursive scan honoring <c>.gitignore</c> keeps the files directly in
+    /// the root and does not look into subdirectories at all.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignoreNonRecursive_OnlyRootFilesAreReturned()
+    {
+        Write(".gitignore", "venv/\n*.tmp.cs\n");
+        Write("keep.cs", "// keep");
+        Write("drop.tmp.cs", "// ignored");
+        Write("venv/mod.cs", "// ignored");
+        Write("src/app.cs", "// not recursive");
+
+        var visited = new List<string>();
+        var result = _scanner.Scan(
+            _root,
+            new ScanOptions { RespectGitignore = true, Recursive = false },
+            onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+
+        Assert.Equal(["keep.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
+        Assert.DoesNotContain(visited, p => p.StartsWith("venv", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies that a directory-only pattern (<c>build/</c>) does not prune or ignore a
+    /// regular file of the same name, and that the scan root itself is never pruned even when
+    /// a pattern would ignore it.
+    /// </summary>
+    [Fact]
+    public void Scan_RespectGitignore_DirectoryOnlyPatternSparesFilesAndScanRoot()
+    {
+        var root = Path.Combine(_root, "build");
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "build/\n");
+        Write("build/inside.cs", "// scanned explicitly");
+        Write("sub/build", "file named like the directory");
+
+        var rootScan = _scanner.Scan(root, new ScanOptions { RespectGitignore = true });
+        var fileScan = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+
+        Assert.Equal(["inside.cs"], rootScan.Files.Select(f => Path.GetFileName(f.Path)).ToArray());
+        Assert.Contains(fileScan.Files, f => Relative(f.Path) == "sub/build");
+        Assert.DoesNotContain(fileScan.Files, f => Relative(f.Path) == "build/inside.cs");
+    }
+
+    /// <summary>
     /// Verifies that a non-recursive scan does not descend into subdirectories to search for
     /// nested <c>.gitignore</c> files, matching the shallow file discovery it performs.
     /// </summary>
@@ -1120,6 +1287,58 @@ public sealed class DirectoryScannerTests : IDisposable
         {
             CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
         }
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal("sub", Relative(skipped.Path));
+    }
+
+    /// <summary>
+    /// Verifies the precedence of rule files when scanning a subdirectory of a repository: a
+    /// deeper <c>.gitignore</c> overrides the ones above it, including the one above the
+    /// scan root, both ways (a negation, then an ignore again).
+    /// </summary>
+    [Fact]
+    public void Scan_SubdirectoryWithAncestorAndNestedRules_DeeperFilesTakePrecedence()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "*.gen.cs\n");
+        Write("sub/.gitignore", "!keep.gen.cs\n");
+        Write("sub/inner/.gitignore", "inner.gen.cs\n");
+        Write("sub/inner/deep/.gitignore", "*.gen.cs\n");
+        foreach (var file in new[]
+        {
+            "sub/keep.gen.cs", "sub/other.gen.cs", "sub/inner/keep.gen.cs", "sub/inner/inner.gen.cs",
+            "sub/inner/deep/keep.gen.cs", "sub/inner/deep/ok.cs"
+        })
+        {
+            Write(file, "// x");
+        }
+
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true });
+
+        Assert.Equal(
+            ["sub/inner/deep/ok.cs", "sub/inner/keep.gen.cs", "sub/keep.gen.cs"],
+            result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// Verifies that a nested repository inside a directory the <c>.gitignore</c> ignores is
+    /// not walked and not reported as skipped (the walk never reaches it), while a nested
+    /// repository elsewhere is still reported.
+    /// </summary>
+    [Fact]
+    public void Scan_NestedRepositoryInsideIgnoredDirectory_IsNotReported()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        Write(".gitignore", "vendor/\n");
+        Write("a.cs", "// a");
+        Write("vendor/lib/b.cs", "// ignored");
+        CreateRepositoryDirectory(Path.Combine(_root, "vendor", "lib", ".git"));
+        Write("sub/c.cs", "// submodule");
+        CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
 
         var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
 
