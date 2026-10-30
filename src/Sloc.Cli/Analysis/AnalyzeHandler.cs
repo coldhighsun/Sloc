@@ -578,10 +578,12 @@ public sealed partial class AnalyzeHandler
 
         var watchDir = Directory.Exists(options.Path) ? options.Path : Path.GetDirectoryName(Path.GetFullPath(options.Path)) ?? ".";
 
-        var cancellationRequested = false;
         // Signaled immediately on Ctrl+C so the debounce wait below wakes up right away,
         // instead of a plain Thread.Sleep leaving Ctrl+C waiting out the rest of the interval.
-        using var cancelSignal = new ManualResetEventSlim(false);
+        // Also the cancellation flag itself: its state is safe to read across threads. Deliberately
+        // not disposed: a late Ctrl+C can still run the handler on another thread while this method
+        // unwinds, and an event whose WaitHandle was never requested holds no unmanaged resources.
+        var cancelSignal = new ManualResetEventSlim(false);
         Console.CancelKeyPress += OnCancelKeyPress;
 
         AnalysisSummary? lastSummary = null;
@@ -661,11 +663,13 @@ public sealed partial class AnalyzeHandler
                 {
                     ctx.Refresh();
 
-                    while (!cancellationRequested)
+                    var retry = new WatchRetryState();
+                    var clock = Stopwatch.StartNew();
+                    while (!cancelSignal.IsSet)
                     {
                         cancelSignal.Wait(WatchDebounceInterval);
 
-                        if (cancellationRequested)
+                        if (cancelSignal.IsSet)
                         {
                             break;
                         }
@@ -692,32 +696,39 @@ public sealed partial class AnalyzeHandler
                             Interlocked.Exchange(ref pendingChange, 1);
                         }
 
-                        if (Interlocked.Exchange(ref pendingChange, 0) == 0)
+                        var changePending = Interlocked.Exchange(ref pendingChange, 0) != 0;
+                        if (!retry.ShouldRescan(changePending, clock.Elapsed))
                         {
                             continue;
                         }
 
+                        retry.BeginRescan();
                         string caption;
                         try
                         {
                             lastSummary = RunWatchPass(options, scanOptions);
                             lastPassFailed = false;
-                            caption = $"[grey]Last update: {DateTime.Now:T}[/]";
+                            retry.Reset();
+                            caption = $"[grey]Last update: {DateTimeOffset.Now:T}[/]";
                         }
                         catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
                         {
                             // E.g. the watched directory was deleted or became unreadable:
                             // keep the last good table on screen instead of ending the watch.
                             lastPassFailed = true;
-                            if (!Directory.Exists(watchDir))
+                            var watchDirExists = Directory.Exists(watchDir);
+                            // A vanished directory is polled for, not retried on a timer; any other
+                            // failure is retried since no change event will announce it has cleared.
+                            retry.RecordFailedRescan(watchDirExists, clock.Elapsed);
+                            if (!watchDirExists)
                             {
                                 watcher?.Dispose();
                                 watcher = null;
-                                caption = $"[yellow]{Markup.Escape(watchDir)} was removed at {DateTime.Now:T}; waiting for it to reappear.[/]";
+                                caption = $"[yellow]{Markup.Escape(watchDir)} was removed at {DateTimeOffset.Now:T}; waiting for it to reappear.[/]";
                             }
                             else
                             {
-                                caption = $"[yellow]Rescan failed at {DateTime.Now:T}: {Markup.Escape(ex.Message)}[/]";
+                                caption = $"[yellow]Rescan failed at {DateTimeOffset.Now:T}: {Markup.Escape(ex.Message)}[/]";
                             }
                         }
 
@@ -740,7 +751,6 @@ public sealed partial class AnalyzeHandler
         void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
         {
             e.Cancel = true;
-            cancellationRequested = true;
             cancelSignal.Set();
         }
     }
