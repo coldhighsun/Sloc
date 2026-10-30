@@ -50,6 +50,10 @@ internal static class ScanTreeWalker
     /// read are added to this rule set as well as to <see cref="ScanTreeWalkResult.GitignoreFiles"/>,
     /// which is populated either way.
     /// </param>
+    /// <param name="cancellationToken">
+    /// Checked on entering each directory; cancelling aborts the walk with an
+    /// <see cref="OperationCanceledException"/>.
+    /// </param>
     /// <returns>Everything the walk collected.</returns>
     public static ScanTreeWalkResult Walk(
         string root,
@@ -62,7 +66,8 @@ internal static class ScanTreeWalker
         bool collectFiles,
         Action<int, string>? onDirectoryVisited,
         bool skipNestedRepositories = false,
-        GitIgnoreRules.WalkBuilder? pruneRules = null)
+        GitIgnoreRules.WalkBuilder? pruneRules = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(excludedDirectoryNames);
@@ -90,7 +95,7 @@ internal static class ScanTreeWalker
             fullRoot, realRoot, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
             collectGitignore, collectGitattributes, collectFiles,
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-            onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, collectGitignore ? pruneRules : null);
+            onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, collectGitignore ? pruneRules : null, cancellationToken);
 
         return new ScanTreeWalkResult(
             gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped);
@@ -136,6 +141,7 @@ internal static class ScanTreeWalker
     /// <param name="follow">The symlink-following state, or <see langword="null"/> when links are not followed.</param>
     /// <param name="skipNestedRepositories">Whether to skip subdirectories that are nested repositories.</param>
     /// <param name="pruneRules">The growing rule set that decides which subdirectories to skip, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Checked on entering each directory.</param>
     private static void Collect(
         string directory,
         string realDirectory,
@@ -157,8 +163,10 @@ internal static class ScanTreeWalker
         List<string> ancestors,
         FollowState? follow,
         bool skipNestedRepositories,
-        GitIgnoreRules.WalkBuilder? pruneRules)
+        GitIgnoreRules.WalkBuilder? pruneRules,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
 
@@ -302,7 +310,7 @@ internal static class ScanTreeWalker
                     subdirectory, realSubdirectory, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                     collectGitignore, collectGitattributes, collectFiles,
                     gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                    onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules);
+                    onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules, cancellationToken);
                 ancestors.RemoveAt(ancestors.Count - 1);
                 continue;
             }
@@ -346,7 +354,7 @@ internal static class ScanTreeWalker
                 subdirectory, resolution.Target!, normalizedRoot, excludedDirectoryNames, recursive, ignoreCase,
                 collectGitignore, collectGitattributes, collectFiles,
                 gitignoreFiles, attributesFiles, symlinkedDirectories, filePaths, symlinkedFilePaths, skipped,
-                onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules);
+                onDirectoryVisited, ref visited, ancestors, follow, skipNestedRepositories, pruneRules, cancellationToken);
             ancestors.RemoveAt(ancestors.Count - 1);
         }
     }

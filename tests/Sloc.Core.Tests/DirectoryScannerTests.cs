@@ -33,6 +33,24 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that an already-cancelled token aborts the tree walk, even with every
+    /// progress callback and .gitignore handling off.
+    /// </summary>
+    [Fact]
+    public void Scan_CancelledToken_ThrowsOperationCanceled()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "sub"));
+        File.WriteAllText(Path.Combine(_root, "sub", "a.cs"), "int x;");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.ThrowsAny<OperationCanceledException>(() => _scanner.Scan(
+            _root,
+            new ScanOptions { RespectGitignore = false, RespectGitAttributes = false },
+            cancellationToken: cts.Token));
+    }
+
+    /// <summary>
     /// Verifies that built-in directory excludes (e.g. bin, obj, node_modules) are applied.
     /// </summary>
     [Fact]
@@ -43,7 +61,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("obj/skip.cs", "// obj");
         Write("node_modules/skip.js", "// nm");
 
-        var result = _scanner.Scan(_root, new ScanOptions());
+        var result = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("keep.cs", result.Files[0].Path);
@@ -65,7 +83,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("Bin/app.cs", "// app");
         Write("keep.cs", "// keep");
 
-        var result = _scanner.Scan(_root, new ScanOptions());
+        var result = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
 
         Assert.Equal(ignoreCase ? ["keep.cs"] : ["Bin/app.cs", "keep.cs"], names);
@@ -80,7 +98,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("keep.cs", "// keep");
         Write("tests/drop.cs", "// drop");
 
-        var result = _scanner.Scan(_root, new ScanOptions { Excludes = ["**/tests/**"] });
+        var result = _scanner.Scan(_root, new ScanOptions { Excludes = ["**/tests/**"] }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("keep.cs", result.Files[0].Path);
@@ -96,7 +114,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("b.py", "print(1)");
 
-        var result = _scanner.Scan(_root, new ScanOptions { ExcludeLangs = ["Python"] });
+        var result = _scanner.Scan(_root, new ScanOptions { ExcludeLangs = ["Python"] }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("a.cs", result.Files[0].Path);
@@ -234,7 +252,7 @@ public sealed class DirectoryScannerTests : IDisposable
             return;
         }
 
-        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
         Assert.Contains("linked.cs", names);
@@ -260,7 +278,7 @@ public sealed class DirectoryScannerTests : IDisposable
             RespectGitignore = true,
             RespectGitAttributes = true,
             Excludes = ["**/generated/**"]
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
         Assert.Equal(["app.cs"], names);
@@ -275,7 +293,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("b.py", "print(1)");
 
-        var result = _scanner.Scan(_root, new ScanOptions { Includes = ["**/*.cs"] });
+        var result = _scanner.Scan(_root, new ScanOptions { Includes = ["**/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("a.cs", result.Files[0].Path);
@@ -291,7 +309,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("b.py", "print(1)");
 
-        var result = _scanner.Scan(_root, new ScanOptions { IncludeLangs = ["python"] });
+        var result = _scanner.Scan(_root, new ScanOptions { IncludeLangs = ["python"] }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("b.py", result.Files[0].Path);
@@ -317,7 +335,7 @@ public sealed class DirectoryScannerTests : IDisposable
         {
             Includes = ["**/*.cs"],
             Excludes = ["**/drop.cs"]
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
         Assert.Equal(["keep-a.cs", "keep-b.cs", "keep-c.cs"], names);
@@ -333,8 +351,8 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("data.unknownext", "raw");
 
-        var withoutUnknown = _scanner.Scan(_root, new ScanOptions());
-        var withUnknown = _scanner.Scan(_root, new ScanOptions { IncludeUnknown = true });
+        var withoutUnknown = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
+        var withUnknown = _scanner.Scan(_root, new ScanOptions { IncludeUnknown = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(withoutUnknown.Files);
         Assert.Equal(2, withUnknown.Files.Count);
@@ -349,7 +367,7 @@ public sealed class DirectoryScannerTests : IDisposable
     {
         var missing = Path.Combine(_root, "does-not-exist");
 
-        Assert.Throws<DirectoryNotFoundException>(() => _scanner.Scan(missing, new ScanOptions()));
+        Assert.Throws<DirectoryNotFoundException>(() => _scanner.Scan(missing, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -361,7 +379,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("sub/b.cs", "// nested");
 
-        var result = _scanner.Scan(_root, new ScanOptions { Recursive = false });
+        var result = _scanner.Scan(_root, new ScanOptions { Recursive = false }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("a.cs", result.Files[0].Path);
@@ -379,7 +397,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("sub/b.cs", "// nested");
 
-        var result = _scanner.Scan(_root, new ScanOptions { Recursive = false, Includes = ["**/*.cs"] });
+        var result = _scanner.Scan(_root, new ScanOptions { Recursive = false, Includes = ["**/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Files.Count);
     }
@@ -393,7 +411,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("a.cs", "// code");
         Write("sub/b.py", "print(1)");
 
-        var result = _scanner.Scan(_root, new ScanOptions());
+        var result = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Files.Count);
         Assert.Empty(result.Skipped);
@@ -411,12 +429,12 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("app.cs", "// app");
         Write("vendor/lib.cs", "// vendored");
 
-        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = true });
+        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = true }, cancellationToken: TestContext.Current.CancellationToken);
         var honoredNames = honored.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
 
         Assert.Equal(["app.cs"], honoredNames);
 
-        var toggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = false });
+        var toggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = false }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(toggleOff.Files, f => Path.GetFileName(f.Path) == "lib.cs");
     }
 
@@ -434,12 +452,12 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("app/main.cs", "// main");
         Write("app/generated.cs", "// generated");
 
-        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var honored = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
         var honoredNames = honored.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
 
         Assert.Equal(["keep.cs", "main.cs"], honoredNames);
 
-        var ignoredToggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false });
+        var ignoredToggleOff = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(ignoredToggleOff.Files, f => Path.GetFileName(f.Path) == "generated.cs");
     }
 
@@ -460,7 +478,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("vendor/lib.py", "# vendored");
         Write("main.py", "# main");
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
 
         Assert.Equal(ignoreCase ? ["main.py"] : ["app.cs", "main.py", "vendor/lib.py"], names);
@@ -481,7 +499,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("src/.gitattributes", "[attr]local linguist-generated\n*.py local\n");
         Write("src/app.py", "# app");
 
-        var result = _scanner.Scan(_root, new ScanOptions());
+        var result = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
 
         Assert.Equal(["extern/own/mine.py", "src/app.py"], names);
@@ -497,7 +515,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("drop.log", "noise");
         Write("keep.log", "wanted");
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true }, cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).ToArray();
 
         Assert.Contains("keep.log", names);
@@ -518,9 +536,9 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("src/app.cs", "// app");
 
         var pruned = new List<string>();
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => pruned.Add(Relative(path)));
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => pruned.Add(Relative(path)), cancellationToken: TestContext.Current.CancellationToken);
         var unpruned = new List<string>();
-        _scanner.Scan(_root, new ScanOptions { RespectGitignore = false }, onGitignoreScan: (_, path) => unpruned.Add(Relative(path)));
+        _scanner.Scan(_root, new ScanOptions { RespectGitignore = false }, onGitignoreScan: (_, path) => unpruned.Add(Relative(path)), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["keep.cs", "src/app.cs"], result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray());
         Assert.DoesNotContain(pruned, p => p.StartsWith("venv", StringComparison.Ordinal));
@@ -543,7 +561,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("generated/top.cs", "// outside app, kept");
 
         var visited = new List<string>();
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, onGitignoreScan: (_, path) => visited.Add(Relative(path)), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ["app/src/generated/kept.cs", "generated/top.cs"],
@@ -575,7 +593,7 @@ public sealed class DirectoryScannerTests : IDisposable
         var result = _scanner.Scan(
             _root,
             new ScanOptions { RespectGitignore = true, FollowSymlinks = true },
-            onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+            onGitignoreScan: (_, path) => visited.Add(Relative(path)), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(visited, p => p.StartsWith("venv", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Files, f => Relative(f.Path).StartsWith("venv", StringComparison.Ordinal));
@@ -599,7 +617,7 @@ public sealed class DirectoryScannerTests : IDisposable
         var result = _scanner.Scan(
             Path.Combine(_root, "app"),
             new ScanOptions { RespectGitignore = true },
-            onGitignoreScan: (_, path) => visited.Add(path));
+            onGitignoreScan: (_, path) => visited.Add(path), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["keep.cs", "src/real.cs"], result.Files.Select(f => Path.GetRelativePath(Path.Combine(_root, "app"), f.Path).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray());
         Assert.DoesNotContain(visited, p => p.Contains("venv", StringComparison.Ordinal) || p.Contains("generated", StringComparison.Ordinal));
@@ -620,7 +638,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("keep.cs", "// keep");
         Write("VENV/mod.cs", "// ignored only when case-insensitive");
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal).ToArray();
 
         Assert.Equal(ignoreCase ? ["keep.cs"] : ["VENV/mod.cs", "keep.cs"], names);
@@ -643,7 +661,7 @@ public sealed class DirectoryScannerTests : IDisposable
         var result = _scanner.Scan(
             _root,
             new ScanOptions { RespectGitignore = true, Recursive = false },
-            onGitignoreScan: (_, path) => visited.Add(Relative(path)));
+            onGitignoreScan: (_, path) => visited.Add(Relative(path)), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["keep.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
         Assert.DoesNotContain(visited, p => p.StartsWith("venv", StringComparison.Ordinal));
@@ -663,8 +681,8 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("build/inside.cs", "// scanned explicitly");
         Write("sub/build", "file named like the directory");
 
-        var rootScan = _scanner.Scan(root, new ScanOptions { RespectGitignore = true });
-        var fileScan = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+        var rootScan = _scanner.Scan(root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
+        var fileScan = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, IncludeUnknown = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["inside.cs"], rootScan.Files.Select(f => Path.GetFileName(f.Path)).ToArray());
         Assert.Contains(fileScan.Files, f => Relative(f.Path) == "sub/build");
@@ -683,7 +701,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("keep.cs", "// keep");
         Write("debug.log", "noise");
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, Recursive = false });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, Recursive = false }, cancellationToken: TestContext.Current.CancellationToken);
         var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
 
         Assert.Equal(["keep.cs"], names);
@@ -707,7 +725,7 @@ public sealed class DirectoryScannerTests : IDisposable
         ScanResult result;
         using (new FileStream(ruleFilePath, FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, RespectGitAttributes = true });
+            result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true, RespectGitAttributes = true }, cancellationToken: TestContext.Current.CancellationToken);
         }
 
         Assert.Equal(
@@ -742,7 +760,7 @@ public sealed class DirectoryScannerTests : IDisposable
     {
         var path = Write("solo.cs", "// solo");
 
-        var result = _scanner.Scan(path, new ScanOptions());
+        var result = _scanner.Scan(path, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Files);
         Assert.EndsWith("solo.cs", result.Files[0].Path);
@@ -761,10 +779,10 @@ public sealed class DirectoryScannerTests : IDisposable
 
         var ignoredPath = Path.Combine(_root, "debug.log");
 
-        var honored = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = true, IncludeUnknown = true });
+        var honored = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = true, IncludeUnknown = true }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(honored.Files);
 
-        var ignoredToggleOff = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = false, IncludeUnknown = true });
+        var ignoredToggleOff = _scanner.Scan(ignoredPath, new ScanOptions { RespectGitignore = false, IncludeUnknown = true }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(ignoredToggleOff.Files);
     }
 
@@ -778,10 +796,10 @@ public sealed class DirectoryScannerTests : IDisposable
     {
         var path = Write("sub/foo.cs", "// foo");
 
-        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/sub/*.cs"] });
+        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/sub/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(excluded.Files);
 
-        var notExcluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/other/*.cs"] });
+        var notExcluded = _scanner.Scan(path, new ScanOptions { Excludes = ["**/other/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(notExcluded.Files);
     }
 
@@ -795,10 +813,10 @@ public sealed class DirectoryScannerTests : IDisposable
     {
         var path = Write("foo.cs", "// foo");
 
-        var notMatched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.py"] });
+        var notMatched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.py"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(notMatched.Files);
 
-        var matched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.cs"] });
+        var matched = _scanner.Scan(path, new ScanOptions { Includes = ["**/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(matched.Files);
     }
 
@@ -812,16 +830,16 @@ public sealed class DirectoryScannerTests : IDisposable
     {
         var path = Write("sub/foo.cs", "// foo");
 
-        var included = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"] });
+        var included = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(included.Files);
 
-        var notIncluded = _scanner.Scan(path, new ScanOptions { Includes = ["*.py"] });
+        var notIncluded = _scanner.Scan(path, new ScanOptions { Includes = ["*.py"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(notIncluded.Files);
 
-        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["*.cs"] });
+        var excluded = _scanner.Scan(path, new ScanOptions { Excludes = ["*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(excluded.Files);
 
-        var excludedByDirectory = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"], Excludes = ["**/sub/**"] });
+        var excludedByDirectory = _scanner.Scan(path, new ScanOptions { Includes = ["*.cs"], Excludes = ["**/sub/**"] }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(excludedByDirectory.Files);
     }
 
@@ -840,11 +858,11 @@ public sealed class DirectoryScannerTests : IDisposable
         File.WriteAllText(path, "// foo");
         try
         {
-            var included = _scanner.Scan(path, new ScanOptions { Includes = [$"{dirName}/sub/*.cs"] });
+            var included = _scanner.Scan(path, new ScanOptions { Includes = [$"{dirName}/sub/*.cs"] }, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Single(included.Files);
 
             // The current directory's own name only appears above it, so it must not exclude.
-            var aboveCwd = _scanner.Scan(path, new ScanOptions { Excludes = [$"**/{Path.GetFileName(cwd)}/**"] });
+            var aboveCwd = _scanner.Scan(path, new ScanOptions { Excludes = [$"**/{Path.GetFileName(cwd)}/**"] }, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Single(aboveCwd.Files);
         }
         finally
@@ -947,11 +965,11 @@ public sealed class DirectoryScannerTests : IDisposable
             }
 
             var repo = Path.Combine(_root, "repo");
-            var defaultResult = _scanner.Scan(repo, new ScanOptions());
+            var defaultResult = _scanner.Scan(repo, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
             var defaultNames = defaultResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
             Assert.Equal(["real.cs"], defaultNames);
 
-            var followedResult = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true });
+            var followedResult = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
             var followedNames = followedResult.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
             Assert.Equal(["linked.cs", "real.cs"], followedNames);
         }
@@ -974,7 +992,7 @@ public sealed class DirectoryScannerTests : IDisposable
             return;
         }
 
-        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+        var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["real.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
     }
@@ -998,7 +1016,7 @@ public sealed class DirectoryScannerTests : IDisposable
                 return;
             }
 
-            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Single(result.Files);
         }
@@ -1023,7 +1041,7 @@ public sealed class DirectoryScannerTests : IDisposable
             return;
         }
 
-        var result = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true });
+        var result = _scanner.Scan(repo, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["repo/a.cs"], result.Files.Select(f => Relative(f.Path)).ToArray());
     }
@@ -1045,7 +1063,7 @@ public sealed class DirectoryScannerTests : IDisposable
             return;
         }
 
-        var result = _scanner.Scan(alias, new ScanOptions { FollowSymlinks = true });
+        var result = _scanner.Scan(alias, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         var paths = result.Files.Select(f => Path.GetRelativePath(alias, f.Path).Replace('\\', '/')).ToArray();
         Assert.Equal(["a.cs", "sub/b.cs"], paths);
@@ -1075,7 +1093,7 @@ public sealed class DirectoryScannerTests : IDisposable
                 return;
             }
 
-            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true });
+            var result = _scanner.Scan(_root, new ScanOptions { FollowSymlinks = true }, cancellationToken: TestContext.Current.CancellationToken);
 
             var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n, StringComparer.Ordinal).ToArray();
             Assert.Equal(["deep.cs", "top.cs"], names);
@@ -1122,7 +1140,7 @@ public sealed class DirectoryScannerTests : IDisposable
             Excludes = variant == "exclude" ? ["**/gen/**"] : []
         };
 
-        var scanned = _scanner.Scan(_root, options).Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal);
+        var scanned = _scanner.Scan(_root, options, cancellationToken: TestContext.Current.CancellationToken).Files.Select(f => Relative(f.Path)).Order(StringComparer.Ordinal);
 
         SnapshotEntry[] entries =
         [
@@ -1153,7 +1171,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/d.vendor.cs", "// vendored");
         Write("sub/e.tmp.cs", "// excluded");
 
-        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["sub/a.cs"], result.Files.Select(f => Relative(f.Path)));
     }
@@ -1170,7 +1188,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/inner/a.cs", "// a");
         Write("sub/inner/b.gen.cs", "// generated");
 
-        var result = _scanner.Scan(Path.Combine(_root, "sub", "inner"), new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(Path.Combine(_root, "sub", "inner"), new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["sub/inner/a.cs"], result.Files.Select(f => Relative(f.Path)));
     }
@@ -1188,7 +1206,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/a.cs", "// a");
         Write("sub/lib/b.cs", "// vendored");
 
-        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions());
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["sub/a.cs"], result.Files.Select(f => Relative(f.Path)));
     }
@@ -1206,7 +1224,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("wt/a.cs", "// a");
         Write("wt/b.tmp.cs", "// excluded");
 
-        var result = _scanner.Scan(Path.Combine(_root, "wt"), new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(Path.Combine(_root, "wt"), new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["wt/a.cs"], result.Files.Select(f => Relative(f.Path)));
     }
@@ -1288,7 +1306,7 @@ public sealed class DirectoryScannerTests : IDisposable
             CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
         }
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
         var skipped = Assert.Single(result.Skipped);
@@ -1317,7 +1335,7 @@ public sealed class DirectoryScannerTests : IDisposable
             Write(file, "// x");
         }
 
-        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(Path.Combine(_root, "sub"), new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ["sub/inner/deep/ok.cs", "sub/inner/keep.gen.cs", "sub/keep.gen.cs"],
@@ -1340,7 +1358,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/c.cs", "// submodule");
         CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
         var skipped = Assert.Single(result.Skipped);
@@ -1359,7 +1377,7 @@ public sealed class DirectoryScannerTests : IDisposable
         Write("sub/b.cs", "// submodule");
         CreateRepositoryDirectory(Path.Combine(_root, "sub", ".git"));
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false, SkipNestedRepositories = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = false, SkipNestedRepositories = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
         var skipped = Assert.Single(result.Skipped);
@@ -1388,7 +1406,7 @@ public sealed class DirectoryScannerTests : IDisposable
             Directory.CreateDirectory(Path.Combine(_root, "fixture", ".git"));
         }
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["fixture/b.cs"], result.Files.Select(f => Relative(f.Path)));
         Assert.Empty(result.Skipped);
@@ -1413,7 +1431,7 @@ public sealed class DirectoryScannerTests : IDisposable
                 return;
             }
 
-            var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true });
+            var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(["a.cs"], result.Files.Select(f => Relative(f.Path)));
             Assert.Empty(result.Skipped);
@@ -1443,7 +1461,7 @@ public sealed class DirectoryScannerTests : IDisposable
         CreateRepositoryDirectory(Path.Combine(_root, "clone", ".git"));
         Write("clone/b.cs", "// clone");
 
-        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = respectGitignore });
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = respectGitignore }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["clone/b.cs"], result.Files.Select(f => Relative(f.Path)));
         Assert.Empty(result.Skipped);

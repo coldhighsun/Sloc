@@ -1,5 +1,9 @@
 using Sloc.Cli.Analysis;
+using Sloc.Cli.Output;
+using Sloc.Core.Languages;
 using Sloc.Core.Models;
+using Sloc.Core.Scanning;
+using Spectre.Console;
 
 namespace Sloc.Cli.Tests;
 
@@ -121,6 +125,197 @@ public class AnalyzeHandlerWatchTests
         var exitCode = AnalyzeHandler.WatchExitCode(new AnalyzeOptions { Path = ".", MinCommentPct = 50 }, summary, lastPassFailed: true);
 
         Assert.Equal(ExitCode.Error, exitCode);
+    }
+
+    /// <summary>
+    /// Verifies that the summary shared by the first pass and every rescan applies the
+    /// requested language sort and keeps the skipped entries.
+    /// </summary>
+    [Fact]
+    public void BuildWatchSummary_AppliesSortAndKeepsSkipped()
+    {
+        var results = new List<FileAnalysis>
+        {
+            new() { Path = "a.cs", Language = "C#", Code = 1, Comment = 0, Blank = 0 },
+            new() { Path = "b.py", Language = "Python", Code = 5, Comment = 0, Blank = 0 },
+        };
+        var skipped = new List<SkippedEntry> { new("c.bin", "binary file") };
+
+        var summary = AnalyzeHandler.BuildWatchSummary(results, skipped, new AnalyzeOptions { Path = ".", Sort = LanguageSort.Name });
+
+        Assert.Equal(["C#", "Python"], summary.ByLanguage.Select(l => l.Language));
+        Assert.Single(summary.Skipped);
+        Assert.Equal(2, summary.FileCount);
+    }
+
+    /// <summary>
+    /// Verifies that an already-cancelled token (Ctrl+C during the first watch pass) aborts
+    /// the analysis instead of running to completion.
+    /// </summary>
+    [Fact]
+    public void AnalyzeFiles_CancelledToken_ThrowsOperationCanceled()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sloc-cancel-{Guid.NewGuid():N}.cs");
+        File.WriteAllText(path, "int x;");
+        try
+        {
+            Assert.True(LanguageRegistry.TryGetByExtension(".cs", out var language));
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Assert.ThrowsAny<OperationCanceledException>(() => new AnalyzeHandler().AnalyzeFiles(
+                [new ScannedFile(path, language)],
+                new AnalyzeOptions { Path = "." },
+                [],
+                cancellationToken: cts.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a watch pass scans and analyzes the tree and returns the finished summary.
+    /// </summary>
+    [Fact]
+    public void RunWatchPass_Uncancelled_ReturnsFinishedSummary()
+    {
+        var dir = Directory.CreateTempSubdirectory("sloc-first-pass-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, "a.cs"), "int x;");
+
+            var summary = new AnalyzeHandler().RunWatchPass(
+                new AnalyzeOptions { Path = dir.FullName },
+                new ScanOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(1, summary.FileCount);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that Ctrl+C during the first scan aborts it instead of running to completion.
+    /// </summary>
+    [Fact]
+    public void RunWatchPass_CancelledToken_ThrowsOperationCanceled()
+    {
+        var dir = Directory.CreateTempSubdirectory("sloc-first-pass-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, "a.cs"), "int x;");
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Assert.ThrowsAny<OperationCanceledException>(() => new AnalyzeHandler().RunWatchPass(
+                new AnalyzeOptions { Path = dir.FullName },
+                new ScanOptions(),
+                cts.Token));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the first watch pass analyzes behind the live table, returns the finished
+    /// summary, and draws it as the last frame.
+    /// </summary>
+    [Fact]
+    public void AnalyzeFirstWatchPass_Uncancelled_ReturnsSummaryAndDrawsFinalFrame()
+    {
+        var dir = Directory.CreateTempSubdirectory("sloc-first-pass-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "a.cs");
+            File.WriteAllText(path, "int x;");
+            Assert.True(LanguageRegistry.TryGetByExtension(".cs", out var language));
+            var frames = new List<Table>();
+
+            var summary = new AnalyzeHandler().AnalyzeFirstWatchPass(
+                frames.Add,
+                new ScanResult([new ScannedFile(path, language)], []),
+                new AnalyzeOptions { Path = dir.FullName },
+                new TableRenderer(),
+                CancellationToken.None);
+
+            Assert.NotNull(summary);
+            Assert.Equal(1, summary.FileCount);
+            Assert.NotEmpty(frames);
+            Assert.DoesNotContain("Cancelled", frames[^1].Caption?.Text ?? string.Empty);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that cancelling the first watch pass (Ctrl+C) returns no summary and replaces the
+    /// live table with a cancelled frame instead of leaving partial totals on screen.
+    /// </summary>
+    [Fact]
+    public void AnalyzeFirstWatchPass_Cancelled_ReturnsNullAndDrawsCancelledFrame()
+    {
+        var dir = Directory.CreateTempSubdirectory("sloc-first-pass-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "a.cs");
+            File.WriteAllText(path, "int x;");
+            Assert.True(LanguageRegistry.TryGetByExtension(".cs", out var language));
+            var frames = new List<Table>();
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            var summary = new AnalyzeHandler().AnalyzeFirstWatchPass(
+                frames.Add,
+                new ScanResult([new ScannedFile(path, language)], []),
+                new AnalyzeOptions { Path = dir.FullName },
+                new TableRenderer(),
+                cts.Token);
+
+            Assert.Null(summary);
+            Assert.Contains("Cancelled", frames[^1].Caption?.Text);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the live-table analysis surfaces cancellation as an exception rather than
+    /// returning partial results.
+    /// </summary>
+    [Fact]
+    public void AnalyzeIntoLiveTable_CancelledToken_ThrowsOperationCanceled()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sloc-cancel-{Guid.NewGuid():N}.cs");
+        File.WriteAllText(path, "int x;");
+        try
+        {
+            Assert.True(LanguageRegistry.TryGetByExtension(".cs", out var language));
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Assert.ThrowsAny<OperationCanceledException>(() => new AnalyzeHandler().AnalyzeIntoLiveTable(
+                _ => { },
+                [new ScannedFile(path, language)],
+                new AnalyzeOptions { Path = "." },
+                [],
+                new TableRenderer(),
+                cts.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     /// <summary>

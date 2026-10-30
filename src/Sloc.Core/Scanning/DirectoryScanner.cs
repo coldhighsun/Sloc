@@ -171,6 +171,10 @@ public sealed class DirectoryScanner
     /// full path. Used to report progress on long-running scans; has no effect on the
     /// result.
     /// </param>
+    /// <param name="cancellationToken">
+    /// Cancels the scan: checked on entering each directory of the tree walk and once per
+    /// candidate file while filtering.
+    /// </param>
     /// <returns>
     /// A <see cref="ScanResult"/> containing the discovered files and any paths
     /// that could not be enumerated due to I/O or access errors.
@@ -178,11 +182,15 @@ public sealed class DirectoryScanner
     /// <exception cref="DirectoryNotFoundException">
     /// The path does not exist.
     /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled during the scan.
+    /// </exception>
     public ScanResult Scan(
         string root,
         ScanOptions options,
         Action<int, string>? onFileFound = null,
-        Action<int, string>? onGitignoreScan = null)
+        Action<int, string>? onGitignoreScan = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -221,7 +229,7 @@ public sealed class DirectoryScanner
             root, ExcludeDirectoryNames(ignoreCase), walkRecursive, options.FollowSymlinks, ignoreCase,
             options.RespectGitignore, options.RespectGitAttributes, collectFiles: true, onGitignoreScan,
             skipNestedRepositories: (options.RespectGitignore || options.SkipNestedRepositories) && workTree is not null,
-            pruneRules);
+            pruneRules, cancellationToken);
 
         // The walk added every .gitignore it read to pruneRules, so those files are reused instead
         // of re-read.
@@ -243,7 +251,7 @@ public sealed class DirectoryScanner
             pathByRelative[Path.GetRelativePath(fullRoot, fullPath).Replace('\\', '/')] = fullPath;
         }
 
-        var files = FilterCandidates(pathByRelative, options, gitignore, gitattributes, ignoreCase, onFileFound)
+        var files = FilterCandidates(pathByRelative, options, gitignore, gitattributes, ignoreCase, onFileFound, cancellationToken)
             .ConvertAll(static candidate => candidate.File);
         files.Sort(static (left, right) => string.CompareOrdinal(left.Path, right.Path));
         return new ScanResult(files, [.. walk.Skipped, .. ancestors.Skipped]);
@@ -567,6 +575,7 @@ public sealed class DirectoryScanner
     /// applies it when a real directory walk is available.
     /// </param>
     /// <param name="onFileFound">Invoked with the running count and path of each included file.</param>
+    /// <param name="cancellationToken">Checked once per matched candidate file.</param>
     /// <returns>Each included file, paired with its relative path.</returns>
     private static List<(string RelativePath, ScannedFile File)> FilterCandidates(
         Dictionary<string, string> pathByRelative,
@@ -574,7 +583,8 @@ public sealed class DirectoryScanner
         GitIgnoreRules? gitignore,
         GitAttributesRules? gitattributes,
         bool ignoreCase,
-        Action<int, string>? onFileFound)
+        Action<int, string>? onFileFound,
+        CancellationToken cancellationToken = default)
     {
         var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
         if (options.Includes.Count > 0)
@@ -603,6 +613,7 @@ public sealed class DirectoryScanner
         var files = new List<(string RelativePath, ScannedFile File)>();
         foreach (var matchedFile in matcher.Match(pathByRelative.Keys).Files)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var relativePath = matchedFile.Path;
             if (!pathByRelative.TryGetValue(relativePath, out var fullPath))
             {

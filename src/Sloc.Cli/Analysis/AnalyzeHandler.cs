@@ -278,11 +278,16 @@ public sealed partial class AnalyzeHandler
     /// and its analysis, or <see langword="null"/> if that file was skipped. Used to drive
     /// progress UI (a live-aggregated table or a progress bar) while analysis runs.
     /// </param>
-    private List<FileAnalysis> AnalyzeFiles(
+    /// <param name="cancellationToken">
+    /// Cancels the analysis (e.g. on Ctrl+C during the first <c>--watch</c> pass), surfacing
+    /// as an <see cref="OperationCanceledException"/>.
+    /// </param>
+    internal List<FileAnalysis> AnalyzeFiles(
         IReadOnlyList<ScannedFile> files,
         AnalyzeOptions options,
         List<SkippedEntry> skipped,
-        Action<int, FileAnalysis?>? onFileAnalyzed = null)
+        Action<int, FileAnalysis?>? onFileAnalyzed = null,
+        CancellationToken cancellationToken = default)
     {
         // Analyze into fixed slots so the merged order is deterministic (scan order),
         // independent of the degree of parallelism.
@@ -310,7 +315,7 @@ public sealed partial class AnalyzeHandler
         }
 
         var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
-        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs }, AnalyzeAt);
+        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = jobs, CancellationToken = cancellationToken }, AnalyzeAt);
 
         // Merge in scan order so results are deterministic regardless of --jobs.
         var results = new List<FileAnalysis>(files.Count);
@@ -487,34 +492,13 @@ public sealed partial class AnalyzeHandler
             return summarize(progressResults);
         }
 
-        var aggregator = new LiveAggregator(options.Sort, options.Top, unique: options.Unique);
-        var results = new List<FileAnalysis>();
         AnalysisSummary? summary = null;
 
-        AnsiConsole.Live(tableRenderer.BuildLanguageTable(aggregator.ToSummary(), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
+        AnsiConsole.Live(tableRenderer.BuildLanguageTable(new AnalysisSummary([]), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
             .AutoClear(false)
             .Start(ctx =>
             {
-                // Analyze on a background task while this thread refreshes the table
-                // from the thread-safe aggregator (no per-tick re-aggregation).
-                var work = Task.Run(() => results = AnalyzeFiles(files, options, skipped, (_, analysis) =>
-                {
-                    if (analysis is not null)
-                    {
-                        aggregator.Add(analysis);
-                    }
-                }));
-                while (!work.IsCompleted)
-                {
-                    ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
-                        aggregator.ToSummary(),
-                        $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
-                        noHealth: options.NoHealth,
-                        noComplexity: options.NoComplexity));
-                    Thread.Sleep(LiveTableRefreshInterval);
-                }
-
-                work.GetAwaiter().GetResult();
+                var results = AnalyzeIntoLiveTable(ctx.UpdateTarget, files, options, skipped, tableRenderer);
 
                 // The last frame stays on screen as the run's language table (RenderNormal
                 // doesn't draw it again), so draw the run's actual summary rather than the
@@ -525,6 +509,89 @@ public sealed partial class AnalyzeHandler
             });
 
         return summary ?? throw new InvalidOperationException("Analysis did not complete.");
+    }
+
+    /// <summary>
+    /// Analyzes <paramref name="files"/> on a background task while this thread keeps
+    /// refreshing the live table through <paramref name="showFrame"/> from a thread-safe
+    /// <see cref="LiveAggregator"/> (no per-tick re-aggregation). Returns once the analysis
+    /// has finished; the caller draws the final frame.
+    /// </summary>
+    /// <param name="showFrame">Displays one frame of the live table (e.g. <c>LiveDisplayContext.UpdateTarget</c>).</param>
+    /// <param name="files">The files to analyze.</param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="skipped">The skipped-entries list per-file failures are appended to.</param>
+    /// <param name="tableRenderer">The table renderer used to build each frame.</param>
+    /// <param name="cancellationToken">Cancels the analysis.</param>
+    internal List<FileAnalysis> AnalyzeIntoLiveTable(
+        Action<Table> showFrame,
+        IReadOnlyList<ScannedFile> files,
+        AnalyzeOptions options,
+        List<SkippedEntry> skipped,
+        TableRenderer tableRenderer,
+        CancellationToken cancellationToken = default)
+    {
+        var aggregator = new LiveAggregator(options.Sort, options.Top, unique: options.Unique);
+        var work = Task.Run(() => AnalyzeFiles(files, options, skipped, (_, analysis) =>
+        {
+            if (analysis is not null)
+            {
+                aggregator.Add(analysis);
+            }
+        }, cancellationToken));
+
+        while (!work.IsCompleted)
+        {
+            showFrame(tableRenderer.BuildLanguageTable(
+                aggregator.ToSummary(),
+                $"[grey]Analyzing... {aggregator.FilesProcessed:N0} / {files.Count:N0}[/]",
+                noHealth: options.NoHealth,
+                noComplexity: options.NoComplexity));
+            Thread.Sleep(LiveTableRefreshInterval);
+        }
+
+        return work.GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Analyzes the already-scanned files of the first <see cref="ExecuteWatch"/> pass behind the
+    /// live table and draws the finished table as the last frame.
+    /// </summary>
+    /// <param name="showFrame">Displays one frame of the live table.</param>
+    /// <param name="scanned">The scan result of the first pass.</param>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="tableRenderer">The table renderer used to build each frame.</param>
+    /// <param name="cancellationToken">Cancels the analysis (Ctrl+C).</param>
+    /// <returns>
+    /// The finished summary, or <see langword="null"/> if the pass was cancelled, in which case the
+    /// half-filled frame is replaced by an empty table so partial totals do not linger as a result.
+    /// </returns>
+    internal AnalysisSummary? AnalyzeFirstWatchPass(
+        Action<Table> showFrame,
+        ScanResult scanned,
+        AnalyzeOptions options,
+        TableRenderer tableRenderer,
+        CancellationToken cancellationToken)
+    {
+        var skipped = new List<SkippedEntry>(scanned.Skipped);
+        try
+        {
+            var summary = BuildWatchSummary(
+                AnalyzeIntoLiveTable(showFrame, scanned.Files, options, skipped, tableRenderer, cancellationToken),
+                skipped,
+                options);
+            showFrame(tableRenderer.BuildLanguageTable(summary, noHealth: options.NoHealth, noComplexity: options.NoComplexity));
+            return summary;
+        }
+        catch (OperationCanceledException)
+        {
+            showFrame(tableRenderer.BuildLanguageTable(
+                new AnalysisSummary([]),
+                "[grey]Cancelled before the first pass finished.[/]",
+                noHealth: options.NoHealth,
+                noComplexity: options.NoComplexity));
+            return null;
+        }
     }
 
     /// <summary>
@@ -584,6 +651,9 @@ public sealed partial class AnalyzeHandler
         // not disposed: a late Ctrl+C can still run the handler on another thread while this method
         // unwinds, and an event whose WaitHandle was never requested holds no unmanaged resources.
         var cancelSignal = new ManualResetEventSlim(false);
+        // Also cancels a first pass that is still scanning/analyzing, which cancelSignal alone
+        // would only be noticed after. Not disposed, for the same reason as cancelSignal.
+        var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += OnCancelKeyPress;
 
         AnalysisSummary? lastSummary = null;
@@ -647,9 +717,29 @@ public sealed partial class AnalyzeHandler
                 return ExitCode.Error;
             }
 
+            // With progress UI the first pass scans behind a spinner and is analyzed behind the
+            // live table below; without it (quiet/--no-progress) it is analyzed silently here.
+            ScanResult? scanned = null;
+            AnalysisSummary? silentSummary = null;
             try
             {
-                lastSummary = RunWatchPass(options, scanOptions);
+                if (!options.Quiet && !options.NoProgress)
+                {
+                    scanned = ScanWithStatus(options, scanOptions, cancellation.Token);
+                }
+                else
+                {
+                    silentSummary = RunWatchPass(options, scanOptions, cancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                if (!options.Quiet)
+                {
+                    AnsiConsole.MarkupLine("[grey]Cancelled before the first pass finished.[/]");
+                }
+
+                return WatchExitCode(options, lastSummary: null);
             }
             catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
             {
@@ -657,10 +747,37 @@ public sealed partial class AnalyzeHandler
                 return ExitCode.Error;
             }
 
-            AnsiConsole.Live(tableRenderer.BuildLanguageTable(lastSummary, noHealth: options.NoHealth, noComplexity: options.NoComplexity))
+            string? firstPassError = null;
+            AnsiConsole.Live(tableRenderer.BuildLanguageTable(silentSummary ?? new AnalysisSummary([]), noHealth: options.NoHealth, noComplexity: options.NoComplexity))
                 .AutoClear(false)
                 .Start(ctx =>
                 {
+                    if (scanned is { } firstScan)
+                    {
+                        try
+                        {
+                            lastSummary = AnalyzeFirstWatchPass(ctx.UpdateTarget, firstScan, options, tableRenderer, cancellation.Token);
+                        }
+                        catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
+                        {
+                            // The first pass analyzed behind the live table failed the same way the scan above can.
+                            firstPassError = ex.Message;
+                            return;
+                        }
+
+                    }
+                    else
+                    {
+                        lastSummary = silentSummary;
+                    }
+
+                    // Null only when Ctrl+C cancelled the first pass.
+                    if (lastSummary is not { } shown)
+                    {
+                        ctx.Refresh();
+                        return;
+                    }
+
                     ctx.Refresh();
 
                     var retry = new WatchRetryState();
@@ -706,10 +823,15 @@ public sealed partial class AnalyzeHandler
                         string caption;
                         try
                         {
-                            lastSummary = RunWatchPass(options, scanOptions);
+                            shown = lastSummary = RunWatchPass(options, scanOptions, cancellation.Token);
                             lastPassFailed = false;
                             retry.Reset();
                             caption = $"[grey]Last update: {DateTimeOffset.Now:T}[/]";
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Ctrl+C during a rescan: keep the last good table and stop watching.
+                            break;
                         }
                         catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
                         {
@@ -733,12 +855,18 @@ public sealed partial class AnalyzeHandler
                         }
 
                         ctx.UpdateTarget(tableRenderer.BuildLanguageTable(
-                            lastSummary,
+                            shown,
                             caption,
                             noHealth: options.NoHealth,
                             noComplexity: options.NoComplexity));
                     }
                 });
+
+            if (firstPassError is not null)
+            {
+                Console.Error.WriteLine(firstPassError);
+                return ExitCode.Error;
+            }
         }
         finally
         {
@@ -752,6 +880,7 @@ public sealed partial class AnalyzeHandler
         {
             e.Cancel = true;
             cancelSignal.Set();
+            cancellation.Cancel();
         }
     }
 
@@ -848,11 +977,21 @@ public sealed partial class AnalyzeHandler
             return _scanner.ScanFiles(entries, scanOptions);
         }
 
-        if (!showProgress)
-        {
-            return _scanner.Scan(options.Path, scanOptions);
-        }
+        return showProgress
+            ? ScanWithStatus(options, scanOptions)
+            : _scanner.Scan(options.Path, scanOptions);
+    }
 
+    /// <summary>
+    /// Scans <see cref="AnalyzeOptions.Path"/> behind a status spinner that reports the files
+    /// found (or directories checked for ignore rules) so far. Shared by the one-shot run and
+    /// the first pass of <see cref="ExecuteWatch"/>.
+    /// </summary>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="scanOptions">The scan options to apply.</param>
+    /// <param name="cancellationToken">Aborts the scan with an <see cref="OperationCanceledException"/>.</param>
+    private ScanResult ScanWithStatus(AnalyzeOptions options, ScanOptions scanOptions, CancellationToken cancellationToken = default)
+    {
         ScanResult? result = null;
         var refreshTimer = Stopwatch.StartNew();
         var gitignoreScanLabel = (scanOptions.RespectGitignore, scanOptions.RespectGitAttributes) switch
@@ -870,6 +1009,7 @@ public sealed partial class AnalyzeHandler
                 result = _scanner.Scan(
                     options.Path,
                     scanOptions,
+                    cancellationToken: cancellationToken,
                     onFileFound: (count, path) =>
                     {
                         if (refreshTimer.Elapsed < ScanStatusRefreshInterval)
@@ -903,17 +1043,36 @@ public sealed partial class AnalyzeHandler
     /// </summary>
     /// <param name="options">The parsed options.</param>
     /// <param name="scanOptions">The scan options to apply for this pass.</param>
-    private AnalysisSummary RunWatchPass(AnalyzeOptions options, ScanOptions scanOptions)
+    /// <param name="cancellationToken">
+    /// Aborts the scan or analysis with an <see cref="OperationCanceledException"/>.
+    /// </param>
+    internal AnalysisSummary RunWatchPass(
+        AnalyzeOptions options,
+        ScanOptions scanOptions,
+        CancellationToken cancellationToken = default)
     {
-        var scanResult = _scanner.Scan(options.Path, scanOptions);
+        var scanResult = _scanner.Scan(options.Path, scanOptions, cancellationToken: cancellationToken);
         var skipped = new List<SkippedEntry>(scanResult.Skipped);
-        var results = AnalyzeFiles(scanResult.Files, options, skipped);
+        var results = AnalyzeFiles(scanResult.Files, options, skipped, cancellationToken: cancellationToken);
 
-        return new AnalysisSummary(
+        return BuildWatchSummary(results, skipped, options);
+    }
+
+    /// <summary>
+    /// Aggregates one <see cref="ExecuteWatch"/> pass's results into the summary its live
+    /// table shows, shared by the first pass and every rescan.
+    /// </summary>
+    /// <param name="results">The per-file analyses.</param>
+    /// <param name="skipped">The skipped entries of the pass.</param>
+    /// <param name="options">The parsed options.</param>
+    internal static AnalysisSummary BuildWatchSummary(
+        IReadOnlyList<FileAnalysis> results,
+        IReadOnlyList<SkippedEntry> skipped,
+        AnalyzeOptions options) =>
+        new(
             results,
             skipped,
             options.Sort,
             descending: options.Sort != LanguageSort.Name,
             top: options.Top);
-    }
 }
