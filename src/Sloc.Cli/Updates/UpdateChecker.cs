@@ -74,7 +74,8 @@ public sealed class UpdateChecker
         using var updater = _client is null ? new ReleaseUpdater(options) : new ReleaseUpdater(options, _client);
         var check = await updater.CheckForUpdateAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        if (!check.Success || check.Update is not { } update || update.Release.HtmlUrl is not { } releaseUrl)
+        // Update is non-null only for a successful check that found a newer, non-skipped release.
+        if (check.Update is not { Release.HtmlUrl: { } releaseUrl } update)
         {
             return null;
         }
