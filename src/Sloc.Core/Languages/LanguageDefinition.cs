@@ -76,15 +76,39 @@ public sealed record StringLiteral(
 /// </summary>
 public sealed class LanguageDefinition
 {
-    private Dictionary<char, BlockComment[]>? _blockCommentsByFirstChar;
+    /// <summary>
+    /// The lookup tables derived from the comment and string tokens, built together on first
+    /// use through <see cref="LazyInitializer"/>, guarded by <see cref="_tablesLock"/>.
+    /// </summary>
+    private DerivedTables? _derivedTables;
 
-    private Dictionary<char, string[]>? _lineCommentsByFirstChar;
+    /// <summary>
+    /// The lock <see cref="LazyInitializer"/> creates to serialize building <see cref="_derivedTables"/>.
+    /// </summary>
+    private object? _tablesLock;
 
-    private Dictionary<char, StringLiteral[]>? _stringLiteralsByFirstChar;
-
+    /// <summary>
+    /// The cached <see cref="ComplexityRegex"/>, built separately from
+    /// <see cref="_derivedTables"/> since compiling it is costly and only some languages need
+    /// it, guarded by <see cref="_complexityRegexLock"/>.
+    /// </summary>
     private Regex? _complexityRegex;
 
+    /// <summary>
+    /// The lock <see cref="LazyInitializer"/> creates to serialize building <see cref="_complexityRegex"/>.
+    /// </summary>
+    private object? _complexityRegexLock;
+
+    /// <summary>
+    /// The cached <see cref="TokenStartChars"/>, built separately from <see cref="_derivedTables"/>
+    /// since deriving it can scan the whole <see cref="char"/> range and only the classifier needs it.
+    /// </summary>
     private SearchValues<char>? _tokenStartChars;
+
+    /// <summary>
+    /// The lock <see cref="LazyInitializer"/> creates to serialize building <see cref="_tokenStartChars"/>.
+    /// </summary>
+    private object? _tokenStartCharsLock;
 
     /// <summary>
     /// The delimiter pairs that start and end block comments (e.g. <c>/*</c> … <c>*/</c>).
@@ -260,7 +284,13 @@ public sealed class LanguageDefinition
     /// tokens (e.g. <c>&amp;&amp;</c>, <c>?:</c>) are matched literally. Built lazily and
     /// cached for the lifetime of this (shared, immutable) definition.
     /// </summary>
-    internal Regex ComplexityRegex => _complexityRegex ??= BuildComplexityRegex(ComplexityKeywords);
+    internal Regex ComplexityRegex => Volatile.Read(ref _complexityRegex) ?? InitComplexityRegex();
+
+    /// <summary>
+    /// Builds <see cref="ComplexityRegex"/> once; kept out of the accessor so the hot path allocates no delegate.
+    /// </summary>
+    private Regex InitComplexityRegex() =>
+        LazyInitializer.EnsureInitialized(ref _complexityRegex, ref _complexityRegexLock, () => BuildComplexityRegex(ComplexityKeywords))!;
 
     /// <summary>
     /// <see cref="BlockComments"/> grouped by the first character of <see cref="BlockComment.Open"/>,
@@ -268,26 +298,20 @@ public sealed class LanguageDefinition
     /// match at a given position instead of scanning every block-comment pair. Built lazily on
     /// first use and cached for the lifetime of this (shared, immutable) definition.
     /// </summary>
-    internal Dictionary<char, BlockComment[]> BlockCommentsByFirstChar =>
-        _blockCommentsByFirstChar ??= GroupByFirstChar(BlockComments, b => b.Open, c => c);
+    internal Dictionary<char, BlockComment[]> BlockCommentsByFirstChar => Tables.BlockComments;
 
     /// <summary>
     /// <see cref="LineCommentTokens"/> grouped by their first character (case-folded when
     /// <see cref="CaseInsensitiveLineComments"/> is set), for the same reason as
     /// <see cref="BlockCommentsByFirstChar"/>.
     /// </summary>
-    internal Dictionary<char, string[]> LineCommentsByFirstChar =>
-        _lineCommentsByFirstChar ??= GroupByFirstChar(
-            LineCommentTokens,
-            token => token,
-            c => CaseInsensitiveLineComments ? char.ToUpperInvariant(c) : c);
+    internal Dictionary<char, string[]> LineCommentsByFirstChar => Tables.LineComments;
 
     /// <summary>
     /// <see cref="StringLiterals"/> grouped by the first character of <see cref="StringLiteral.Delimiter"/>,
     /// for the same reason as <see cref="BlockCommentsByFirstChar"/>.
     /// </summary>
-    internal Dictionary<char, StringLiteral[]> StringLiteralsByFirstChar =>
-        _stringLiteralsByFirstChar ??= GroupByFirstChar(StringLiterals, s => s.Delimiter, c => c);
+    internal Dictionary<char, StringLiteral[]> StringLiteralsByFirstChar => Tables.StringLiterals;
 
     /// <summary>
     /// Every character that could begin a block-comment opener, line-comment token, or
@@ -297,21 +321,56 @@ public sealed class LanguageDefinition
     /// case-folds to a line-comment key; a superset is always safe, since candidates are
     /// still verified by an exact token match.
     /// </summary>
-    internal SearchValues<char> TokenStartChars => _tokenStartChars ??= BuildTokenStartChars();
+    internal SearchValues<char> TokenStartChars => Volatile.Read(ref _tokenStartChars) ?? InitTokenStartChars();
 
+    /// <summary>
+    /// Builds <see cref="TokenStartChars"/> once; kept out of the accessor so the hot path allocates no delegate.
+    /// </summary>
+    private SearchValues<char> InitTokenStartChars() =>
+        LazyInitializer.EnsureInitialized(ref _tokenStartChars, ref _tokenStartCharsLock, BuildTokenStartChars)!;
+
+    /// <summary>
+    /// Gets the lookup tables derived from this definition's tokens, building them on first use.
+    /// </summary>
+    private DerivedTables Tables => Volatile.Read(ref _derivedTables) ?? InitTables();
+
+    /// <summary>
+    /// Builds <see cref="Tables"/> once; kept out of the accessor so the hot path allocates no delegate.
+    /// </summary>
+    private DerivedTables InitTables() =>
+        LazyInitializer.EnsureInitialized(ref _derivedTables, ref _tablesLock, BuildTables)!;
+
+    /// <summary>
+    /// Groups the block comments, line comments, and string literals by first character.
+    /// </summary>
+    private DerivedTables BuildTables()
+    {
+        var blockComments = GroupByFirstChar(BlockComments, b => b.Open, c => c);
+        var lineComments = GroupByFirstChar(
+            LineCommentTokens,
+            token => token,
+            c => CaseInsensitiveLineComments ? char.ToUpperInvariant(c) : c);
+        var stringLiterals = GroupByFirstChar(StringLiterals, s => s.Delimiter, c => c);
+
+        return new DerivedTables(blockComments, lineComments, stringLiterals);
+    }
+
+    /// <summary>
+    /// Derives the set of characters that can start a block comment, line comment, or string literal.
+    /// </summary>
     private SearchValues<char> BuildTokenStartChars()
     {
+        var tables = Tables;
         var chars = new HashSet<char>();
-        chars.UnionWith(BlockCommentsByFirstChar.Keys);
-        chars.UnionWith(StringLiteralsByFirstChar.Keys);
+        chars.UnionWith(tables.BlockComments.Keys);
+        chars.UnionWith(tables.StringLiterals.Keys);
 
         if (CaseInsensitiveLineComments)
         {
-            var keys = LineCommentsByFirstChar;
             for (var i = 0; i <= char.MaxValue; i++)
             {
                 var c = (char)i;
-                if (keys.ContainsKey(char.ToUpperInvariant(c)))
+                if (tables.LineComments.ContainsKey(char.ToUpperInvariant(c)))
                 {
                     chars.Add(c);
                 }
@@ -319,11 +378,23 @@ public sealed class LanguageDefinition
         }
         else
         {
-            chars.UnionWith(LineCommentsByFirstChar.Keys);
+            chars.UnionWith(tables.LineComments.Keys);
         }
 
         return SearchValues.Create([.. chars]);
     }
+
+    /// <summary>
+    /// The lookup tables <see cref="LineClassifier"/> uses, built together from one consistent
+    /// view of the definition's tokens.
+    /// </summary>
+    /// <param name="BlockComments">The block comments by first character of their opener.</param>
+    /// <param name="LineComments">The line-comment tokens by first character (case-folded when case-insensitive).</param>
+    /// <param name="StringLiterals">The string literals by first character of their delimiter.</param>
+    private sealed record DerivedTables(
+        Dictionary<char, BlockComment[]> BlockComments,
+        Dictionary<char, string[]> LineComments,
+        Dictionary<char, StringLiteral[]> StringLiterals);
 
     private static Regex BuildComplexityRegex(IReadOnlyList<string> keywords)
     {
