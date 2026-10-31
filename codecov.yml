@@ -1,0 +1,3 @@
+# Coverage is still generated for every project; Codecov just disregards the CLI project.
+ignore:
+  - "src/Sloc.Cli/**"
