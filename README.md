@@ -45,6 +45,12 @@ Install via [winget](https://learn.microsoft.com/windows/package-manager/winget/
 winget install coldhighsun.sloc
 ```
 
+Install via [Homebrew](https://brew.sh/) (macOS / Linux):
+
+```bash
+brew install coldhighsun/tap/sloc
+```
+
 Or install as a .NET global tool (requires .NET 10 SDK):
 
 ```bash
@@ -56,6 +62,9 @@ Update or uninstall:
 ```bash
 winget upgrade coldhighsun.sloc
 winget uninstall coldhighsun.sloc
+
+brew upgrade sloc
+brew uninstall sloc
 
 dotnet tool update --global Sloc
 dotnet tool uninstall --global Sloc

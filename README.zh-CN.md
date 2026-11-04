@@ -29,6 +29,12 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 winget install coldhighsun.sloc
 ```
 
+通过 [Homebrew](https://brew.sh/) 安装（macOS / Linux）：
+
+```bash
+brew install coldhighsun/tap/sloc
+```
+
 或作为 .NET 全局工具安装（需要 .NET 10 SDK）：
 
 ```bash
@@ -40,6 +46,9 @@ dotnet tool install --global Sloc
 ```bash
 winget upgrade coldhighsun.sloc
 winget uninstall coldhighsun.sloc
+
+brew upgrade sloc
+brew uninstall sloc
 
 dotnet tool update --global Sloc
 dotnet tool uninstall --global Sloc
