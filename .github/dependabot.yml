@@ -6,6 +6,11 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels: ["dependencies"]
+    ignore:
+      # Microsoft.Extensions.* major versions track the runtime; stay on the
+      # 10.x line to match the net10.0 target framework
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
     groups:
       nuget-minor-patch:
         update-types: ["minor", "patch"]
