@@ -4,19 +4,18 @@
 [![codecov](https://codecov.io/gh/coldhighsun/Sloc/branch/main/graph/badge.svg)](https://codecov.io/gh/coldhighsun/Sloc)
 ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
 [![NuGet Version](https://img.shields.io/nuget/v/Sloc?label=nuget%20stable)](https://www.nuget.org/packages/Sloc)
 ![NuGet Pre Release](https://img.shields.io/nuget/vpre/Sloc?label=nuget%20pre-release)
 ![Winget](https://img.shields.io/winget/v/coldhighsun.sloc)
-
 [![GitHub release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
 [![GitHub release (pre)](https://img.shields.io/github/v/release/coldhighsun/Sloc?include_prereleases&label=pre-release)](https://github.com/coldhighsun/Sloc/releases)
-![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc?label=nuget%20downloads)](https://www.nuget.org/packages/Sloc)
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
 
 ---
 
-English | [中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code.
 
