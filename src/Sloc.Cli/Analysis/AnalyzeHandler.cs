@@ -46,6 +46,9 @@ public sealed partial class AnalyzeHandler
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        // Restored on return, so the process-wide console is not left degraded for later callers.
+        using var colorScope = ApplyColorSetting(options);
+
         var ctx = BuildRunContext(options);
 
         if (options.Watch)

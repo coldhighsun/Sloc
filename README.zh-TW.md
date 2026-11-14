@@ -20,6 +20,8 @@
 
 Sloc（**S**ource **L**ines **O**f **C**ode）是一個用於統計原始碼行數的 .NET 全域命令列工具。
 
+![sloc 輸出：彩色語言統計表](docs/images/screenshot_sloc.png)
+
 ## 功能特色
 
 - 統計程式碼行 / 註解行 / 空白行 / 總行數
@@ -28,7 +30,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一個用於統計原始碼行�
 - 遞迴掃描目錄，支援 `--include` / `--exclude` glob 篩選
 - 預設排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目錄
 - 五種輸出格式：彩色表格（預設）、JSON、HTML、CSV 與 Markdown
-- 表格輸出新增註解健康度欄位，顯示註解密度指標（無 / 低 / 一般 / 良好 / 較高 / 過密）
+- 表格輸出新增註解健康度欄位，顯示註解密度指標（無 / 低 / 一般 / 良好 / 較高 / 過密；依序顯示為紅 / 紅 / 黃 / 綠 / 青 / 洋紅）
 - 未指定 `--format` 時，可根據 `--output` 檔案副檔名自動推斷格式（`.json` → JSON，`.html` / `.htm` → HTML）
 - 預設遵循 `.gitignore` 檔案（含子目錄中的；`path` 位於 git 儲存庫內時，也包括其上層直到儲存庫根目錄的）；`--no-gitignore` 可停用
 - 跨 CPU 核心平行分析（`--jobs`），輸出保持確定性
@@ -36,6 +38,20 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一個用於統計原始碼行�
 - 透過 `--baseline` 與已儲存的 JSON 報告比較，或用 `--compare-to` 直接與另一個 commit 比較，查看行數變化
 - 透過 `--sort`（支援依註解佔比排序）/ `--top` 對語言彙總排序並限制筆數
 - 無法讀取的檔案或目錄，以及二進位檔案（透過 NUL 位元組偵測），會被自動略過，並在最終結果中列出所有略過的路徑及原因（除 `Csv` 外的所有格式；CSV 保持為單一份可供機器解析的表格）
+
+## 截圖
+
+使用 `--by-file` 的**依檔案樹狀檢視**：目錄、檔案、註解健康度與複雜度一目了然。
+
+![sloc --by-file：依檔案樹狀檢視](docs/images/screenshot_sloc_by_file.png)
+
+使用 `--compare-to`（或用 `--baseline` 對比已儲存的報告）與**任意提交比較**：無需檢出即可依語言檢視變化。
+
+![sloc --compare-to：依語言檢視行數變化](docs/images/screenshot_sloc_diff.png)
+
+**HTML 報告**：使用 `--format html`（或 `-o report.html`），產生單一檔案、配色與終端表格一致、可摺疊目錄的獨立頁面，便於分享。
+
+![sloc HTML 報告](docs/images/screenshot_sloc_html.png)
 
 ## 安裝
 
@@ -172,6 +188,7 @@ sloc . --format markdown --detailed -o -
 | `--output` | `-o` | `Json` / `Html` / `Csv` / `Markdown` 格式的輸出檔案路徑；用 `-` 表示寫到標準輸出；未指定 `--format` 時根據檔案副檔名自動推斷格式 |
 | `--no-recursive` | | 不遞迴掃描子目錄 |
 | `--no-health` | | 隱藏註解健康度欄位及百分比資料 |
+| `--no-color` | | 關閉彩色主控台輸出（預設開啟；設定 `NO_COLOR` 或重新導向輸出時也會自動關閉；只去掉顏色，粗體/底線仍保留；`--format html` 報告也不再帶顏色） |
 | `--by-file` | | 在語言彙總之外額外顯示逐檔明細 |
 | `--detailed` | | 在 `Json` / `Html` / `Markdown` 輸出中同時包含語言彙總和逐檔明細；在 `Csv` 輸出中僅選擇語言彙總（保持單一份規範表格） |
 | `--paged` | `-p` | 顯示分頁輸出 |
@@ -209,14 +226,6 @@ sloc . --format markdown --detailed -o -
 | `1` | 路徑不存在或無法讀取，或命令列引數無效 |
 | `2` | 未達到門檻（如 `--min-comment-pct`） |
 | `3` | 非預期錯誤 |
-
-### 輸出範例
-
-![表格輸出](docs/images/screenshot_sloc.png)
-
-使用 `--by-file` 選項（依檔案以樹狀呈現）：
-
-![帶 --by-file 的表格輸出](docs/images/screenshot_sloc_by_file.png)
 
 ## 支援的語言
 

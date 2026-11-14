@@ -139,6 +139,17 @@ public sealed class AnalyzeOptions
     }
 
     /// <summary>
+    /// When <see langword="true"/>, console output (Table format, progress, diff) is written
+    /// without colors. Only the colors are dropped: ANSI stays on so the spinner, progress bar
+    /// and live table can redraw in place, which means bold/underline are still emitted.
+    /// Colors are on by default.
+    /// </summary>
+    public bool NoColor
+    {
+        get; init;
+    }
+
+    /// <summary>
     /// When <see langword="true"/>, the Comment Health column and percentage
     /// breakdowns are hidden.
     /// </summary>

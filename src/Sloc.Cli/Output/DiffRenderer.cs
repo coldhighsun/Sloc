@@ -99,21 +99,21 @@ internal static class DiffRenderer
 
     private static void RenderTable(Deltas deltas, IAnsiConsole? console)
     {
-        var table = new Table().Border(TableBorder.Rounded);
+        var table = new Table().Border(TableBorder.Rounded).BorderColor(Theme.Border);
         table.Caption(new TableTitle("[grey]Δ vs baseline[/]"));
-        table.AddColumn("Language");
-        table.AddColumn(new TableColumn("Code Δ").RightAligned());
-        table.AddColumn(new TableColumn("Comment Δ").RightAligned());
-        table.AddColumn(new TableColumn("Blank Δ").RightAligned());
-        table.AddColumn(new TableColumn("Total Δ").RightAligned());
+        table.AddColumn(Theme.Header("Language"));
+        table.AddColumn(new TableColumn(Theme.Header("Code Δ")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Comment Δ")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Blank Δ")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Total Δ")).RightAligned());
 
         foreach (var delta in deltas.Languages)
         {
             table.AddRow(
-                Markup.Escape(delta.Language),
+                Theme.Language(delta.Language),
                 Signed(delta.Code),
                 Signed(delta.Comment),
-                Signed(delta.Blank),
+                SignedNeutral(delta.Blank),
                 Signed(delta.Total));
         }
 
@@ -122,7 +122,7 @@ internal static class DiffRenderer
             "[bold]Total[/]",
             SignedBold(deltas.Total.Code),
             SignedBold(deltas.Total.Comment),
-            SignedBold(deltas.Total.Blank),
+            SignedNeutral(deltas.Total.Blank, bold: true),
             SignedBold(deltas.Total.Total));
 
         (console ?? AnsiConsole.Console).Write(table);
@@ -340,19 +340,17 @@ internal static class DiffRenderer
             .ToList();
     }
 
-    private static string Signed(int value) => value switch
+    private static string Signed(int value, bool bold = false, bool neutral = false)
     {
-        > 0 => $"[green]+{value:N0}[/]",
-        < 0 => $"[red]{value:N0}[/]",
-        _ => "[grey]0[/]"
-    };
+        var text = value > 0 ? $"+{value:N0}" : value.ToString("N0");
+        var color = value == 0 || neutral ? "grey" : value > 0 ? "green" : "red";
+        return bold ? $"[bold {color}]{text}[/]" : $"[{color}]{text}[/]";
+    }
 
-    private static string SignedBold(int value) => value switch
-    {
-        > 0 => $"[bold green]+{value:N0}[/]",
-        < 0 => $"[bold red]{value:N0}[/]",
-        _ => "[bold grey]0[/]"
-    };
+    private static string SignedBold(int value) => Signed(value, bold: true);
+
+    /// <summary>Blank-line changes are neither good nor bad, so they keep the sign but not the red/green judgement.</summary>
+    private static string SignedNeutral(int value, bool bold = false) => Signed(value, bold, neutral: true);
 
     private sealed record LanguageDelta(string Language, int Code, int Comment, int Blank, int Total);
 

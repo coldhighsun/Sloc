@@ -44,7 +44,7 @@ public sealed class TableRenderer : IResultRenderer
 
     internal Table BuildLanguageTable(AnalysisSummary summary, string? caption = null, bool noHealth = false, bool noComplexity = false)
     {
-        var table = new Table().Border(TableBorder.Rounded);
+        var table = new Table().Border(TableBorder.Rounded).BorderColor(Theme.Border);
 
         var note = ColumnLayout.TruncationNote(summary) is { } text ? $"[grey]{Markup.Escape(text)}[/]" : null;
         var fullCaption = caption is not null && note is not null ? $"{caption}{Environment.NewLine}{note}" : caption ?? note;
@@ -53,29 +53,29 @@ public sealed class TableRenderer : IResultRenderer
             table.Caption(new TableTitle(fullCaption));
         }
 
-        table.AddColumn("Language");
-        table.AddColumn(new TableColumn("Files").RightAligned());
-        table.AddColumn(new TableColumn("Code").RightAligned());
-        table.AddColumn(new TableColumn("Comment").RightAligned());
-        table.AddColumn(new TableColumn("Blank").RightAligned());
-        table.AddColumn(new TableColumn("Total").RightAligned());
+        table.AddColumn(Theme.Header("Language"));
+        table.AddColumn(new TableColumn(Theme.Header("Files")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Code")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Comment")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Blank")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Total")).RightAligned());
         if (!noHealth)
         {
-            table.AddColumn("Comment Health");
+            table.AddColumn(Theme.Header("Comment Health"));
         }
         if (!noComplexity)
         {
-            table.AddColumn(new TableColumn("Complexity").RightAligned());
+            table.AddColumn(new TableColumn(Theme.Header("Complexity")).RightAligned());
         }
 
         foreach (var language in summary.ByLanguage)
         {
-            var codeCell = noHealth ? language.Code.ToString("N0") : WithPercent(language.Code, language.Total);
-            var commentCell = noHealth ? language.Comment.ToString("N0") : WithPercent(language.Comment, language.Total);
-            var blankCell = noHealth ? language.Blank.ToString("N0") : WithPercent(language.Blank, language.Total);
+            var codeCell = Count(language.Code, language.Total, noHealth);
+            var commentCell = Count(language.Comment, language.Total, noHealth, Theme.CommentStyle);
+            var blankCell = Count(language.Blank, language.Total, noHealth, Theme.BlankStyle);
             var row = new List<string>
             {
-                Markup.Escape(language.Language),
+                Theme.Language(language.Language),
                 language.Files.ToString("N0"),
                 codeCell,
                 commentCell,
@@ -95,9 +95,9 @@ public sealed class TableRenderer : IResultRenderer
         }
 
         table.AddEmptyRow();
-        var totalCodeCell = noHealth ? $"[bold]{summary.Code:N0}[/]" : WithPercent(summary.Code, summary.Total, bold: true);
-        var totalCommentCell = noHealth ? $"[bold]{summary.Comment:N0}[/]" : WithPercent(summary.Comment, summary.Total, bold: true);
-        var totalBlankCell = noHealth ? $"[bold]{summary.Blank:N0}[/]" : WithPercent(summary.Blank, summary.Total, bold: true);
+        var totalCodeCell = Count(summary.Code, summary.Total, noHealth, bold: true);
+        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, Theme.CommentStyle, bold: true);
+        var totalBlankCell = Count(summary.Blank, summary.Total, noHealth, Theme.BlankStyle, bold: true);
         var totalRow = new List<string>
         {
             $"[bold]{"Total"}[/]",
@@ -180,13 +180,13 @@ public sealed class TableRenderer : IResultRenderer
         }
 
         AnsiConsole.WriteLine();
-        var table = new Table().Border(TableBorder.Rounded);
-        table.Title(new TableTitle($"[yellow]{Markup.Escape("Skipped Files")} ({summary.Skipped.Count:N0})[/]"));
-        table.AddColumn("Path");
-        table.AddColumn("Reason");
+        var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Yellow);
+        table.Title(new TableTitle($"[bold yellow]{Markup.Escape("Skipped Files")} ({summary.Skipped.Count:N0})[/]"));
+        table.AddColumn(Theme.Header("Path"));
+        table.AddColumn(Theme.Header("Reason"));
         foreach (var entry in summary.Skipped)
         {
-            table.AddRow(Markup.Escape(entry.Path), Markup.Escape(entry.Reason));
+            table.AddRow(Markup.Escape(entry.Path), $"[yellow]{Markup.Escape(entry.Reason)}[/]");
         }
 
         AnsiConsole.Write(table);
@@ -194,16 +194,16 @@ public sealed class TableRenderer : IResultRenderer
 
     private void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool noComplexity, bool indented = false, string treePrefix = "")
     {
-        var codeCell = noHealth ? file.Code.ToString("N0") : WithPercent(file.Code, file.Total);
-        var commentCell = noHealth ? file.Comment.ToString("N0") : WithPercent(file.Comment, file.Total);
-        var blankCell = noHealth ? file.Blank.ToString("N0") : WithPercent(file.Blank, file.Total);
+        var codeCell = Count(file.Code, file.Total, noHealth);
+        var commentCell = Count(file.Comment, file.Total, noHealth, Theme.CommentStyle);
+        var blankCell = Count(file.Blank, file.Total, noHealth, Theme.BlankStyle);
         var fileCell = indented
-            ? $"{treePrefix}{Markup.Escape(Path.GetFileName(file.Path))}"
+            ? $"{TreePrefix(treePrefix)}{Markup.Escape(Path.GetFileName(file.Path))}"
             : Markup.Escape(ToRelative(file.Path));
         var row = new List<string>
         {
             fileCell,
-            Markup.Escape(file.Language),
+            Theme.Language(file.Language),
             codeCell,
             commentCell,
             blankCell,
@@ -224,9 +224,9 @@ public sealed class TableRenderer : IResultRenderer
     private void AddFileTotalRow(Table table, AnalysisSummary summary, bool noHealth, bool noComplexity)
     {
         table.AddEmptyRow();
-        var totalCodeCell = noHealth ? $"[bold]{summary.Code:N0}[/]" : WithPercent(summary.Code, summary.Total, bold: true);
-        var totalCommentCell = noHealth ? $"[bold]{summary.Comment:N0}[/]" : WithPercent(summary.Comment, summary.Total, bold: true);
-        var totalBlankCell = noHealth ? $"[bold]{summary.Blank:N0}[/]" : WithPercent(summary.Blank, summary.Total, bold: true);
+        var totalCodeCell = Count(summary.Code, summary.Total, noHealth, bold: true);
+        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, Theme.CommentStyle, bold: true);
+        var totalBlankCell = Count(summary.Blank, summary.Total, noHealth, Theme.BlankStyle, bold: true);
         var row = new List<string>
         {
             $"[bold]{"Total"}[/]",
@@ -254,8 +254,8 @@ public sealed class TableRenderer : IResultRenderer
         // has no file name of its own, so it is labeled with the whole root instead.
         var name = Path.GetFileName(folder) is { Length: > 0 } folderName ? folderName : folder;
         var label = string.IsNullOrEmpty(folder)
-            ? $"{treePrefix}[grey].[/]"
-            : $"{treePrefix}[bold]📁 {Markup.Escape(name)}[/]";
+            ? $"{TreePrefix(treePrefix)}[grey].[/]"
+            : $"{TreePrefix(treePrefix)}[{Theme.FolderStyle}]📁 {Markup.Escape(name)}[/]";
         var columnCount = 5 + (noHealth ? 0 : 1) + (noComplexity ? 0 : 1);
         var row = new string[columnCount + 1];
         row[0] = label;
@@ -302,6 +302,7 @@ public sealed class TableRenderer : IResultRenderer
             CommentHealthLevel.Fair => "yellow",
             CommentHealthLevel.Good => "green",
             CommentHealthLevel.High => "cyan",
+            CommentHealthLevel.Dense => "magenta",
             _ => "red"
         };
 
@@ -347,20 +348,20 @@ public sealed class TableRenderer : IResultRenderer
 
     private Table CreateFileTable(bool noHealth, bool noComplexity = false)
     {
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("File");
-        table.AddColumn("Language");
-        table.AddColumn(new TableColumn("Code").RightAligned());
-        table.AddColumn(new TableColumn("Comment").RightAligned());
-        table.AddColumn(new TableColumn("Blank").RightAligned());
-        table.AddColumn(new TableColumn("Total").RightAligned());
+        var table = new Table().Border(TableBorder.Rounded).BorderColor(Theme.Border);
+        table.AddColumn(Theme.Header("File"));
+        table.AddColumn(Theme.Header("Language"));
+        table.AddColumn(new TableColumn(Theme.Header("Code")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Comment")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Blank")).RightAligned());
+        table.AddColumn(new TableColumn(Theme.Header("Total")).RightAligned());
         if (!noHealth)
         {
-            table.AddColumn("Comment Health");
+            table.AddColumn(Theme.Header("Comment Health"));
         }
         if (!noComplexity)
         {
-            table.AddColumn(new TableColumn("Complexity").RightAligned());
+            table.AddColumn(new TableColumn(Theme.Header("Complexity")).RightAligned());
         }
         return table;
     }
@@ -473,17 +474,27 @@ public sealed class TableRenderer : IResultRenderer
         }
     }
 
-    private string WithPercent(int count, int total, bool bold = false)
+    /// <summary>Colors the tree connectors of a by-file row; the plain prefix is only box-drawing characters and spaces.</summary>
+    private static string TreePrefix(string prefix) =>
+        prefix.Length == 0 ? prefix : $"[{Theme.TreeStyle}]{prefix}[/]";
+
+    /// <summary>
+    /// Formats a count cell: the number in <paramref name="style"/> (and bold when requested),
+    /// followed by its share of <paramref name="total"/> unless <paramref name="noHealth"/> hides it.
+    /// </summary>
+    private static string Count(int count, int total, bool noHealth, string? style = null, bool bold = false)
     {
-        if (total == 0)
+        var tag = (bold ? "bold " : "") + style;
+        tag = tag.Trim();
+        var number = count.ToString("N0");
+        var text = tag.Length == 0 ? number : $"[{tag}]{number}[/]";
+        if (noHealth || total == 0)
         {
-            return bold ? $"[bold]{count:N0}[/]" : count.ToString("N0");
+            return text;
         }
 
         var pct = $"{(double)count / total * 100,3:F0}%";
-        return bold
-            ? $"[bold]{count:N0}[/] [grey]({pct})[/]"
-            : $"{count:N0} [grey]({pct})[/]";
+        return $"{text} [{Theme.PercentStyle}]({pct})[/]";
     }
 
     private sealed class TreeNode

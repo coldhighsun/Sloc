@@ -94,6 +94,11 @@ internal static class SlocCommandFactory
             Description = "Hide the Comment Health column and percentage breakdowns."
         };
 
+        var noColorOption = new Option<bool>("--no-color")
+        {
+            Description = "Disable colored console output and the colors of the HTML report (color is on by default; NO_COLOR and redirected output also disable the console colors)."
+        };
+
         var noComplexityOption = new Option<bool>("--no-complexity")
         {
             Description = "Hide the Complexity column/field."
@@ -212,6 +217,7 @@ internal static class SlocCommandFactory
             allOption,
             outputOption,
             noHealthOption,
+            noColorOption,
             noComplexityOption,
             quietOption,
             noProgressOption,
@@ -329,6 +335,7 @@ internal static class SlocCommandFactory
                 IncludeUnknown = parseResult.GetValue(allOption),
                 OutputFile = outputFile,
                 NoHealth = parseResult.GetValue(noHealthOption),
+                NoColor = parseResult.GetValue(noColorOption),
                 NoComplexity = parseResult.GetValue(noComplexityOption),
                 Quiet = parseResult.GetValue(quietOption),
                 NoProgress = parseResult.GetValue(noProgressOption),

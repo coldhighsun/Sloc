@@ -92,8 +92,46 @@ public class HtmlRendererTests
         new HtmlRenderer(writer).Render(summary, byFile: true, noHealth: true);
         var html = writer.ToString();
 
-        Assert.Contains("<span>Src</span>", html);
-        Assert.Contains("<span>src</span>", html);
+        Assert.Contains("<span class=\"folder-label\">Src</span>", html);
+        Assert.Contains("<span class=\"folder-label\">src</span>", html);
+    }
+
+    /// <summary>
+    /// Verifies the language cell carries a dot in the console theme color, and that comment and
+    /// blank counts get their own style classes (matching the table output).
+    /// </summary>
+    [Fact]
+    public void Render_ByLanguage_ColorsLanguageCommentAndBlank()
+    {
+        var summary = new AnalysisSummary([new FileAnalysis { Path = "a.js", Language = "JavaScript", Code = 8, Comment = 1, Blank = 1 }]);
+        using var writer = new StringWriter();
+
+        new HtmlRenderer(writer).Render(summary, byFile: false, noHealth: false);
+        var html = writer.ToString();
+
+        Assert.Contains($"background:#{Theme.LanguageColor("JavaScript").ToHex()}", html);
+        Assert.Contains("<span class=\"c-comment\">1</span>", html);
+        Assert.Contains("<span class=\"c-blank\">1</span>", html);
+    }
+
+    /// <summary>
+    /// Verifies <c>noColor</c> marks the page so the color classes are neutralized, and that the
+    /// default page is not marked.
+    /// </summary>
+    [Fact]
+    public void Render_NoColor_MarksBodyAndNeutralizesColors()
+    {
+        var summary = new AnalysisSummary([new FileAnalysis { Path = "a.js", Language = "JavaScript", Code = 8, Comment = 1, Blank = 1 }]);
+        using var plain = new StringWriter();
+        using var colored = new StringWriter();
+
+        new HtmlRenderer(plain, noColor: true).Render(summary, byFile: false, noHealth: false);
+        new HtmlRenderer(colored).Render(summary, byFile: false, noHealth: false);
+
+        Assert.Contains("<body class=\"no-color\">", plain.ToString());
+        Assert.Contains(".no-color .lang-dot { display: none; }", plain.ToString());
+        Assert.Contains("<body>", colored.ToString());
+        Assert.DoesNotContain("no-color\"", colored.ToString().Split("<body>")[1]);
     }
 
     /// <summary>
