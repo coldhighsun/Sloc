@@ -160,10 +160,11 @@ public sealed partial class AnalyzeHandler
     /// twice with different writers, e.g. once to stdout and once to a file.
     /// </summary>
     /// <param name="format">The requested output format.</param>
-    private static Func<TextWriter, IResultRenderer>? CreateRenderer(OutputFormat format) => format switch
+    /// <param name="noColor">Whether <c>--no-color</c> was given; the HTML report then drops its colors.</param>
+    private static Func<TextWriter, IResultRenderer>? CreateRenderer(OutputFormat format, bool noColor) => format switch
     {
         OutputFormat.Json => writer => new JsonRenderer(writer),
-        OutputFormat.Html => writer => new HtmlRenderer(writer),
+        OutputFormat.Html => writer => new HtmlRenderer(writer, noColor: noColor),
         OutputFormat.Csv => writer => new CsvRenderer(writer),
         OutputFormat.Markdown => writer => new MarkdownRenderer(writer),
         _ => null
@@ -336,7 +337,7 @@ public sealed partial class AnalyzeHandler
     /// <param name="showProgress">Whether the live-table progress UI already drew the language table.</param>
     private static int RenderNormal(AnalysisSummary summary, AnalyzeOptions options, string sourcePath, TableRenderer tableRenderer, bool showProgress)
     {
-        if (CreateRenderer(options.Format) is { } createRenderer)
+        if (CreateRenderer(options.Format, options.NoColor) is { } createRenderer)
         {
             // These formats default to stdout (pipeable/pasteable); an explicit path writes a file.
             if (options.OutputFile is null || options.OutputFile == StdoutToken)
@@ -485,9 +486,51 @@ public sealed partial class AnalyzeHandler
 
         if (!quiet)
         {
-            AnsiConsole.MarkupLine($"[green]Saved to:[/] {Markup.Escape(path)}");
+            AnsiConsole.MarkupLine($"[green]Saved to:[/] [underline]{Markup.Escape(path)}[/]");
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Honors <c>--no-color</c> for everything written through Spectre. Colors are otherwise on
+    /// and left to Spectre's own detection (<c>NO_COLOR</c>, redirected output).
+    /// </summary>
+    /// <param name="options">The parsed options.</param>
+    /// <param name="console">The console to configure; the global <see cref="AnsiConsole"/> when <see langword="null"/>.</param>
+    /// <returns>A scope that puts the console's color system back when disposed.</returns>
+    internal static IDisposable ApplyColorSetting(AnalyzeOptions options, IAnsiConsole? console = null)
+    {
+        if (!options.NoColor)
+        {
+            // Not even a read of the global console: that would create it eagerly, binding it to
+            // whatever Console.Out is at this moment instead of at the first write.
+            return NoColorScope.Instance;
+        }
+
+        var capabilities = (console ?? AnsiConsole.Console).Profile.Capabilities;
+        var scope = new ColorScope(capabilities);
+        // Only the colors go. ANSI stays on: the spinner, progress bar, and live table redraw in
+        // place through cursor control, and without it each frame is printed on a new line and
+        // the output scrolls. The cost is that bold/underline sequences are still emitted.
+        capabilities.ColorSystem = ColorSystem.NoColors;
+
+        return scope;
+    }
+
+    private sealed class NoColorScope : IDisposable
+    {
+        public static readonly NoColorScope Instance = new();
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ColorScope(Capabilities capabilities) : IDisposable
+    {
+        private readonly ColorSystem _colorSystem = capabilities.ColorSystem;
+
+        public void Dispose() => capabilities.ColorSystem = _colorSystem;
     }
 }

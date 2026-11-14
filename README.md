@@ -20,6 +20,8 @@ English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool for counting lines of source code.
 
+![sloc output: colored language table](docs/images/screenshot_sloc.png)
+
 ## Features
 
 - Count code / comment / blank / total lines
@@ -28,7 +30,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
 - Five output formats: colored table (default), JSON, HTML, CSV, and Markdown
-- Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense)
+- Comment Health column in table output showing comment-density indicator (None / Low / Fair / Good / High / Dense; shown in red / red / yellow / green / cyan / magenta)
 - Format auto-detected from the `--output` file extension (`.json` → JSON, `.html` / `.htm` → HTML)
 - Honors `.gitignore` files (including nested ones, and, when `path` is inside a git repository, the ones in the directories above it up to the repository root) by default; `--no-gitignore` disables it
 - Parallel analysis across CPU cores (`--jobs`), with deterministic output
@@ -36,6 +38,20 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 - Compare against a saved JSON report with `--baseline`, or directly against another commit with `--compare-to`, to see how line counts changed
 - Sort and limit the language summary with `--sort` (including by comment percentage) / `--top`
 - Files or directories that cannot be read, and binary files (detected by NUL bytes), are skipped gracefully; a summary of skipped paths and reasons is shown at the end (in every format except `Csv`, which stays a single machine-parsable table)
+
+## Screenshots
+
+**Per-file tree view** with `--by-file`: folders, files, comment health, and complexity at a glance.
+
+![sloc --by-file: per-file tree view](docs/images/screenshot_sloc_by_file.png)
+
+**Diff against any commit** with `--compare-to` (or a saved report with `--baseline`): see what changed per language, no checkout needed.
+
+![sloc --compare-to: line-count changes per language](docs/images/screenshot_sloc_diff.png)
+
+**HTML report** with `--format html` (or `-o report.html`): a self-contained, color-coded page (same language colors as the table) with a collapsible per-folder breakdown, shareable as a single file.
+
+![sloc HTML report](docs/images/screenshot_sloc_html.png)
 
 ## Installation
 
@@ -172,6 +188,7 @@ sloc . --format markdown --detailed -o -
 | `--output` | `-o` | Output file path for `Json` / `Html` / `Csv` / `Markdown` formats; use `-` to write to stdout; format is inferred from the file extension when `--format` is not specified |
 | `--no-recursive` | | Do not recurse into subdirectories |
 | `--no-health` | | Hide the Comment Health column and percentage breakdowns |
+| `--no-color` | | Disable colored console output (on by default; `NO_COLOR` and redirected output also disable it; only colors are dropped; bold/underline stay; `--format html` reports drop their colors too) |
 | `--by-file` | | Show per-file details in addition to the language summary |
 | `--detailed` | | In `Json` / `Html` / `Markdown` output, include both the language summary and the per-file breakdown. In `Csv` output it selects the language summary only (a single well-formed table) |
 | `--paged` | `-p` | Show paged output |
@@ -209,14 +226,6 @@ All non-table formats (`Json`, `Html`, `Csv`, `Markdown`) are written to stdout 
 | `1` | Path not found or unreadable, or invalid command-line arguments |
 | `2` | A threshold (e.g. `--min-comment-pct`) was not met |
 | `3` | Unexpected error |
-
-### Sample Output
-
-![Table output](docs/images/screenshot_sloc.png)
-
-With `--by-file` (tree view per file):
-
-![Table output with --by-file](docs/images/screenshot_sloc_by_file.png)
 
 ## Supported Languages
 

@@ -34,7 +34,11 @@ public sealed class HtmlRenderer : IResultRenderer
         .h-none, .h-low { color: #cf222e; }
         .h-fair, .h-high { color: #9a6700; }
         .h-good { color: #1a7f37; }
-        .h-dense { color: #cf222e; }
+        .h-dense { color: #8250df; }
+        .c-comment { color: #1a7f37; }
+        .c-blank { color: #6e7781; }
+        .lang-dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: 8px; vertical-align: baseline; }
+        .folder-label { color: #9a6700; }
         .h-na { color: #8c8c8c; }
         .file-controls { display: flex; gap: 8px; margin-bottom: 12px; }
         .control-btn {
@@ -74,13 +78,20 @@ public sealed class HtmlRenderer : IResultRenderer
             .h-none, .h-low { color: #ff7b72; }
             .h-fair, .h-high { color: #d29922; }
             .h-good { color: #3fb950; }
-            .h-dense { color: #ff7b72; }
+            .h-dense { color: #bc8cff; }
+            .c-comment { color: #3fb950; }
+            .c-blank { color: #8b949e; }
+            .folder-label { color: #e3b341; }
             .h-na { color: #8b949e; }
             .control-btn { border-color: #30363d; background: #21262d; color: #e6edf3; }
             .control-btn:hover { background: #30363d; }
             .folder-row > td { background: #161b22; }
             .folder-toggle { border-color: #30363d; background: #0d1117; color: #e6edf3; }
         }
+        /* --no-color: neutral text everywhere. Placed last and one class deeper than the rules above, so it also wins inside the dark-mode block. */
+        .no-color .c-comment, .no-color .c-blank, .no-color .folder-label,
+        .no-color .h-none, .no-color .h-low, .no-color .h-fair, .no-color .h-good, .no-color .h-high, .no-color .h-dense { color: inherit; }
+        .no-color .lang-dot { display: none; }
         """;
 
     private const string Script = """
@@ -188,6 +199,7 @@ public sealed class HtmlRenderer : IResultRenderer
     """;
 
     private readonly DateTimeOffset _generatedAt;
+    private readonly bool _noColor;
     private readonly TextWriter _writer;
 
     /// <summary>
@@ -201,10 +213,15 @@ public sealed class HtmlRenderer : IResultRenderer
     /// <see cref="DateTimeOffset.Now"/> when <see langword="null"/>; a fixed value is
     /// mainly useful for deterministic tests.
     /// </param>
-    public HtmlRenderer(TextWriter? writer = null, DateTimeOffset? generatedAt = null)
+    /// <param name="noColor">
+    /// When <see langword="true"/>, the report is rendered without the language, comment, blank,
+    /// folder, and comment-health colors (the page's own light/dark theme still applies).
+    /// </param>
+    public HtmlRenderer(TextWriter? writer = null, DateTimeOffset? generatedAt = null, bool noColor = false)
     {
         _writer = writer ?? Console.Out;
         _generatedAt = generatedAt ?? DateTimeOffset.Now;
+        _noColor = noColor;
     }
 
     /// <inheritdoc />
@@ -270,8 +287,8 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td>{Encode("Total")}</td>");
         sb.Append($"<td class=\"r\">{summary.FileCount:N0} {Encode("files")}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth)}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
         if (!noHealth)
         {
@@ -334,11 +351,11 @@ public sealed class HtmlRenderer : IResultRenderer
         foreach (var lang in summary.ByLanguage)
         {
             sb.Append("    <tr>");
-            sb.Append($"<td>{Encode(lang.Language)}</td>");
+            sb.Append(LanguageCell(lang.Language));
             sb.Append($"<td class=\"r\">{lang.Files:N0}</td>");
             sb.Append($"<td class=\"r\">{NumCell(lang.Code, lang.Total, noHealth)}</td>");
-            sb.Append($"<td class=\"r\">{NumCell(lang.Comment, lang.Total, noHealth)}</td>");
-            sb.Append($"<td class=\"r\">{NumCell(lang.Blank, lang.Total, noHealth)}</td>");
+            sb.Append($"<td class=\"r\">{NumCell(lang.Comment, lang.Total, noHealth, "c-comment")}</td>");
+            sb.Append($"<td class=\"r\">{NumCell(lang.Blank, lang.Total, noHealth, "c-blank")}</td>");
             sb.Append($"<td class=\"r\">{lang.Total:N0}</td>");
             if (!noHealth)
             {
@@ -356,8 +373,8 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td>{Encode("Total")}</td>");
         sb.Append($"<td class=\"r\">{summary.FileCount:N0}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth)}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
         if (!noHealth)
         {
@@ -461,6 +478,10 @@ public sealed class HtmlRenderer : IResultRenderer
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
+    /// <summary>A language cell: a dot in the language's console color (<see cref="Theme"/>) followed by its name.</summary>
+    private static string LanguageCell(string language) =>
+        $"<td><span class=\"lang-dot\" style=\"background:#{Theme.LanguageColor(language).ToHex()}\"></span>{Encode(language)}</td>";
+
     private static string HealthCell(CommentHealthLevel health)
     {
         if (health == CommentHealthLevel.NotApplicable)
@@ -488,15 +509,16 @@ public sealed class HtmlRenderer : IResultRenderer
         return Path.DirectorySeparatorChar == '/' ? path : path.Replace(Path.DirectorySeparatorChar, '/');
     }
 
-    private static string NumCell(int count, int total, bool noHealth = false)
+    private static string NumCell(int count, int total, bool noHealth = false, string? cssClass = null)
     {
+        var number = cssClass is null ? count.ToString("N0") : $"<span class=\"{cssClass}\">{count:N0}</span>";
         if (noHealth || total == 0)
         {
-            return count.ToString("N0");
+            return number;
         }
 
         var pct = (double)count / total * 100;
-        return $"{count:N0}<span class=\"pct\">({pct:F0}%)</span>";
+        return $"{number}<span class=\"pct\">({pct:F0}%)</span>";
     }
 
     private static void RenderFileRow(StringBuilder sb, string parentId, FileEntry entry, int depth, bool noHealth, bool noComplexity)
@@ -505,10 +527,10 @@ public sealed class HtmlRenderer : IResultRenderer
 
         sb.Append($"    <tr class=\"file-row\" data-parent-id=\"{parentId}\">");
         sb.Append($"<td style=\"padding-left:{indent}px;\">{Encode(entry.Name)}</td>");
-        sb.Append($"<td>{Encode(entry.File.Language)}</td>");
+        sb.Append(LanguageCell(entry.File.Language));
         sb.Append($"<td class=\"r\">{NumCell(entry.File.Code, entry.File.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(entry.File.Comment, entry.File.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(entry.File.Blank, entry.File.Total, noHealth)}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(entry.File.Comment, entry.File.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(entry.File.Blank, entry.File.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{entry.File.Total:N0}</td>");
         if (!noHealth)
         {
@@ -550,13 +572,13 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append("<td>");
         sb.Append($"<div class=\"folder-cell\" style=\"padding-left:{indent}px;\">");
         sb.Append($"<button type=\"button\" class=\"folder-toggle\" data-node-id=\"{nodeId}\" aria-expanded=\"{(expanded ? "true" : "false")}\">{toggleIcon}</button>");
-        sb.Append($"<span>{Encode(label)}</span>");
+        sb.Append($"<span class=\"folder-label\">{Encode(label)}</span>");
         sb.Append("</div>");
         sb.Append("</td>");
         sb.Append($"<td>{node.FileCount:N0} {"files"}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Code, node.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(node.Comment, node.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(node.Blank, node.Total, noHealth)}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(node.Comment, node.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(node.Blank, node.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{node.Total:N0}</td>");
         if (!noHealth)
         {
@@ -612,7 +634,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.AppendLine(Css);
         sb.AppendLine("  </style>");
         sb.AppendLine("</head>");
-        sb.AppendLine("<body>");
+        sb.AppendLine(_noColor ? "<body class=\"no-color\">" : "<body>");
         sb.AppendLine($"<h1>{Encode("Sloc Report")}</h1>");
         var generated = _generatedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         var sourceMeta = string.IsNullOrEmpty(sourcePath) ? string.Empty : $" &nbsp;|&nbsp; {"Source:"} {Encode(sourcePath)}";

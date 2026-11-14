@@ -20,6 +20,8 @@
 
 Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行数的 .NET 全局命令行工具。
 
+![sloc 输出：彩色语言统计表](docs/images/screenshot_sloc.png)
+
 ## 功能特性
 
 - 统计代码行 / 注释行 / 空行 / 总行数
@@ -28,7 +30,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
 - 五种输出格式：彩色表格（默认）、JSON、HTML、CSV 与 Markdown
-- 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密）
+- 表格输出新增注释健康度列，显示注释密度指标（无 / 低 / 一般 / 良好 / 较高 / 过密；依次显示为红 / 红 / 黄 / 绿 / 青 / 洋红）
 - 未指定 `--format` 时，可根据 `--output` 文件扩展名自动推断格式（`.json` → JSON，`.html` / `.htm` → HTML）
 - 默认遵循 `.gitignore` 文件（含子目录中的；`path` 位于 git 仓库内时，也包括其上层直到仓库根目录的）；`--no-gitignore` 可禁用
 - 跨 CPU 核心并行分析（`--jobs`），输出保持确定性
@@ -36,6 +38,20 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 - 通过 `--baseline` 与已保存的 JSON 报告对比，或用 `--compare-to` 直接与另一个 commit 对比，查看行数变化
 - 通过 `--sort`（支持按注释占比排序）/ `--top` 对语言汇总排序和限制条数
 - 无法读取的文件或目录，以及二进制文件（通过 NUL 字节检测），会被自动跳过，并在最终结果中列出所有跳过的路径及原因（除 `Csv` 外的所有格式;CSV 保持为单张可机器解析的表格）
+
+## 截图
+
+使用 `--by-file` 的**按文件树形视图**：目录、文件、注释健康度与复杂度一目了然。
+
+![sloc --by-file：按文件树形视图](docs/images/screenshot_sloc_by_file.png)
+
+使用 `--compare-to`（或用 `--baseline` 对比已保存的报告）与**任意提交对比**：无需检出即可按语言查看变化。
+
+![sloc --compare-to：按语言查看行数变化](docs/images/screenshot_sloc_diff.png)
+
+**HTML 报告**：使用 `--format html`（或 `-o report.html`），生成单文件、配色与终端表格一致、可折叠目录的独立页面，便于分享。
+
+![sloc HTML 报告](docs/images/screenshot_sloc_html.png)
 
 ## 安装
 
@@ -172,6 +188,7 @@ sloc . --format markdown --detailed -o -
 | `--output` | `-o` | `Json` / `Html` / `Csv` / `Markdown` 格式的输出文件路径；用 `-` 表示写到标准输出；未指定 `--format` 时根据文件扩展名自动推断格式 |
 | `--no-recursive` | | 不递归扫描子目录 |
 | `--no-health` | | 隐藏注释健康度列及百分比数据 |
+| `--no-color` | | 关闭彩色控制台输出（默认开启；设置 `NO_COLOR` 或重定向输出时也会自动关闭；只去掉颜色，粗体/下划线仍保留；`--format html` 报告也不再带颜色） |
 | `--by-file` | | 在语言汇总之外额外显示逐文件明细 |
 | `--detailed` | | 在 `Json` / `Html` / `Markdown` 输出中同时包含语言汇总和逐文件明细;在 `Csv` 输出中仅选择语言汇总(保持单张规范表格) |
 | `--paged` | `-p` | 显示分页输出 |
@@ -209,14 +226,6 @@ sloc . --format markdown --detailed -o -
 | `1` | 路径不存在或不可读,或命令行参数无效 |
 | `2` | 未达到阈值(如 `--min-comment-pct`) |
 | `3` | 意外错误 |
-
-### 输出示例
-
-![表格输出](docs/images/screenshot_sloc.png)
-
-使用 `--by-file` 选项（按文件树形展示）：
-
-![带 --by-file 的表格输出](docs/images/screenshot_sloc_by_file.png)
 
 ## 支持的语言
 
