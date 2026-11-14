@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml/badge.svg)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/coldhighsun/Sloc/branch/main/graph/badge.svg)](https://codecov.io/gh/coldhighsun/Sloc)
+[![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcoldhighsun%2FSloc%2Fbadges%2Ftests.json)](https://github.com/coldhighsun/Sloc/actions/workflows/ci.yml)
 ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![GitHub last commit](https://img.shields.io/github/last-commit/coldhighsun/Sloc)
