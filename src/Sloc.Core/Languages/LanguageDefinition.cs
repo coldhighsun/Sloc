@@ -221,12 +221,15 @@ public sealed class LanguageDefinition
     public IReadOnlyList<string> LineCommentExceptions { get; init; } = [];
 
     /// <summary>
-    /// Tokens that start with a <see cref="BlockComments">block-comment</see> open but are not
-    /// one, such as F#'s <c>(*)</c> multiplication operator (F#'s <c>(*</c> otherwise opens a
-    /// comment). Matched as a unit both in code and inside an open block comment, so the token
-    /// neither opens nor nests a comment and its trailing characters never close one.
+    /// Tokens matched as a unit (before block-comment opens, line comments, and string openers)
+    /// so that none of those is recognized inside them: F#'s <c>(*)</c> multiplication operator
+    /// (whose <c>(*</c> would open a comment), Lisp's <c>#\"</c> and Emacs Lisp's <c>?\"</c>
+    /// character literals (whose quote would open a string), and TeX's <c>\%</c> (a literal
+    /// percent sign, not a comment). Matched both in code and inside an open block comment, so
+    /// the token neither opens nor nests a comment and its trailing characters never close one.
+    /// The first character of each token is added to the token-start characters automatically.
     /// </summary>
-    public IReadOnlyList<string> BlockCommentExceptions { get; init; } = [];
+    public IReadOnlyList<string> TokenExceptions { get; init; } = [];
 
     /// <summary>
     /// Whether the language has JavaScript-style <c>/…/flags</c> regular-expression literals,
@@ -364,6 +367,16 @@ public sealed class LanguageDefinition
         var chars = new HashSet<char>();
         chars.UnionWith(tables.BlockComments.Keys);
         chars.UnionWith(tables.StringLiterals.Keys);
+
+        // Exception tokens are matched at token-start positions, so their first characters must
+        // stop the scan even when they start nothing else (TeX's "\%", Emacs Lisp's "?\"").
+        foreach (var exception in TokenExceptions.Concat(LineCommentExceptions))
+        {
+            if (exception.Length > 0)
+            {
+                chars.Add(exception[0]);
+            }
+        }
 
         if (CaseInsensitiveLineComments)
         {

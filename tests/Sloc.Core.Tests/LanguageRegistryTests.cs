@@ -306,4 +306,81 @@ public class LanguageRegistryTests
         Assert.True(LanguageRegistry.TryGetByExtension(extension, out var language));
         Assert.Equal("MSBuild script", language.Name);
     }
+
+    /// <summary>
+    /// Verifies that the extensions of the newer languages resolve to the expected language.
+    /// </summary>
+    /// <param name="extension">An extension to look up.</param>
+    /// <param name="expectedName">The expected language name.</param>
+    [Theory]
+    [InlineData(".razor", "Razor")]
+    [InlineData(".xaml", "XAML")]
+    [InlineData(".axaml", "XAML")]
+    [InlineData(".f90", "Fortran")]
+    [InlineData(".for", "Fortran")]
+    [InlineData(".cob", "COBOL")]
+    [InlineData(".cbl", "COBOL")]
+    [InlineData(".scm", "Scheme")]
+    [InlineData(".rkt", "Racket")]
+    [InlineData(".lisp", "Common Lisp")]
+    [InlineData(".el", "Emacs Lisp")]
+    [InlineData(".vh", "Verilog")]
+    [InlineData(".sv", "SystemVerilog")]
+    [InlineData(".vhd", "VHDL")]
+    [InlineData(".tex", "TeX")]
+    public void TryGetByExtension_NewerLanguages_Resolve(string extension, string expectedName)
+    {
+        Assert.True(LanguageRegistry.TryGetByExtension(extension, out var language));
+        Assert.Equal(expectedName, language.Name);
+    }
+
+    /// <summary>
+    /// Verifies that extensions shared with far more common languages (OpenCL, Apex, VB6, Coq)
+    /// are deliberately not claimed by Common Lisp, TeX, or Verilog.
+    /// </summary>
+    /// <param name="extension">An ambiguous extension that must stay unresolved.</param>
+    [Theory]
+    [InlineData(".cl")]
+    [InlineData(".cls")]
+    [InlineData(".v")]
+    public void TryGetByExtension_AmbiguousExtensions_AreNotClaimed(string extension)
+    {
+        Assert.False(LanguageRegistry.TryGetByExtension(extension, out _));
+    }
+
+    /// <summary>
+    /// Verifies the number of built-in languages. The count is quoted in CLAUDE.md, the READMEs,
+    /// the NuGet description, and the Homebrew formula, so update those when this changes.
+    /// </summary>
+    [Fact]
+    public void Languages_BuiltInCount_MatchesDocumentedCount()
+    {
+        Assert.Equal(78, LanguageRegistry.Languages.Count);
+    }
+
+    /// <summary>
+    /// Verifies that XAML files are reported as XAML and no longer fall under XML.
+    /// </summary>
+    [Fact]
+    public void TryGetByExtension_Xaml_IsNotXml()
+    {
+        Assert.True(LanguageRegistry.TryGetByExtension(".xaml", out var language));
+        Assert.Equal("XAML", language.Name);
+        Assert.DoesNotContain(".xaml", LanguageRegistry.Languages.Single(l => l.Name == "XML").Extensions);
+    }
+
+    /// <summary>
+    /// Verifies that Fortran and COBOL, whose fixed-form comments are not modeled, do not
+    /// report comment health (which would be a misleading ~0%).
+    /// </summary>
+    /// <param name="extension">An extension of a Fortran or COBOL file.</param>
+    [Theory]
+    [InlineData(".f90")]
+    [InlineData(".f")]
+    [InlineData(".cbl")]
+    public void SupportsHealth_FixedFormLanguages_IsFalse(string extension)
+    {
+        Assert.True(LanguageRegistry.TryGetByExtension(extension, out var language));
+        Assert.False(language.SupportsHealth);
+    }
 }

@@ -24,7 +24,7 @@ Sloc (**S**ource **L**ines **O**f **C**ode) is a .NET global command-line tool f
 
 - Count code / comment / blank / total lines
 - Correctly handles single-line comments, block comments, and multi-line block comments
-- Built-in comment rules for 66 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
+- Built-in comment rules for 78 common languages (auto-detected by file extension or name, e.g. `Makefile`, `Dockerfile`, `CMakeLists.txt`)
 - Recursive directory scanning with `--include` / `--exclude` glob filters
 - Automatically excludes `bin`, `obj`, `artifacts`, `.git`, `.vs`, `.vscode`, `.idea`, `node_modules`, and similar directories by default
 - Five output formats: colored table (default), JSON, HTML, CSV, and Markdown
@@ -220,9 +220,9 @@ With `--by-file` (tree view per file):
 
 ## Supported Languages
 
-- **Programming languages**: C#, C# Designer, C, C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, Scala, Dart, R, Lua, Perl, Elixir, Haskell, Objective-C, Groovy, Julia, Clojure, BASIC, Pascal, Zig, Nim, OCaml, Erlang, Elm, D, Crystal, Solidity
-- **Web & templates**: HTML, CSS, SCSS/Less, Vue, Svelte, Astro, MDX
-- **Data & config formats**: JSON, YAML, XML, TOML, INI, Markdown, Protobuf, GraphQL
+- **Programming languages**: C#, C# Designer, C, C++, Java, Kotlin, Swift, JavaScript, TypeScript, Python, Go, Rust, PHP, Ruby, F#, Visual Basic, Scala, Dart, R, Lua, Perl, Elixir, Haskell, Objective-C, Groovy, Julia, Clojure, BASIC, Pascal, Zig, Nim, OCaml, Erlang, Elm, D, Crystal, Solidity, Fortran, COBOL, Scheme, Racket, Common Lisp, Emacs Lisp, Verilog, SystemVerilog, VHDL
+- **Web & templates**: HTML, Razor, XAML, CSS, SCSS/Less, Vue, Svelte, Astro, MDX
+- **Data & config formats**: JSON, YAML, XML, TOML, INI, Markdown, TeX, Protobuf, GraphQL
 - **Shell, build & infra**: Shell, PowerShell, Batch, SQL, Makefile, Dockerfile, CMake, Terraform, Bazel/Starlark, Nix, MSBuild script
 - **Other**: Assembly, Jupyter Notebook, Text
 
@@ -256,6 +256,9 @@ sloc ./src
 - JavaScript/TypeScript regex literals are recognized, so comment markers inside them (e.g. `/\/*$/`) are counted as code, and PHP 8 attributes (`#[…]`) are code rather than `#` comments.
 - Python triple-quoted strings are counted as comments only when they begin a statement (docstrings, including `r"""…"""`/`u"""…"""`); used as a value (e.g. `x = """…"""`), inside brackets left open by an earlier line, or after a trailing `\` line continuation they are counted as code.
 - The complexity metric counts branch tokens textually, so a token that is not a branch in context still adds to it: TypeScript's optional-member `?:` (`name?: string`), Rust's empty closure parameter list `||` (`|| x`), and C++'s rvalue/forwarding reference `&&` (`T&&`).
+
+- Fortran and COBOL are recognized in free form only (`!` and `*>` comments); fixed-form comments (`C`/`*` in column 1 for Fortran, `*` in column 7 for COBOL) are counted as code.
+- `.xaml`/`.axaml` files are reported as `XAML` (previously they were grouped under `XML`), so `--include-lang`/`--exclude-lang XML` and baselines saved before this change see them move. `.v` (Coq or Verilog), `.cl` (OpenCL) and `.cls` (Apex, VB6) are not claimed by any language.
 
 ## License
 

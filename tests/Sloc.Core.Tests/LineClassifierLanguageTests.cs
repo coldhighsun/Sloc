@@ -913,4 +913,317 @@ public class LineClassifierLanguageTests
         Assert.Equal(LineKind.Code, classifier.Classify("  =pod"));
         Assert.False(classifier.InBlockComment);
     }
+
+    /// <summary>
+    /// Verifies that Razor's <c>@* *@</c>, HTML, and C# comments are all recognized in a .razor file.
+    /// </summary>
+    [Fact]
+    public void Classify_RazorComments_AllStylesRecognized()
+    {
+        var classifier = new LineClassifier(Resolve(".razor"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("@* a razor comment *@"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("<!-- an html comment -->"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a csharp comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("<h1>Hello</h1>"));
+    }
+
+    /// <summary>
+    /// Verifies that a XAML file resolves to its own language with HTML-style block comments.
+    /// </summary>
+    [Fact]
+    public void Classify_XamlComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".axaml"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("<!-- a xaml comment -->"));
+        Assert.Equal(LineKind.Code, classifier.Classify("<Button Content=\"OK\" />"));
+    }
+
+    /// <summary>
+    /// Verifies that a Fortran <c>!</c> comment is recognized, and that a line with code
+    /// before a trailing comment stays code.
+    /// </summary>
+    [Fact]
+    public void Classify_Fortran_BangComment()
+    {
+        var classifier = new LineClassifier(Resolve(".f90"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("! a fortran comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("x = 1 ! trailing"));
+    }
+
+    /// <summary>
+    /// Verifies that Fortran and COBOL strings have no backslash escape and embed a quote by
+    /// doubling it. Neither language has a block comment, so a line's kind cannot reveal how
+    /// strings are tracked; the string definitions are checked directly instead.
+    /// </summary>
+    /// <param name="extension">The extension of a Fortran or COBOL file.</param>
+    [Theory]
+    [InlineData(".f90")]
+    [InlineData(".cbl")]
+    public void StringLiterals_FortranAndCobol_DoubleQuotesWithoutBackslashEscape(string extension)
+    {
+        var language = Resolve(extension);
+
+        Assert.All(language.StringLiterals, literal =>
+        {
+            Assert.False(literal.AllowEscape);
+            Assert.True(literal.DoubledClosingEscape);
+        });
+        Assert.Contains(language.StringLiterals, literal => literal.Delimiter == "\"");
+        Assert.Contains(language.StringLiterals, literal => literal.Delimiter == "'");
+    }
+
+    /// <summary>
+    /// Verifies that a free-form COBOL <c>*&gt;</c> comment is recognized.
+    /// </summary>
+    [Fact]
+    public void Classify_CobolFreeFormComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".cbl"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("*> a cobol comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("DISPLAY \"hello\". *> trailing"));
+    }
+
+    /// <summary>
+    /// Verifies that the Lisp family's <c>;</c> comments and nested <c>#| |#</c> block comments work.
+    /// </summary>
+    /// <param name="extension">The extension of a Lisp-family file.</param>
+    [Theory]
+    [InlineData(".scm")]
+    [InlineData(".rkt")]
+    [InlineData(".lisp")]
+    public void Classify_LispFamily_LineAndNestedBlockComments(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("; a comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("#| outer #| inner |#"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("still comment |#"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a <c>#|</c> inside a Lisp-family string does not open a block comment,
+    /// while one after the string does.
+    /// </summary>
+    /// <param name="extension">The extension of a Lisp-family file.</param>
+    [Theory]
+    [InlineData(".scm")]
+    [InlineData(".rkt")]
+    [InlineData(".lisp")]
+    public void Classify_LispFamily_BlockOpenerInsideString_IsIgnored(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("(display \"#| not a comment\")"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("(display \"x\") #| real comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that the character literals <c>#\"</c> and <c>#\;</c> neither open a string nor
+    /// start a comment, so a real comment after them is still recognized.
+    /// </summary>
+    /// <param name="extension">The extension of a Lisp-family file.</param>
+    [Theory]
+    [InlineData(".scm")]
+    [InlineData(".rkt")]
+    [InlineData(".lisp")]
+    public void Classify_LispFamily_CharacterLiterals_AreCode(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Code, classifier.Classify(@"(char=? c #\"") #| real comment"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end |#"));
+        Assert.Equal(LineKind.Code, classifier.Classify(@"(char=? c #\;)"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("; real comment"));
+    }
+
+    /// <summary>
+    /// Verifies that an apostrophe in Razor markup text does not open a string, so a Razor
+    /// comment later on the line is still recognized, while the <c>'"'</c> char literal is code.
+    /// </summary>
+    [Fact]
+    public void Classify_RazorApostropheInMarkup_DoesNotOpenString()
+    {
+        var classifier = new LineClassifier(Resolve(".razor"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("<p>Don't stop @* note"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify("end *@"));
+        Assert.Equal(LineKind.Code, classifier.Classify("var q = '\"'; // trailing"));
+    }
+
+    /// <summary>
+    /// Verifies that Emacs Lisp treats <c>;</c> as a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_EmacsLispLineComment_ReturnsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".el"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify(";; an elisp comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("(setq x 1)"));
+    }
+
+    /// <summary>
+    /// Verifies that Verilog and SystemVerilog recognize <c>//</c> and <c>/* */</c> comments.
+    /// </summary>
+    /// <param name="extension">The extension of a Verilog-family file.</param>
+    [Theory]
+    [InlineData(".vh")]
+    [InlineData(".sv")]
+    public void Classify_VerilogFamily_Comments(string extension)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("// a comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("/* block */"));
+        Assert.Equal(LineKind.Code, classifier.Classify("$display(\"/* not a comment\");"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("$display(\"x\"); /* real comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that VHDL <c>--</c> and <c>/* */</c> comments are recognized.
+    /// </summary>
+    [Fact]
+    public void Classify_Vhdl_Comments()
+    {
+        var classifier = new LineClassifier(Resolve(".vhd"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("-- a vhdl comment"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("/* block */"));
+    }
+
+    /// <summary>
+    /// Verifies that a doubled quote stays inside a VHDL string, so a <c>/*</c> after the
+    /// string closes still opens a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_VhdlDoubledQuote_StaysInsideString()
+    {
+        var classifier = new LineClassifier(Resolve(".vhd"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("msg := \"a /* not a comment\";"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Code, classifier.Classify("msg := \"a\"\"\"; /* real comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that the VHDL attribute tick (<c>std_logic'('1')</c>) is not treated as a
+    /// string delimiter, so a <c>/*</c> later on the line still opens a block comment.
+    /// </summary>
+    [Fact]
+    public void Classify_VhdlAttributeTick_DoesNotOpenString()
+    {
+        var classifier = new LineClassifier(Resolve(".vhd"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("sig <= std_logic'('1'); /* real comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that a TeX <c>%</c> comment and the comment environment are recognized.
+    /// </summary>
+    [Fact]
+    public void Classify_Tex_PercentAndCommentEnvironment()
+    {
+        var classifier = new LineClassifier(Resolve(".tex"));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("% a tex comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify(@"\% a literal percent sign"));
+        // An escaped percent sign does not start a comment, so the environment opener after it counts.
+        Assert.Equal(LineKind.Code, classifier.Classify(@"100\% \begin{comment}"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify(@"\end{comment}"));
+        Assert.False(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify(@"\begin{comment}"));
+        Assert.True(classifier.InBlockComment);
+        Assert.Equal(LineKind.Comment, classifier.Classify(@"\end{comment}"));
+        Assert.False(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that an escaped backslash before a percent sign still starts a comment,
+    /// while an escaped percent sign does not.
+    /// </summary>
+    [Fact]
+    public void Classify_TexEscapedBackslashBeforePercent_StartsComment()
+    {
+        var classifier = new LineClassifier(Resolve(".tex"));
+
+        // "\\" is code, then "%" starts a comment, so the environment opener after it is ignored.
+        Assert.Equal(LineKind.Code, classifier.Classify(@"text \\% \begin{comment}"));
+        Assert.False(classifier.InBlockComment);
+        // "\\" then "\%" (a literal percent sign): no comment starts, so the opener counts.
+        Assert.Equal(LineKind.Code, classifier.Classify(@"text \\\% \begin{comment}"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that the remaining Lisp-family extensions resolve to definitions whose <c>;</c>
+    /// comments (and <c>#| |#</c> blocks, where the language has them) work.
+    /// </summary>
+    /// <param name="extension">An extension of a Lisp-family file.</param>
+    /// <param name="blockComments">Whether the language has <c>#| |#</c> block comments.</param>
+    [Theory]
+    [InlineData(".ss", true)]
+    [InlineData(".sld", true)]
+    [InlineData(".rktl", true)]
+    [InlineData(".rktd", true)]
+    [InlineData(".lsp", true)]
+    [InlineData(".asd", true)]
+    [InlineData(".el", false)]
+    public void Classify_LispFamilyOtherExtensions_Comments(string extension, bool blockComments)
+    {
+        var classifier = new LineClassifier(Resolve(extension));
+
+        Assert.Equal(LineKind.Comment, classifier.Classify("; a comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify("(f x)"));
+        if (blockComments)
+        {
+            Assert.Equal(LineKind.Comment, classifier.Classify("#| block |#"));
+            Assert.False(classifier.InBlockComment);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the VHDL character literal <c>'"'</c> does not open a string.
+    /// </summary>
+    [Fact]
+    public void Classify_VhdlDoubleQuoteCharLiteral_DoesNotOpenString()
+    {
+        var classifier = new LineClassifier(Resolve(".vhd"));
+
+        Assert.Equal(LineKind.Code, classifier.Classify("if c = '\"' then /* real comment"));
+        Assert.True(classifier.InBlockComment);
+    }
+
+    /// <summary>
+    /// Verifies that the Emacs Lisp character literals <c>?\"</c> and <c>?\;</c> neither open a
+    /// string nor start a comment.
+    /// </summary>
+    [Fact]
+    public void Classify_EmacsLispCharacterLiterals_AreCode()
+    {
+        var classifier = new LineClassifier(Resolve(".el"));
+
+        // A string left open would swallow the next line, so a comment there proves none opened.
+        Assert.Equal(LineKind.Code, classifier.Classify(@"(eq c ?\"")"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("; real comment"));
+        Assert.Equal(LineKind.Code, classifier.Classify(@"(eq c ?\;)"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("; real comment"));
+        // The unescaped ?" form is also a character literal: the trailing comment must stay a comment.
+        Assert.Equal(LineKind.Code, classifier.Classify("(eq c ?\") ; trailing"));
+        Assert.Equal(LineKind.Comment, classifier.Classify("; real comment"));
+    }
 }
