@@ -311,7 +311,15 @@ public sealed partial class AnalyzeHandler
                 fileSkips[i] = new SkippedEntry(files[i].Path, $"analysis error: {ex.Message}");
             }
 
-            onFileAnalyzed?.Invoke(i, analyses[i]);
+            try
+            {
+                onFileAnalyzed?.Invoke(i, analyses[i]);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                // The callback only drives progress UI; a failure there must not abort the
+                // analysis (it would surface from Parallel.For as an AggregateException).
+            }
         }
 
         var jobs = options.Jobs is { } requested && requested > 0 ? requested : Environment.ProcessorCount;
