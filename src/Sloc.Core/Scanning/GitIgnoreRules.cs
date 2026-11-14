@@ -1213,7 +1213,7 @@ internal sealed class GitIgnorePattern
         var prefix = anchored ? "^" : "(?:^|.*/)";
         try
         {
-            var options = RegexOptions.Compiled | RegexOptions.CultureInvariant;
+            var options = RegexOptions.CultureInvariant;
             if (ignoreCase)
             {
                 options |= RegexOptions.IgnoreCase;
