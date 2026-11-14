@@ -24,7 +24,7 @@ Sloc（**S**ource **L**ines **O**f **C**ode）是一个用于统计源代码行�
 
 - 统计代码行 / 注释行 / 空行 / 总行数
 - 正确处理单行注释、块注释以及跨多行的块注释
-- 内置 66 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
+- 内置 78 种常见语言的注释规则（按文件扩展名或文件名自动识别，如 `Makefile`、`Dockerfile`、`CMakeLists.txt`）
 - 递归扫描目录，支持 `--include` / `--exclude` glob 过滤
 - 默认排除 `bin`、`obj`、`artifacts`、`.git`、`.vs`、`.vscode`、`.idea`、`node_modules` 等目录
 - 五种输出格式：彩色表格（默认）、JSON、HTML、CSV 与 Markdown
@@ -220,9 +220,9 @@ sloc . --format markdown --detailed -o -
 
 ## 支持的语言
 
-- **编程语言**：C#、C# Designer、C、C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、Scala、Dart、R、Lua、Perl、Elixir、Haskell、Objective-C、Groovy、Julia、Clojure、BASIC、Pascal、Zig、Nim、OCaml、Erlang、Elm、D、Crystal、Solidity
-- **前端与模板**：HTML、CSS、SCSS/Less、Vue、Svelte、Astro、MDX
-- **数据与配置格式**：JSON、YAML、XML、TOML、INI、Markdown、Protobuf、GraphQL
+- **编程语言**：C#、C# Designer、C、C++、Java、Kotlin、Swift、JavaScript、TypeScript、Python、Go、Rust、PHP、Ruby、F#、Visual Basic、Scala、Dart、R、Lua、Perl、Elixir、Haskell、Objective-C、Groovy、Julia、Clojure、BASIC、Pascal、Zig、Nim、OCaml、Erlang、Elm、D、Crystal、Solidity、Fortran、COBOL、Scheme、Racket、Common Lisp、Emacs Lisp、Verilog、SystemVerilog、VHDL
+- **前端与模板**：HTML、Razor、XAML、CSS、SCSS/Less、Vue、Svelte、Astro、MDX
+- **数据与配置格式**：JSON、YAML、XML、TOML、INI、Markdown、TeX、Protobuf、GraphQL
 - **脚本、构建与基础设施**：Shell、PowerShell、Batch、SQL、Makefile、Dockerfile、CMake、Terraform、Bazel/Starlark、Nix、MSBuild script
 - **其他**：Assembly、Jupyter Notebook、Text
 
@@ -255,6 +255,9 @@ sloc ./src
 - 已识别 JavaScript/TypeScript 正则字面量，因此其中的注释符号（例如 `/\/*$/`）会被计为代码；PHP 8 属性（`#[…]`）计为代码，而不是 `#` 注释。
 - Python 三引号字符串仅在作为语句开头（docstring，包括 `r"""…"""`/`u"""…"""`）时计为注释；作为值使用时（例如 `x = """…"""`）、位于前面行未闭合的括号内或跟在行尾 `\` 续行之后时计为代码。
 - 复杂度指标按文本统计分支记号，因此在上下文中并非分支的同名记号也会计入：TypeScript 可选成员的 `?:`（`name?: string`）、Rust 空参数闭包的 `||`（`|| x`）以及 C++ 右值/转发引用的 `&&`（`T&&`）。
+
+- Fortran 和 COBOL 仅识别自由格式（`!` 与 `*>` 注释）；固定格式注释（Fortran 第 1 列的 `C`/`*`，COBOL 第 7 列的 `*`）会被计为代码。
+- `.xaml`/`.axaml` 文件现在归为 `XAML`（此前归入 `XML`），因此 `--include-lang`/`--exclude-lang XML` 以及在此变更之前保存的基线会看到它们的归属变化。`.v`（Coq 或 Verilog）、`.cl`（OpenCL）和 `.cls`（Apex、VB6）不归入任何语言。
 
 ## 许可证
 

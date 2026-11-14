@@ -270,7 +270,7 @@ jobs:
           mkdir -p tap/Formula
           cat > tap/Formula/sloc.rb <<RUBY
           class Sloc < Formula
-            desc "Count code, comment and blank lines across 66 languages"
+            desc "Count code, comment and blank lines across 78 languages"
             homepage "https://github.com/${GITHUB_REPOSITORY}"
             version "${VERSION}"
             license "MIT"

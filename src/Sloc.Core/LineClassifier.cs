@@ -673,12 +673,12 @@ public sealed class LineClassifier
     private static bool IsOperatorSymbol(char c) => "!#$%&*+./<=>?@\\^|-~:".Contains(c);
 
     /// <summary>
-    /// Returns the length of the <see cref="LanguageDefinition.BlockCommentExceptions">block-comment
+    /// Returns the length of the <see cref="LanguageDefinition.TokenExceptions">token
     /// exception</see> token at <paramref name="index"/>, or 0 when none matches there.
     /// </summary>
     private int MatchBlockCommentException(ReadOnlySpan<char> line, int index)
     {
-        var exceptions = _language.BlockCommentExceptions;
+        var exceptions = _language.TokenExceptions;
         for (var i = 0; i < exceptions.Count; i++)
         {
             if (MatchesAt(line, index, exceptions[i]))

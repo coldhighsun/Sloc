@@ -130,6 +130,13 @@ public static class LanguageRegistry
         // The "@$" prefix order of an interpolated verbatim string ("$@" already reaches the
         // "@\"" opener). Without it, "@$\"\"\"…" would open a raw string literal instead.
         var csInterpolatedVerbatimString = csVerbatimString with { Delimiter = "@$\"" };
+        // Scheme/Racket/Common Lisp character literals whose character would otherwise start a
+        // string or a ";" comment. Matched as a unit so `#\"` and `#\;` stay plain code.
+        string[] lispCharLiterals = ["#\\\"", "#\\;"];
+        var lispNestedBlock = new BlockComment("#|", "|#", AllowNested: true);
+        // Fortran/COBOL/VHDL strings have no backslash escape; a quote is embedded by doubling it.
+        var doublingDoubleQuote = doubleQuote with { AllowEscape = false, DoubledClosingEscape = true };
+        var doublingSingleQuote = singleQuote with { AllowEscape = false, DoubledClosingEscape = true };
         // Rust raw strings (`r"…"` / `r#"…"#`). Delimiters with more than one `#` are not
         // modeled; they are rare in practice and would require a variable-length delimiter.
         var rustRawStringNoHash = new StringLiteral(
@@ -307,7 +314,7 @@ public static class LanguageRegistry
                 LineCommentTokens = ["//"],
                 BlockComments = [new BlockComment("(*", "*)", AllowNested: true)],
                 // "(*)" is the multiplication operator as a function (e.g. List.reduce (*)).
-                BlockCommentExceptions = ["(*)"],
+                TokenExceptions = ["(*)"],
                 // Single quotes appear in generic type parameters (e.g. 'a), so only
                 // double quotes are treated as string delimiters.
                 StringLiterals = [doubleQuote],
@@ -380,7 +387,7 @@ public static class LanguageRegistry
             new()
             {
                 Name = "XML",
-                Extensions = [".xml", ".xaml", ".props", ".targets", ".config", ".resx"],
+                Extensions = [".xml", ".props", ".targets", ".config", ".resx"],
                 BlockComments = [htmlBlock],
                 ShowHealth = false
             },
@@ -745,6 +752,127 @@ public static class LanguageRegistry
                 Extensions = [".cr"],
                 LineCommentTokens = ["#"],
                 StringLiterals = [doubleQuote, singleQuote]
+            },
+            new()
+            {
+                Name = "Razor",
+                Extensions = [".razor"],
+                // @* … *@ is a Razor comment; markup and @code blocks also allow HTML and C# comments.
+                LineCommentTokens = ["//"],
+                BlockComments = [new BlockComment("@*", "*@"), htmlBlock, cStyleBlock],
+                // Single quotes are not tracked: in markup text an apostrophe ("Don't") is not a string
+                // delimiter, so only the C# character literal '"' needs special handling.
+                StringLiterals = [csVerbatimString, csInterpolatedVerbatimString, rawTripleDouble, doubleQuote],
+                DoubleQuoteCharLiteral = true,
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "XAML",
+                Extensions = [".xaml", ".axaml"],
+                BlockComments = [htmlBlock],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "Fortran",
+                Extensions = [".f90", ".f95", ".f03", ".f08", ".f", ".for", ".f77", ".ftn"],
+                // Only free-form "!" comments are modeled; fixed-form "C"/"*" in column 1 is not.
+                // Fixed-form files (.f/.for/.f77) would show a misleading ~0% comment health and fail
+                // --min-comment-pct, so the health indicator is off.
+                LineCommentTokens = ["!"],
+                StringLiterals = [doublingDoubleQuote, doublingSingleQuote],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "COBOL",
+                Extensions = [".cob", ".cbl", ".cobol", ".cpy"],
+                // Only free-form "*>" comments are modeled; fixed-form "*" in column 7 is not.
+                // Fixed-form sources would show a misleading ~0% comment health, so it is off.
+                LineCommentTokens = ["*>"],
+                StringLiterals = [doublingDoubleQuote, doublingSingleQuote],
+                ShowHealth = false
+            },
+            new()
+            {
+                Name = "Scheme",
+                Extensions = [".scm", ".ss", ".sld"],
+                LineCommentTokens = [";"],
+                BlockComments = [lispNestedBlock],
+                TokenExceptions = lispCharLiterals,
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Racket",
+                Extensions = [".rkt", ".rktl", ".rktd"],
+                LineCommentTokens = [";"],
+                BlockComments = [lispNestedBlock],
+                TokenExceptions = lispCharLiterals,
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Common Lisp",
+                // ".cl" is left out on purpose: OpenCL kernels use it far more often.
+                Extensions = [".lisp", ".lsp", ".asd"],
+                LineCommentTokens = [";"],
+                BlockComments = [lispNestedBlock],
+                TokenExceptions = lispCharLiterals,
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Emacs Lisp",
+                Extensions = [".el"],
+                LineCommentTokens = [";"],
+                // Character literals ?\" ?" and ?\; would otherwise open a string or start a comment.
+                TokenExceptions = ["?\\\"", "?\"", "?\\;"],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "Verilog",
+                // ".v" is left out on purpose: Coq uses it at least as often (and its (* *) comments are not modeled here).
+                Extensions = [".vh"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "SystemVerilog",
+                Extensions = [".sv", ".svh"],
+                LineCommentTokens = ["//"],
+                BlockComments = [cStyleBlock],
+                StringLiterals = [doubleQuote]
+            },
+            new()
+            {
+                Name = "VHDL",
+                Extensions = [".vhd", ".vhdl"],
+                LineCommentTokens = ["--"],
+                // /* … */ block comments were added in VHDL-2008.
+                BlockComments = [cStyleBlock],
+                // A quote is embedded by doubling it. Single quotes are not tracked: they also
+                // mark attributes (std_logic'('1')) as well as character literals; only the
+                // character literal '"' needs special handling.
+                StringLiterals = [doublingDoubleQuote],
+                DoubleQuoteCharLiteral = true
+            },
+            new()
+            {
+                Name = "TeX",
+                // ".cls" is left out on purpose: Apex and VB6 class files use it far more often.
+                Extensions = [".tex", ".sty"],
+                LineCommentTokens = ["%"],
+                // "\%" is a literal percent sign; "\\" is consumed first so that "\\%" (a line
+                // break followed by a real comment) still starts a comment.
+                TokenExceptions = ["\\\\", "\\%"],
+                // The comment environment from the verbatim/comment packages.
+                BlockComments = [new BlockComment("\\begin{comment}", "\\end{comment}")],
+                ShowHealth = false
             },
             new()
             {

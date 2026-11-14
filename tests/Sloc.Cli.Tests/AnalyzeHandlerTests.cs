@@ -195,6 +195,44 @@ public sealed class AnalyzeHandlerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a baseline saved while <c>.xaml</c> was still grouped under XML reports the
+    /// move as XML shrinking and XAML appearing, rather than failing or hiding the change.
+    /// </summary>
+    [Fact]
+    public void Execute_BaselineSavedBeforeXamlSplit_ReportsMoveFromXmlToXaml()
+    {
+        // The old registry grouped .xaml under XML, which a .xml file reproduces exactly.
+        var xmlPath = Path.Combine(_root, "view.xml");
+        File.WriteAllText(xmlPath, "<Page>\n  <Button />\n</Page>\n");
+        var baselinePath = Path.Combine(_root, "baseline.json");
+        var firstExit = new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.xml"],
+            Format = OutputFormat.Json,
+            OutputFile = baselinePath,
+            Quiet = true
+        });
+        Assert.Equal(ExitCode.Success, firstExit);
+
+        File.Move(xmlPath, Path.Combine(_root, "view.xaml"));
+
+        var diff = CaptureStdout(() => new AnalyzeHandler().Execute(new AnalyzeOptions
+        {
+            Path = _root,
+            Includes = ["**/*.xaml", "**/*.xml"],
+            Format = OutputFormat.Json,
+            BaselinePath = baselinePath,
+            Quiet = true
+        }));
+
+        var languages = JsonSerializer.Deserialize<JsonElement>(diff).GetProperty("byLanguage").EnumerateArray()
+            .ToDictionary(e => e.GetProperty("language").GetString()!, e => e.GetProperty("code").GetInt32());
+        Assert.Equal(-3, languages["XML"]);
+        Assert.Equal(3, languages["XAML"]);
+    }
+
+    /// <summary>
     /// Verifies that <c>--top</c> does not truncate the current-side summary when diffing
     /// against a baseline: a language that still exists but falls outside the top-N must
     /// not be reported as fully removed just because it was cut from the current summary.
