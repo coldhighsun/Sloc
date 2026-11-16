@@ -73,59 +73,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-  # Publishes the test count as a shields.io endpoint JSON on the `badges` branch, which
-  # the README badge reads. Runs only for pushes to main, so no secrets are needed and
-  # nothing is ever committed to main itself.
-  test-badge:
-    name: Update test count badge
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-
-      # A separate plain run keeps the main Test step untouched; the run summary's
-      # "total: N" counts every executed test case across all test projects.
-      - name: Count tests
-        run: |
-          dotnet test Sloc.slnx --configuration Release | tee test-output.txt
-          count=$(grep -oE 'total: [0-9]+' test-output.txt | tail -1 | grep -oE '[0-9]+')
-          test -n "$count" || { echo "Could not find the test total in the output"; exit 1; }
-          echo "$count" > test-count.txt
-
-      - name: Checkout badges branch
-        uses: actions/checkout@v7
-        with:
-          ref: badges
-          path: badges
-        continue-on-error: true
-
-      - name: Write badge and push
-        run: |
-          count=$(cat test-count.txt)
-          if [ ! -d badges/.git ]; then
-            rm -rf badges
-            git init -b badges badges
-            git -C badges remote add origin "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
-          fi
-          cd badges
-          printf '{"schemaVersion":1,"label":"tests","message":"%s","color":"brightgreen"}\n' "$count" > tests.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: update test count badge to ${count}"
-          git push origin HEAD:refs/heads/badges
-
   publish:
     name: Publish (${{ matrix.rid }})
     runs-on: ubuntu-latest
