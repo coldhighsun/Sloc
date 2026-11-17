@@ -586,21 +586,6 @@ public sealed class DirectoryScanner
         Action<int, string>? onFileFound,
         CancellationToken cancellationToken = default)
     {
-        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-        if (options.Includes.Count > 0)
-        {
-            matcher.AddIncludePatterns(options.Includes);
-        }
-        else
-        {
-            matcher.AddInclude(options.Recursive ? "**/*" : "*");
-        }
-
-        if (options.Excludes.Count > 0)
-        {
-            matcher.AddExcludePatterns(options.Excludes);
-        }
-
         // Built-in directory excludes are applied separately below, by directory-name segment
         // against excludeDirectoryNames, rather than through the Matcher's own (always
         // case-insensitive) glob matching: unlike Matcher, that check can honor ignoreCase.
@@ -611,10 +596,9 @@ public sealed class DirectoryScanner
         // also lets the loop below iterate only the matched subset instead of every candidate
         // file, so excludes that filter out most files don't cost a second full-length pass.
         var files = new List<(string RelativePath, ScannedFile File)>();
-        foreach (var matchedFile in matcher.Match(pathByRelative.Keys).Files)
+        foreach (var relativePath in MatchGlobs(pathByRelative.Keys, options))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var relativePath = matchedFile.Path;
             if (!pathByRelative.TryGetValue(relativePath, out var fullPath))
             {
                 continue;
@@ -645,6 +629,43 @@ public sealed class DirectoryScanner
         }
 
         return files;
+    }
+
+    /// <summary>
+    /// Selects the candidate paths that pass the include/exclude globs in
+    /// <paramref name="options"/>. With no globs at all, every path in the scanned tree matches
+    /// (a non-recursive scan only matches paths directly under the root), so the
+    /// <see cref="Matcher"/> is skipped: it would build an in-memory directory tree of every
+    /// candidate just to answer "yes" for each.
+    /// </summary>
+    /// <param name="relativePaths">The candidates' <c>/</c>-separated scan-root-relative paths.</param>
+    /// <param name="options">The scan options.</param>
+    /// <returns>The paths that pass the globs, as given.</returns>
+    private static IEnumerable<string> MatchGlobs(IEnumerable<string> relativePaths, ScanOptions options)
+    {
+        if (options.Includes.Count == 0 && options.Excludes.Count == 0)
+        {
+            return options.Recursive
+                ? relativePaths
+                : relativePaths.Where(static path => !path.Contains('/'));
+        }
+
+        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
+        if (options.Includes.Count > 0)
+        {
+            matcher.AddIncludePatterns(options.Includes);
+        }
+        else
+        {
+            matcher.AddInclude(options.Recursive ? "**/*" : "*");
+        }
+
+        if (options.Excludes.Count > 0)
+        {
+            matcher.AddExcludePatterns(options.Excludes);
+        }
+
+        return matcher.Match(relativePaths).Files.Select(static file => file.Path);
     }
 
     private static bool AnyGlobMatches(IReadOnlyList<string> patterns, IEnumerable<string> paths)
