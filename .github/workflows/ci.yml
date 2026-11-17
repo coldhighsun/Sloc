@@ -98,6 +98,9 @@ jobs:
           dotnet publish src/Sloc.Cli/Sloc.Cli.csproj
           --configuration Release
           --runtime ${{ matrix.rid }}
+          --self-contained
+          -p:PublishSingleFile=true
+          -p:PublishTrimmed=true
           --output ./publish/${{ matrix.rid }}
 
       - name: Zip artifact
