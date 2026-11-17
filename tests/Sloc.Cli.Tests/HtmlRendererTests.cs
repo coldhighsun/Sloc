@@ -97,11 +97,11 @@ public class HtmlRendererTests
     }
 
     /// <summary>
-    /// Verifies the language cell carries a dot in the console theme color, and that comment and
-    /// blank counts get their own style classes (matching the table output).
+    /// Verifies the language cell carries a dot in the console theme color, that blank counts get
+    /// their own style class, and that comment counts stay in the default color (matching the table output).
     /// </summary>
     [Fact]
-    public void Render_ByLanguage_ColorsLanguageCommentAndBlank()
+    public void Render_ByLanguage_ColorsLanguageAndBlankButNotComment()
     {
         var summary = new AnalysisSummary([new FileAnalysis { Path = "a.js", Language = "JavaScript", Code = 8, Comment = 1, Blank = 1 }]);
         using var writer = new StringWriter();
@@ -110,7 +110,7 @@ public class HtmlRendererTests
         var html = writer.ToString();
 
         Assert.Contains($"background:#{Theme.LanguageColor("JavaScript").ToHex()}", html);
-        Assert.Contains("<span class=\"c-comment\">1</span>", html);
+        Assert.DoesNotContain("c-comment", html);
         Assert.Contains("<span class=\"c-blank\">1</span>", html);
     }
 

@@ -35,7 +35,6 @@ public sealed class HtmlRenderer : IResultRenderer
         .h-fair, .h-high { color: #9a6700; }
         .h-good { color: #1a7f37; }
         .h-dense { color: #8250df; }
-        .c-comment { color: #1a7f37; }
         .c-blank { color: #6e7781; }
         .lang-dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: 8px; vertical-align: baseline; }
         .folder-label { color: #9a6700; }
@@ -79,7 +78,6 @@ public sealed class HtmlRenderer : IResultRenderer
             .h-fair, .h-high { color: #d29922; }
             .h-good { color: #3fb950; }
             .h-dense { color: #bc8cff; }
-            .c-comment { color: #3fb950; }
             .c-blank { color: #8b949e; }
             .folder-label { color: #e3b341; }
             .h-na { color: #8b949e; }
@@ -89,7 +87,7 @@ public sealed class HtmlRenderer : IResultRenderer
             .folder-toggle { border-color: #30363d; background: #0d1117; color: #e6edf3; }
         }
         /* --no-color: neutral text everywhere. Placed last and one class deeper than the rules above, so it also wins inside the dark-mode block. */
-        .no-color .c-comment, .no-color .c-blank, .no-color .folder-label,
+        .no-color .c-blank, .no-color .folder-label,
         .no-color .h-none, .no-color .h-low, .no-color .h-fair, .no-color .h-good, .no-color .h-high, .no-color .h-dense { color: inherit; }
         .no-color .lang-dot { display: none; }
         """;
@@ -287,7 +285,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td>{Encode("Total")}</td>");
         sb.Append($"<td class=\"r\">{summary.FileCount:N0} {Encode("files")}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
         if (!noHealth)
@@ -354,7 +352,7 @@ public sealed class HtmlRenderer : IResultRenderer
             sb.Append(LanguageCell(lang.Language));
             sb.Append($"<td class=\"r\">{lang.Files:N0}</td>");
             sb.Append($"<td class=\"r\">{NumCell(lang.Code, lang.Total, noHealth)}</td>");
-            sb.Append($"<td class=\"r\">{NumCell(lang.Comment, lang.Total, noHealth, "c-comment")}</td>");
+            sb.Append($"<td class=\"r\">{NumCell(lang.Comment, lang.Total, noHealth)}</td>");
             sb.Append($"<td class=\"r\">{NumCell(lang.Blank, lang.Total, noHealth, "c-blank")}</td>");
             sb.Append($"<td class=\"r\">{lang.Total:N0}</td>");
             if (!noHealth)
@@ -373,7 +371,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td>{Encode("Total")}</td>");
         sb.Append($"<td class=\"r\">{summary.FileCount:N0}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Code, summary.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(summary.Comment, summary.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(summary.Blank, summary.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{summary.Total:N0}</td>");
         if (!noHealth)
@@ -529,7 +527,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append($"<td style=\"padding-left:{indent}px;\">{Encode(entry.Name)}</td>");
         sb.Append(LanguageCell(entry.File.Language));
         sb.Append($"<td class=\"r\">{NumCell(entry.File.Code, entry.File.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(entry.File.Comment, entry.File.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(entry.File.Comment, entry.File.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(entry.File.Blank, entry.File.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{entry.File.Total:N0}</td>");
         if (!noHealth)
@@ -577,7 +575,7 @@ public sealed class HtmlRenderer : IResultRenderer
         sb.Append("</td>");
         sb.Append($"<td>{node.FileCount:N0} {"files"}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Code, node.Total, noHealth)}</td>");
-        sb.Append($"<td class=\"r\">{NumCell(node.Comment, node.Total, noHealth, "c-comment")}</td>");
+        sb.Append($"<td class=\"r\">{NumCell(node.Comment, node.Total, noHealth)}</td>");
         sb.Append($"<td class=\"r\">{NumCell(node.Blank, node.Total, noHealth, "c-blank")}</td>");
         sb.Append($"<td class=\"r\">{node.Total:N0}</td>");
         if (!noHealth)
