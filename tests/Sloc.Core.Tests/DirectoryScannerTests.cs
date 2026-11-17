@@ -386,6 +386,50 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a snapshot scan without any include/exclude globs keeps only the entries
+    /// directly under the root when non-recursive (the glob-free fast path must still honor
+    /// <see cref="ScanOptions.Recursive"/>, since snapshot entries can be nested).
+    /// </summary>
+    [Fact]
+    public void ScanSnapshot_NonRecursiveWithoutGlobs_KeepsOnlyRootEntries()
+    {
+        Write("a.cs", "// code");
+        Write("sub/b.cs", "// nested");
+        SnapshotEntry[] entries =
+        [
+            new(Path.Combine(_root, "a.cs"), "a.cs"),
+            new(Path.Combine(_root, "sub", "b.cs"), "sub/b.cs")
+        ];
+
+        var result = _scanner.ScanSnapshot(_root, entries, new ScanOptions { Recursive = false });
+
+        var file = Assert.Single(result.Files);
+        Assert.EndsWith("a.cs", file.Path);
+    }
+
+    /// <summary>
+    /// Verifies that a recursive snapshot scan without any include/exclude globs returns every
+    /// entry ordered by relative path, regardless of the order they were supplied in.
+    /// </summary>
+    [Fact]
+    public void ScanSnapshot_RecursiveWithoutGlobs_ReturnsAllEntriesOrderedByRelativePath()
+    {
+        Write("a.cs", "// code");
+        Write("sub/b.cs", "// nested");
+        SnapshotEntry[] entries =
+        [
+            new(Path.Combine(_root, "sub", "b.cs"), "sub/b.cs"),
+            new(Path.Combine(_root, "a.cs"), "a.cs")
+        ];
+
+        var result = _scanner.ScanSnapshot(_root, entries, new ScanOptions());
+
+        Assert.Equal(2, result.Files.Count);
+        Assert.EndsWith("a.cs", result.Files[0].Path);
+        Assert.EndsWith("b.cs", result.Files[1].Path);
+    }
+
+    /// <summary>
     /// Verifies that <see cref="ScanOptions.Recursive"/> is ignored when explicit
     /// <see cref="ScanOptions.Includes"/> are supplied, per its documented contract: the
     /// tree walk must still descend into subdirectories for a pattern like <c>**/*.cs</c>
