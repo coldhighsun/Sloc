@@ -498,6 +498,12 @@ internal static class ScanTreeWalker
         {
             return File.ReadAllLines(path);
         }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Listed but gone by the time it is read (a dangling link or a concurrent delete):
+            // the same as not existing, which File.Exists would have reported silently.
+            return null;
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             skipped.Add(new SkippedEntry(path, ex.Message));
