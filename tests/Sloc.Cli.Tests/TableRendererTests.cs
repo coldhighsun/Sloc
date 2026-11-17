@@ -1,5 +1,6 @@
 using Sloc.Cli.Output;
 using Sloc.Core.Models;
+using Spectre.Console;
 using Spectre.Console.Testing;
 
 namespace Sloc.Cli.Tests;
@@ -149,6 +150,25 @@ public class TableRendererTests
         Assert.Contains("Last update", captioned);
         Assert.Contains("Showing top 1 of 2 languages", captioned);
         Assert.DoesNotContain("Showing top", complete);
+    }
+
+    /// <summary>
+    /// Verifies that the Comment count is rendered in the default color, so it does not
+    /// clash with the green of the Comment Health column or of green language colors.
+    /// </summary>
+    [Fact]
+    public void BuildLanguageTable_CommentColumn_UsesDefaultColor()
+    {
+        var file = new FileAnalysis { Path = "a.cs", Language = "C#", Code = 80, Comment = 77, Blank = 5 };
+        var console = new TestConsole().Colors(ColorSystem.Standard).EmitAnsiSequences();
+        console.Profile.Width = 120;
+
+        console.Write(new TableRenderer().BuildLanguageTable(new AnalysisSummary([file]), noHealth: true, noComplexity: true));
+        var output = console.Output;
+
+        Assert.Contains("77", output);
+        // A foreground color sequence (30-37, 90-97, or 38;...) directly before the number; bold (1m) is fine.
+        Assert.DoesNotMatch(@"\u001b\[(?:3[0-7]|9[0-7]|38;[0-9;]+)m77", output);
     }
 
     private static AnalysisSummary BuildSummary()

@@ -12,9 +12,6 @@ internal static class Theme
     /// <summary>Border color for every table.</summary>
     public static readonly Color Border = Color.Grey;
 
-    /// <summary>Markup style for the Comment column (comments are the "healthy" content).</summary>
-    public const string CommentStyle = "green";
-
     /// <summary>Markup style for the Blank column (de-emphasized).</summary>
     public const string BlankStyle = "grey";
 

@@ -71,7 +71,7 @@ public sealed class TableRenderer : IResultRenderer
         foreach (var language in summary.ByLanguage)
         {
             var codeCell = Count(language.Code, language.Total, noHealth);
-            var commentCell = Count(language.Comment, language.Total, noHealth, Theme.CommentStyle);
+            var commentCell = Count(language.Comment, language.Total, noHealth);
             var blankCell = Count(language.Blank, language.Total, noHealth, Theme.BlankStyle);
             var row = new List<string>
             {
@@ -96,7 +96,7 @@ public sealed class TableRenderer : IResultRenderer
 
         table.AddEmptyRow();
         var totalCodeCell = Count(summary.Code, summary.Total, noHealth, bold: true);
-        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, Theme.CommentStyle, bold: true);
+        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, bold: true);
         var totalBlankCell = Count(summary.Blank, summary.Total, noHealth, Theme.BlankStyle, bold: true);
         var totalRow = new List<string>
         {
@@ -195,7 +195,7 @@ public sealed class TableRenderer : IResultRenderer
     private void AddFileRow(Table table, FileAnalysis file, bool noHealth, bool noComplexity, bool indented = false, string treePrefix = "")
     {
         var codeCell = Count(file.Code, file.Total, noHealth);
-        var commentCell = Count(file.Comment, file.Total, noHealth, Theme.CommentStyle);
+        var commentCell = Count(file.Comment, file.Total, noHealth);
         var blankCell = Count(file.Blank, file.Total, noHealth, Theme.BlankStyle);
         var fileCell = indented
             ? $"{TreePrefix(treePrefix)}{Markup.Escape(Path.GetFileName(file.Path))}"
@@ -225,7 +225,7 @@ public sealed class TableRenderer : IResultRenderer
     {
         table.AddEmptyRow();
         var totalCodeCell = Count(summary.Code, summary.Total, noHealth, bold: true);
-        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, Theme.CommentStyle, bold: true);
+        var totalCommentCell = Count(summary.Comment, summary.Total, noHealth, bold: true);
         var totalBlankCell = Count(summary.Blank, summary.Total, noHealth, Theme.BlankStyle, bold: true);
         var row = new List<string>
         {
