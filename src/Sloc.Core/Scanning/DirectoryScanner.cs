@@ -592,7 +592,8 @@ public sealed class DirectoryScanner
         var excludeDirectoryNames = ExcludeDirectoryNames(ignoreCase);
 
         // Batch the glob match across all candidate paths instead of re-running Matcher.Match
-        // (which rebuilds an InMemoryDirectoryInfo internally) once per file. The reverse map
+        // (which rebuilds an InMemoryDirectoryInfo internally) once per file, and skip the
+        // Matcher entirely when no globs are given (see MatchGlobs). The reverse map
         // also lets the loop below iterate only the matched subset instead of every candidate
         // file, so excludes that filter out most files don't cost a second full-length pass.
         var files = new List<(string RelativePath, ScannedFile File)>();

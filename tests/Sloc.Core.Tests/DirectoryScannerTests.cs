@@ -506,6 +506,64 @@ public sealed class DirectoryScannerTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies that a dangling symlink named <c>.gitignore</c> is treated as an absent rule
+    /// file: it is neither applied nor reported as skipped.
+    /// </summary>
+    [Fact]
+    public void Scan_DanglingGitignoreSymlink_IsIgnoredWithoutSkippedEntry()
+    {
+        Write("keep.cs", "// keep");
+        try
+        {
+            File.CreateSymbolicLink(Path.Combine(_root, ".gitignore"), Path.Combine(_root, "missing-target"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitignore = true }, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(["keep.cs"], result.Files.Select(f => Path.GetFileName(f.Path)).ToArray());
+        Assert.DoesNotContain(result.Skipped, s => Path.GetFileName(s.Path) == ".gitignore");
+    }
+
+    /// <summary>
+    /// Verifies that a nested <c>.gitattributes</c> file is discovered from the directory
+    /// listing and marks only files below its own directory.
+    /// </summary>
+    [Fact]
+    public void Scan_NestedGitattributes_AppliesOnlyBelowItsDirectory()
+    {
+        Write("app/.gitattributes", "*.gen.cs linguist-generated\n");
+        Write("app/a.gen.cs", "// generated");
+        Write("app/a.cs", "// kept");
+        Write("other/b.gen.cs", "// outside the rule's scope");
+
+        var result = _scanner.Scan(_root, new ScanOptions { RespectGitAttributes = true }, cancellationToken: TestContext.Current.CancellationToken);
+
+        var names = result.Files.Select(f => Path.GetFileName(f.Path)).OrderBy(n => n).ToArray();
+        Assert.Equal(["a.cs", "b.gen.cs"], names);
+    }
+
+    /// <summary>
+    /// Verifies that a scan without include/exclude globs finds nested files when recursive
+    /// and only root files when not, matching what the glob matcher would have selected.
+    /// </summary>
+    [Fact]
+    public void Scan_NoGlobs_HonorsRecursiveSetting()
+    {
+        Write("a.cs", "// root");
+        Write("sub/b.cs", "// nested");
+
+        var recursive = _scanner.Scan(_root, new ScanOptions(), cancellationToken: TestContext.Current.CancellationToken);
+        var flat = _scanner.Scan(_root, new ScanOptions { Recursive = false }, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(["a.cs", "b.cs"], recursive.Files.Select(f => Path.GetFileName(f.Path)).ToArray());
+        Assert.Equal(["a.cs"], flat.Files.Select(f => Path.GetFileName(f.Path)).ToArray());
+    }
+
+    /// <summary>
     /// Verifies that the repository's <c>core.ignoreCase</c> decides whether
     /// <c>.gitignore</c> and <c>.gitattributes</c> patterns match paths of a different case.
     /// </summary>
