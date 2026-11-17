@@ -170,11 +170,50 @@ internal static class ScanTreeWalker
         visited++;
         onDirectoryVisited?.Invoke(visited, directory);
 
-        // Rule files are read outside the directory-level try/catch below: one that can't be
+        // One directory read yields the files and the subdirectories with their attributes
+        // already populated, so neither the rule-file existence checks nor the per-subdirectory
+        // attribute reads below need a separate stat call. A failure part-way is remembered and
+        // reported after the entries read so far are processed (as the file loop always did).
+        List<FileInfo> files = [];
+        List<DirectoryInfo> subdirectoryInfos = [];
+        Exception? enumerationError = null;
+        try
+        {
+            var directoryInfo = new DirectoryInfo(directory);
+            if (collectFiles)
+            {
+                foreach (var entry in directoryInfo.EnumerateFileSystemInfos())
+                {
+                    if (entry is FileInfo fileInfo)
+                    {
+                        files.Add(fileInfo);
+                    }
+                    else if (recursive && entry is DirectoryInfo subdirectoryInfo)
+                    {
+                        subdirectoryInfos.Add(subdirectoryInfo);
+                    }
+                }
+            }
+            else if (recursive)
+            {
+                subdirectoryInfos.AddRange(directoryInfo.EnumerateDirectories());
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            enumerationError = ex;
+        }
+
+        // The listing is only trusted to say a rule file is absent when it was read in full
+        // and included files at all.
+        var listed = collectFiles && enumerationError is null;
+
+        // Rule files are read outside the directory-level try/catch: one that can't be
         // read (e.g. locked by another process) skips just that file, as git warns and carries
         // on, rather than aborting the directory and silently dropping its whole subtree.
         if (collectGitignore
-            && TryReadRuleFile(Path.Combine(directory, ".gitignore"), skipped) is { } ignoreLines
+            && (!listed || ContainsFileName(files, ".gitignore"))
+            && TryReadRuleFile(Path.Combine(directory, ".gitignore"), skipped, assumeExists: listed) is { } ignoreLines
             && GitIgnoreRules.CompilePatterns(ignoreLines, ignoreCase) is { Count: > 0 } ignorePatterns)
         {
             var baseDir = GitIgnoreRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
@@ -183,7 +222,8 @@ internal static class ScanTreeWalker
         }
 
         if (collectGitattributes
-            && TryReadRuleFile(Path.Combine(directory, ".gitattributes"), skipped) is { } attributeLines
+            && (!listed || ContainsFileName(files, ".gitattributes"))
+            && TryReadRuleFile(Path.Combine(directory, ".gitattributes"), skipped, assumeExists: listed) is { } attributeLines
             && GitAttributesRules.ParseLines(attributeLines) is { Count: > 0 } parsedAttributeLines)
         {
             var baseDir = GitAttributesRules.NormalizeBase(Path.GetRelativePath(normalizedRoot, directory));
@@ -194,64 +234,56 @@ internal static class ScanTreeWalker
         // directory can be reached again through another link with an overlapping target.
         var outsideRoot = follow is not null && !SymlinkGuard.IsAncestorOrSelf(follow.RealRoot, realDirectory);
 
-        string[] subdirectories;
-        try
+        // The attributes of each file were populated by the directory read above, so the link
+        // check below needs no separate per-file stat call except for reparse points.
+        foreach (var file in files)
         {
-            if (collectFiles)
+            try
             {
-                // Enumerating via DirectoryInfo yields FileInfo entries whose Attributes are
-                // already populated from this same directory read, so the link check below
-                // needs no separate per-file stat call except for reparse points.
-                foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
+                if (SymlinkGuard.IsLink(file))
                 {
-                    try
+                    symlinkedFilePaths.Add(file.FullName);
+                    if (follow is not null && !follow.ShouldFollowFile(file.FullName))
                     {
-                        if (SymlinkGuard.IsLink(file))
-                        {
-                            symlinkedFilePaths.Add(file.FullName);
-                            if (follow is not null && !follow.ShouldFollowFile(file.FullName))
-                            {
-                                continue;
-                            }
-                        }
-                        else if (SymlinkGuard.IsCloudOnly(file.Attributes))
-                        {
-                            // Reading an online-only placeholder (e.g. OneDrive Files-On-Demand)
-                            // would make the sync client download it; report it instead.
-                            skipped.Add(new SkippedEntry(file.FullName, "cloud-only file (not downloaded)"));
-                            continue;
-                        }
-                        else if (outsideRoot && !follow!.SeenFiles.Add(Path.Combine(realDirectory, file.Name)))
-                        {
-                            continue;
-                        }
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        // Matches the granularity of the per-file try/catch this replaced:
-                        // one file's attribute read failing skips only that file, not the
-                        // whole directory (and its subdirectories, since a directory-level
-                        // catch would abort the walk below this point too).
-                        skipped.Add(new SkippedEntry(file.FullName, ex.Message));
                         continue;
                     }
-
-                    filePaths.Add(file.FullName);
+                }
+                else if (SymlinkGuard.IsCloudOnly(file.Attributes))
+                {
+                    // Reading an online-only placeholder (e.g. OneDrive Files-On-Demand)
+                    // would make the sync client download it; report it instead.
+                    skipped.Add(new SkippedEntry(file.FullName, "cloud-only file (not downloaded)"));
+                    continue;
+                }
+                else if (outsideRoot && !follow!.SeenFiles.Add(Path.Combine(realDirectory, file.Name)))
+                {
+                    continue;
                 }
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // One file's attribute read failing skips only that file, not the whole
+                // directory (and its subdirectories, since aborting here would drop the
+                // walk below this point too).
+                skipped.Add(new SkippedEntry(file.FullName, ex.Message));
+                continue;
+            }
 
-            subdirectories = recursive ? Directory.GetDirectories(directory) : [];
+            filePaths.Add(file.FullName);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+
+        if (enumerationError is not null)
         {
-            skipped.Add(new SkippedEntry(directory, ex.Message));
+            skipped.Add(new SkippedEntry(directory, enumerationError.Message));
             return;
         }
 
-        foreach (var subdirectory in subdirectories)
+        foreach (var info in subdirectoryInfos)
         {
+            var subdirectory = info.FullName;
+
             // Each subdirectory is one segment below an already-visited directory.
-            if (!Visits(Path.GetFileName(subdirectory), excludedDirectoryNames, recursive))
+            if (!Visits(info.Name, excludedDirectoryNames, recursive))
             {
                 continue;
             }
@@ -260,15 +292,14 @@ internal static class ScanTreeWalker
             bool isReparsePoint;
             try
             {
-                var info = new DirectoryInfo(subdirectory);
                 isReparsePoint = info.Attributes.HasFlag(FileAttributes.ReparsePoint);
                 isLink = SymlinkGuard.IsLink(info);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // The subdirectory vanished or became inaccessible between GetDirectories
-                // and this check (a TOCTOU race with a concurrent delete/permission change).
-                // Record it as skipped rather than letting the exception abort the whole walk.
+                // The subdirectory vanished or became inaccessible after it was listed (a
+                // TOCTOU race with a concurrent delete/permission change). Record it as
+                // skipped rather than letting the exception abort the whole walk.
                 skipped.Add(new SkippedEntry(subdirectory, ex.Message));
                 continue;
             }
@@ -430,15 +461,35 @@ internal static class ScanTreeWalker
     }
 
     /// <summary>
+    /// Whether <paramref name="files"/> contains one named <paramref name="name"/>, compared
+    /// the way the file system compares names.
+    /// </summary>
+    /// <param name="files">The files listed in a directory.</param>
+    /// <param name="name">The file name to look for.</param>
+    private static bool ContainsFileName(List<FileInfo> files, string name)
+    {
+        foreach (var file in files)
+        {
+            if (SymlinkGuard.FileSystemPathComparer.Equals(file.Name, name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Reads the lines of the rule file at <paramref name="path"/>, or returns
     /// <see langword="null"/> when it does not exist or cannot be read, recording the
     /// latter in <paramref name="skipped"/>.
     /// </summary>
     /// <param name="path">The path of the <c>.gitignore</c>/<c>.gitattributes</c> file.</param>
     /// <param name="skipped">The list a read failure is recorded in.</param>
-    private static string[]? TryReadRuleFile(string path, List<SkippedEntry> skipped)
+    /// <param name="assumeExists">Whether the caller already knows the file exists, so the existence check is skipped.</param>
+    private static string[]? TryReadRuleFile(string path, List<SkippedEntry> skipped, bool assumeExists = false)
     {
-        if (!File.Exists(path))
+        if (!assumeExists && !File.Exists(path))
         {
             return null;
         }
