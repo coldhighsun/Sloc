@@ -101,6 +101,7 @@ jobs:
           --self-contained
           -p:PublishSingleFile=true
           -p:PublishTrimmed=true
+          -p:PublishReadyToRun=true
           --output ./publish/${{ matrix.rid }}
 
       - name: Zip artifact
