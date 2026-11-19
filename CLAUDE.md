@@ -59,6 +59,10 @@ Line classification is text-based, not a full lexer. String literals are tracked
 - **`Directory.Packages.props`** — central NuGet version management; add new packages here, not in individual `.csproj` files
 - **Versioning** — MinVer derives the NuGet version automatically from git tags (`v*`); do not set `<Version>` manually. CI publish/pack/release jobs only run on `v*` tag pushes.
 
+## Keeping the Tests Badge in Sync
+
+The README's `Tests` badge (`img.shields.io/badge/tests-<N>-brightgreen`) hard-codes the test count. Whenever a change adds, removes, or parameterizes tests so the total changes, run `dotnet test Sloc.slnx`, take the new total, and update the badge in `README.md`, `README.zh-CN.md`, and `README.zh-TW.md` in the same change.
+
 ## Adding a New Language
 
 Add an entry to `LanguageRegistry.cs` (`src/Sloc.Core/Languages/`) with the extension(s), line-comment tokens, block-comment delimiters, string-literal delimiters (`StringLiterals`, so comment tokens inside strings are not miscounted), and whether to show the comment-health indicator. No other files need changes; the console color of a language is optional: `Output/Theme.cs` maps well-known languages to their conventional (GitHub linguist) color and gives every other language a stable fallback color, so add an entry there only when a language deserves its own.
