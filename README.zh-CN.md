@@ -7,8 +7,6 @@
 [![Tests](https://img.shields.io/badge/tests-936-brightgreen?logo=xunit)](tests/Sloc.Core.Tests)
 [![Latest Release](https://img.shields.io/github/v/release/coldhighsun/Sloc)](https://github.com/coldhighsun/Sloc/releases/latest)
 [![Latest Pre-release](https://img.shields.io/github/v/release/coldhighsun/Sloc?include_prereleases&label=pre-release)](https://github.com/coldhighsun/Sloc/releases)
-[![NuGet](https://img.shields.io/nuget/v/Sloc?logo=nuget&label=nuget%20stable)](https://www.nuget.org/packages/Sloc)
-[![NuGet Pre-release](https://img.shields.io/nuget/vpre/Sloc?logo=nuget&label=nuget%20pre-release)](https://www.nuget.org/packages/Sloc/absoluteLatest)
 [![WinGet](https://img.shields.io/winget/v/coldhighsun.sloc?logo=windowsterminal&label=winget)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/c/coldhighsun/sloc)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Sloc?logo=nuget&label=nuget%20downloads)](https://www.nuget.org/packages/Sloc)
 [![GitHub All Releases](https://img.shields.io/github/downloads/coldhighsun/Sloc/total?label=release%20downloads)](https://github.com/coldhighsun/Sloc/releases)
